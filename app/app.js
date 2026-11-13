@@ -1361,7 +1361,7 @@ function drawSettings(el) {
   const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
   const rooms = A.rooms.filter(p => p.modelname !== "Group"), start = device.get("room", "");
   $(".settings", el).innerHTML = `
-    ${c.update ? section("A new version", "Soundsquatch " + esc(c.update.version), `<div class="set-row update"><span><b>Soundsquatch ${esc(c.update.version)} is out</b><em>to update, on the machine it runs on, in its folder: <code>docker compose pull &amp;&amp; docker compose up -d</code>. Everything kept in ./data stays.</em></span><a class="pill" href="${esc(c.update.url)}" target="_blank" rel="noopener">What's new</a></div>`) : ""}
+    ${c.update ? section("A new version", "Soundsquatch " + esc(c.update.version), `<div class="set-row update"><span><b>It's out</b><em>to update, on the machine it runs on, in its folder: <code>docker compose pull &amp;&amp; docker compose up -d</code>. Everything kept in ./data stays.</em></span><a class="pill" href="${esc(c.update.url)}" target="_blank" rel="noopener">What's new</a></div>`) : ""}
     ${section("For every screen in the house", "Features", FEATS.map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
       ? `<div class="set-row toggle missing"><span><b>${f[1]}</b><em>needs the ${PLUGIN_FOR[f[0]]} plugin in Lyrion</em></span><i class="sw"></i></div>`
       : toggle("setFeat", f[0], c.features[f[0]], f[1], f[2])).join(""))}
