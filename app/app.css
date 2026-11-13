@@ -1071,6 +1071,17 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .mag-body .pull { margin: 22px 0 26px; }
 .mag-recs { border-top: 3px solid #ece4d6; padding-top: 12px; }
 .mag-recs .ff-h { margin-bottom: 4px; }
+.mag-kin { margin-top: 30px; border-top: 3px solid #ece4d6; padding-top: 12px; }
+.kin { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(236, 228, 214, .12); color: inherit; text-decoration: none; }
+.kin img, .kin i { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; background: var(--bg3); }
+.kin i { display: flex; align-items: center; justify-content: center; font: normal 22px var(--display); color: var(--faint); }
+.kin.own img, .kin.own i { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
+.kin b { display: block; font: 600 14.5px/1.25 var(--sans); }
+.kin em { display: block; font: italic 13.5px/1.3 var(--serif); color: var(--dim); }
+.kin.new em { color: var(--accent); }
+.mag-kin summary { padding: 10px 0 2px; font: 700 11px var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--dim); cursor: pointer; list-style: none; }
+.mag-kin summary::-webkit-details-marker { display: none; }
+.mag-kin details[open] summary { display: none; }
 .mr-k { margin-top: 14px; font: 700 10px var(--sans); letter-spacing: .22em; text-transform: uppercase; color: var(--accent); }
 .mr { display: grid; grid-template-columns: 40px 38px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(236, 228, 214, .12); color: inherit; text-decoration: none; }
 .mr img { width: 40px; height: 40px; object-fit: cover; }

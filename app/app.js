@@ -311,6 +311,11 @@ function albumCard(a, cls) {
   return `<a class="card ${cls || ""}" href="${albumHref(a[0])}"><div class="art">${art}<button class="chip" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}</button></div>
     <div class="t">${esc(a[1])}</div><div class="s">${esc(a[2])}${a[3] ? " &middot; " + a[3] : ""}</div></a>`;
 }
+// a kindred artist in the margin: their picture in a circle, the name, and whether they're new to the house
+function kinRow(x) {
+  const info = A.artistInfo.get(norm(x.name)), img = (info && info[3]) || x.image || "", here = onShelves(x.name);
+  return `<a class="kin ${here ? "own" : "new"}" href="${artistHref(x.name)}">${img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 120))}" alt="">` : `<i>${esc(x.name.replace(/^the /i, "").slice(0, 1))}</i>`}<span><b>${esc(x.name)}</b><em>${here ? "on your shelves" : "new to you"}</em></span></a>`;
+}
 function face(name, image, sub, cls) {
   // someone on the shelves wears their own picture (the one chosen for them), whatever another list offers: Qobuz's
   // similar artists can name a namesake ("LUNA", a singer, for Luna the band)
@@ -648,7 +653,7 @@ VIEWS.artist = function (el, name) {
       ${discography(mine, shows, p)}
       <div id="ar-arch">${archShelf(archArtistCache.get(norm(realName)) && archArtistCache.get(norm(realName)).done)}</div>
       ${Object.keys(groups).map(g => section("On Qobuz, not on your shelves", esc(g), shelf(groups[g].map(r => qCard({ artist: r.artist, album: r.album, cover: r.cover, i: r.i, page: realName }))))).join("")}
-      ${p.qobuz && p.qobuz.similar && p.qobuz.similar.length ? section("If you like " + esc(realName), "Similar artists", shelf(p.qobuz.similar.map(s => face(s.name, s.image, onShelves(s.name) ? "on your shelves" : "")))) : ""}
+      ${p.qobuz && p.qobuz.similar && p.qobuz.similar.length ? section("If you like " + esc(realName), "Similar artists", shelf(p.qobuz.similar.filter(s => !onShelves(s.name)).map(s => face(s.name, s.image, "new to you", "new")).concat(p.qobuz.similar.filter(s => onShelves(s.name)).map(s => face(s.name, s.image, "on your shelves"))))) : ""}
       ${p.photos && p.photos.length > 1 ? section("Pictures", "In the frame", `<div class="photos">${p.photos.map(x => `<img loading="lazy" decoding="async" src="${esc(pic(x.url, 640))}" alt="">`).join("")}</div>`) : ""}
       ${p.partial ? `<p class="dim center">More is on its way from MusicBrainz and Wikipedia&hellip;</p>` : ""}`;
     el.dataset.artist = realName;
@@ -704,7 +709,8 @@ VIEWS.mag = function (el, name) {
     const members = (mb.rels || []).filter(r => r.type === "member of band" && r.dir === "backward").map(r => r.name);
     el.artistTags = { name, all: (mb.genres || []).slice(0, 16), hidden: p.hidden_tags || [] }; // for the pickers: their picture, their tags
     const tags = ((mb.genres || []).filter(g => (p.hidden_tags || []).indexOf(g) < 0)).slice(0, 4);
-    const like = ((p.qobuz && p.qobuz.similar) || []).map(x => x.name).filter(onShelves).slice(0, 5);
+    // kindred artists, Qobuz's: the ones new to the house first (the point is finding them), then the ones already here
+    const sim = (p.qobuz && p.qobuz.similar) || [], like = sim.filter(x => !onShelves(x.name)).concat(sim.filter(x => onShelves(x.name)));
     const shows = A.archive.filter(x => norm(x.artist) === norm(realName) || norm(x.artist) === norm(name));
     const tab = mine.length || shows.length ? store.get("sq-mag-tab", "story") : (el.magTab || "records"); // nothing on the shelves: their records elsewhere first
     // the records by kind, each kind by date: the studio ones on The records, every live one (theirs, and the tapes) on Live
@@ -747,6 +753,8 @@ VIEWS.mag = function (el, name) {
           ${(mb.genres || []).length ? fact("Sounds like", tags.map(esc).join(", ") + ` <button class="g-edit ff-edit" data-act="artistTags" aria-label="Choose their tags">${icon("edit")}</button>`) : ""}
           ${fact("In the house", heard.plays ? `${heard.plays} plays, ${heard.finished} heard through${heard.last ? ", last " + new Date(heard.last * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}` : "Not played yet")}
         </dl></div>
+        ${like.length ? `<div class="mag-kin"><div class="ff-h">If you like them</div>${like.slice(0, 12).map(kinRow).join("")}
+          ${like.length > 12 ? `<details><summary>${like.length - 12} more</summary>${like.slice(12).map(kinRow).join("")}</details>` : ""}</div>` : ""}
         ${studio.length ? `<div class="mag-recs"><div class="ff-h">The records</div>${studio.map(k => `<div class="mr-k">${k[1]}</div>${byYear(kinds[k[0]]).map(a =>
           `<a class="mr" href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""><span class="y">${yearOf(a) || "&mdash;"}</span><b>${esc(a[1])}</b></a>`).join("")}`).join("")}</div>` : ""}</aside>
       </div></div>
@@ -756,7 +764,6 @@ VIEWS.mag = function (el, name) {
       ${liveCount ? `<div class="mag-page" data-tab="live" ${tab === "live" ? "" : "hidden"}><section class="mag-guide"><div class="mag-dept">On stage</div>
         ${kinds.live.length ? `<h2>On the shelves <span>${kinds.live.length}</span></h2>${guide(kinds.live)}` : ""}
         ${shows.length ? `<h2>From the Internet Archive <span>${shows.length}</span></h2><div class="grid">${shows.map(x => archCard(x)).join("")}</div>` : ""}</section></div>` : ""}
-      ${like.length ? `<footer class="mag-foot">If you like ${esc(realName)}: ${like.map(n => `<a href="${artistHref(n)}">${esc(n)}</a>`).join(" &middot; ")}</footer>` : ""}
     </article>`;
     if (p.partial && tries++ < 40) setTimeout(load, tries < 10 ? 1200 : 4000);
   }).catch(() => { el.innerHTML = `<div class="mag"><p class="dim">The presses jammed.</p></div>`; });
