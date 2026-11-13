@@ -767,6 +767,8 @@ html.lite .hero h1, html.lite .slide h1 { text-shadow: none; }
 .settings { padding-bottom: 20px; }
 .set-row { display: flex; align-items: center; gap: 16px; width: 100%; padding: 14px 0; border-bottom: 1px solid var(--rule); text-align: left; }
 .set-row > span { flex: 1; min-width: 0; }
+.set-row.update b { color: var(--accent); }
+.set-row.update code { font-size: 13px; word-break: break-word; }
 .set-row b, .set-field b { display: block; font: 600 16px var(--sans); }
 .set-row em, .set-field em { display: block; font: italic 14px/1.4 var(--serif); color: var(--dim); }
 .set-row .sw { flex: none; width: 46px; height: 28px; border-radius: 14px; background: rgba(255, 255, 255, .15); position: relative; transition: background .2s; }

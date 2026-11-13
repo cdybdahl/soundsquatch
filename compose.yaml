@@ -1,8 +1,7 @@
 # Soundsquatch beside your Lyrion. Start it with:  docker compose up -d   then open http://<this machine>:8097
 services:
   soundsquatch:
-    build: .
-    image: soundsquatch:beta
+    image: ghcr.io/cdybdahl/soundsquatch:latest   # to build it yourself from this folder instead: build: .
     container_name: soundsquatch
     restart: unless-stopped
     # the host's network: Soundsquatch finds Lyrion by the broadcast its players use, and keeps Lyrion's event line open.

@@ -90,7 +90,7 @@ REMOVED_DIR = os.environ.get("REMOVED_DIR", "/share/music-removed")  # where rem
 HA_URL = os.environ.get("HA_URL", "")
 HA_TOKEN = os.environ.get("HA_TOKEN_FILE", os.path.join(DATA, ".ha_token"))  # Soundsquatch's own long-lived token (stations)
 AUDIO = (".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".alac", ".ape", ".wv", ".dsf", ".dff")  # the playlist a room's music is saved to on its way to another room
-VERSION = "0.9 beta"
+VERSION = "0.9.0 beta"  # the release tag is v + its number
 AGENT = {"User-Agent": f"Soundsquatch/{VERSION.split()[0]} (a home music app; https://github.com/cdybdahl/soundsquatch)"}
 NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 
@@ -279,11 +279,27 @@ def home_room():
         return ""
 
 
+UPDATE = {}  # the newest release on GitHub, if it's newer than this one: asked once a day
+
+
+def update_loop():
+    while True:
+        try:
+            r = get_json("https://api.github.com/repos/cdybdahl/soundsquatch/releases/latest")
+            num = lambda v: tuple(int(x) for x in re.findall(r"\d+", v))
+            UPDATE.clear()
+            if num(r["tag_name"]) > num(VERSION.split()[0]):
+                UPDATE.update(version=r["tag_name"].lstrip("v"), url=r["html_url"])
+        except Exception:
+            pass  # offline, or no release yet: asked again tomorrow
+        time.sleep(86400)
+
+
 def settings_for_app():
     checks = check_settings()
     conn = dict(settings["connections"], lms_password="")  # the password is never sent back
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"],
-            "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION,
+            "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "have": {k: v for k, v in HAVE.items()}, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
 
 
@@ -3559,7 +3575,7 @@ if __name__ == "__main__":
     detect()
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
-    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events):
+    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does

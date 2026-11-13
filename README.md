@@ -46,10 +46,13 @@ few more. Expect rough edges, and please say what you find.
 ### Install
 
 ```sh
-git clone https://github.com/cdybdahl/soundsquatch.git
-cd soundsquatch
+mkdir soundsquatch && cd soundsquatch
+curl -fsSLO https://raw.githubusercontent.com/cdybdahl/soundsquatch/main/compose.yaml
 docker compose up -d
 ```
+
+That fetches the ready-built image (for 64-bit Intel/AMD and ARM machines). Set your time zone in `compose.yaml`
+first.
 
 On **Docker Desktop** (a Mac or Windows PC), follow the note in `compose.yaml` first: Docker Desktop doesn't share the
 host's network by default, so Soundsquatch publishes its port and is told Lyrion's address instead of finding it.
@@ -59,7 +62,8 @@ players do. If it can't, it asks for Lyrion's address on the first screen, and f
 protection on (Lyrion's Settings, Security). It builds a profile for every artist on
 your shelves in the background, so the first day is sparser than the second.
 
-To update: `git pull && docker compose up -d --build`. Everything Soundsquatch keeps (settings, hearts and stars,
+When a new version is out, Soundsquatch says so (once on each screen, and at the top of Settings). To update, in
+that folder: `docker compose pull && docker compose up -d`. Everything Soundsquatch keeps (settings, hearts and stars,
 stations, the listening log, pictures, nightly backups) lives in `./data`.
 
 ### Changing music files
@@ -92,7 +96,8 @@ give it a password.
 
 Artist names and album titles, sent to MusicBrainz, Wikidata and Wikipedia, LRCLIB (for lyrics), the Cover Art
 Archive, Apple and Deezer (for covers you choose), and to Qobuz and Discogs through Lyrion's own plugins. Nothing about who listens
-or when: the listening log stays in `./data`.
+or when: the listening log stays in `./data`. Once a day it asks GitHub for the newest release number, which sends
+nothing but the question.
 
 ### Telling us
 

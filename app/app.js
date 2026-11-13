@@ -1361,6 +1361,7 @@ function drawSettings(el) {
   const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
   const rooms = A.rooms.filter(p => p.modelname !== "Group"), start = device.get("room", "");
   $(".settings", el).innerHTML = `
+    ${c.update ? section("A new version", "Soundsquatch " + esc(c.update.version), `<div class="set-row update"><span><b>Soundsquatch ${esc(c.update.version)} is out</b><em>to update, on the machine it runs on, in its folder: <code>docker compose pull &amp;&amp; docker compose up -d</code>. Everything kept in ./data stays.</em></span><a class="pill" href="${esc(c.update.url)}" target="_blank" rel="noopener">What's new</a></div>`) : ""}
     ${section("For every screen in the house", "Features", FEATS.map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
       ? `<div class="set-row toggle missing"><span><b>${f[1]}</b><em>needs the ${PLUGIN_FOR[f[0]]} plugin in Lyrion</em></span><i class="sw"></i></div>`
       : toggle("setFeat", f[0], c.features[f[0]], f[1], f[2])).join(""))}
@@ -2521,7 +2522,10 @@ function start() {
   $("#main").innerHTML = `<div class="loading"><img class="load-logo" src="logo.png" alt=""><div class="mast-name"><span>Sound<em>squatch</em></span></div><p>Taking the records off the shelves&hellip;</p></div>`;
   if (device.get("room", "")) A.room = device.get("room", "");
   applyDevice();
-  const house = api("/api/settings").then(c => { A.cfg = c; }).catch(() => {});
+  const house = api("/api/settings").then(c => { A.cfg = c;
+    // a new release: said once on each screen, and kept at the top of Settings
+    if (c.update && store.get("sq-update-told", "") !== c.update.version) { store.set("sq-update-told", c.update.version); setTimeout(() => toast("Soundsquatch " + c.update.version + " is out: see Settings"), 4000); }
+  }).catch(() => {});
   // the room this screen controls: its own choice, else the last used, else the one the house plays in most
   Promise.all([lms("", ["players", 0, 50]), house]).then(r => {
     A.rooms = (r[0].players_loop || []).filter(p => p.connected);
