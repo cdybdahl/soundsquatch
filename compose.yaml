@@ -1,0 +1,24 @@
+# Soundsquatch beside your Lyrion. Start it with:  docker compose up -d   then open http://<this machine>:8097
+services:
+  soundsquatch:
+    build: .
+    image: soundsquatch:beta
+    container_name: soundsquatch
+    restart: unless-stopped
+    # the host's network: Soundsquatch finds Lyrion by the broadcast its players use, and keeps Lyrion's event line open.
+    # On Docker Desktop (a Mac or Windows PC), where the host's network isn't on by default: take this line out, and
+    # put back the ports and LMS_URL lines below (the broadcast doesn't reach out of Docker Desktop, so Lyrion's address is needed)
+    network_mode: host
+    # ports:
+    #   - "8097:8097"
+    volumes:
+      - ./data:/data
+      # Only if you switch on "Change music files" in Settings: your music, at the very path Lyrion sees it
+      # (Lyrion's Settings > Basic Settings > Media Folders), read-write. For example:
+      # - /srv/music:/srv/music
+    environment:
+      TZ: America/Chicago        # your time zone: On this day and the listening log go by it
+      # PUID: "1000"             # the user it runs as (and who owns ./data): the owner of your music files,
+      # PGID: "1000"             #   if Soundsquatch is to change them
+      # LMS_URL: http://192.168.1.20:9000   # only if it can't find Lyrion itself (and always on Docker Desktop)
+      # MUSIC_APP_PORT: "8097"

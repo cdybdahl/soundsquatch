@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.DS_Store
+# on the server only: the profiles' database, the pictures, the covers, the Home Assistant token
+cache.db*
+img/
+covers/
+mb/
+.ha_token
+cover-today.json
+settings.json
+backups/
+listening.db*
+art-originals/
+artist-photos/
+data/

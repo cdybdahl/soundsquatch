@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Soundsquatch">
+<meta name="theme-color" content="#0d0c0b">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="favicon-64.png" sizes="64x64" type="image/png">
+<link rel="manifest" href="manifest.json">
+<title>Soundsquatch</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<nav id="rail">
+  <a class="rail-mark" href="#/" aria-label="Soundsquatch"><img src="logo.png" alt=""></a>
+  <a href="#/" data-tab="discover"><i data-icon="compass"></i><span>Discover</span></a>
+  <a href="#/albums" data-tab="albums"><i data-icon="grid"></i><span>Albums</span></a>
+  <a href="#/artists" data-tab="artists"><i data-icon="person"></i><span>Artists</span></a>
+  <a href="#/genres" data-tab="genres"><i data-icon="tag"></i><span>Genres</span></a>
+  <a href="#/playlists" data-tab="playlists"><i data-icon="list"></i><span>Playlists</span></a>
+  <a href="#/history" data-tab="history"><i data-icon="clock"></i><span>History</span></a>
+  <a href="#/settings" data-tab="settings" class="rail-settings"><i data-icon="gear"></i><span>Settings</span></a>
+</nav>
+<main id="main"></main>
+<footer id="bar"></footer>
+<section id="np" hidden></section>
+<div id="sheet" hidden></div>
+<div id="toast" hidden></div>
+<div id="osk" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

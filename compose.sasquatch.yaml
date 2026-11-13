@@ -1,0 +1,17 @@
+# This house's Soundsquatch (install.sh): the released container, with the data, music and listening log where
+# sasquatch-server has always kept them. Traefik reaches it at 192.168.1.6:8097.
+services:
+  soundsquatch:
+    build: /home/chad/soundsquatch-src
+    image: soundsquatch:house
+    container_name: soundsquatch
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    volumes:
+      - /home/chad/soundsquatch:/data
+      - /share:/share                                   # the music, and music-removed beside it
+      - /home/chad/listening:/home/chad/listening       # the house's own listening recorder's log
+    environment:
+      TZ: America/Chicago
+      MUSIC_APP_BIND: 192.168.1.6
