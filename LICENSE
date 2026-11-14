@@ -82,3 +82,5 @@ Third-party material keeps its own terms: the stage photos in stage-photos.json 
 Wikimedia Commons under the licences named there (credited in the app).
 The fonts in app/ (Newsreader, by The Newsreader Project Authors; Inter, by The Inter Project Authors) are under the
 SIL Open Font License 1.1, https://openfontlicense.org.
+The face finder's model, face_detection_yunet_2023mar.onnx (YuNet, from the OpenCV Zoo,
+https://github.com/opencv/opencv_zoo), is under the MIT License, copyright (c) 2020 Shiqi Yu.

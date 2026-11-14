@@ -85,7 +85,7 @@ h1, h2, h3 { font-family: var(--display); font-weight: 700; margin: 0; letter-sp
 .hero.empty { height: 0; }
 .hero.skeleton { background: linear-gradient(100deg, var(--bg2) 30%, var(--bg3) 50%, var(--bg2) 70%) 0 0 / 300% 100%; animation: shimmer 1.6s infinite linear; }
 @keyframes shimmer { to { background-position: -150% 0; } }
-.hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%; animation: kenburns 30s ease-out both; }
+.hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 12%; animation: kenburns 30s ease-out both; }
 .hero-img.blur { filter: blur(40px) saturate(1.3) brightness(.8); transform: scale(1.3); animation: none; }
 @keyframes kenburns { from { transform: scale(1.06); } to { transform: scale(1); } }
 .hero-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(13, 12, 11, .1) 0%, rgba(13, 12, 11, .05) 35%, rgba(13, 12, 11, .78) 72%, var(--bg) 100%),
@@ -1234,4 +1234,4 @@ html.mag .mast-line span { letter-spacing: .24em; }
 /* artist photographs are cropped from the top: a portrait's face is in its upper third, so a crop from the middle takes
    off heads (a wide picture in a circle or a strip loses only its sides, where this changes nothing) */
 .face .ph img, .kin img, .np-artist img, .art-pick img { object-position: 50% 18%; }
-.mag-fig img, .fp-artist-body img { object-position: 50% 22%; }
+.mag-fig img, .fp-artist-body img { object-position: 50% 10%; }

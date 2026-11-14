@@ -3316,6 +3316,51 @@ def picture(url, width=None):
     return data, kind
 
 
+FACE_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_detection_yunet_2023mar.onnx")
+
+
+def focus(url):
+    """Where the faces are in an artist's photograph, as fractions of its width and height ({"x", "y"}), so a crop
+    keeps their heads; {} when there's none to be seen (or no OpenCV), and the page crops from near the top instead.
+    Found once for each picture (YuNet, a small face finder, on this machine) and kept."""
+    k = "focus:" + hashlib.sha1(url.encode()).hexdigest()[:20]
+    had = kv_get(k)
+    if had is not None:
+        return had
+    try:
+        import cv2, numpy
+        if url.startswith("/artist-photo/"):
+            n = url[len("/artist-photo/"):]
+            if not re.fullmatch(r"[a-z0-9]+-\d+(-320)?\.jpg", n):
+                return {}
+            with open(os.path.join(ARTIST_PICS, n), "rb") as f:
+                data = f.read()
+        else:
+            got = picture(url, 1600)
+            if not got:
+                return {}
+            data = got[0]
+        img = cv2.imdecode(numpy.frombuffer(data, numpy.uint8), cv2.IMREAD_COLOR)
+        h, w = img.shape[:2]
+        scale = 640 / max(h, w)
+        small = cv2.resize(img, (max(1, int(w * scale)), max(1, int(h * scale))))
+        found = cv2.FaceDetectorYN.create(FACE_MODEL, "", (small.shape[1], small.shape[0]), 0.6).detect(small)[1]
+        faces = [] if found is None else [(float(f[0] + f[2] / 2), float(f[1] + f[3] / 2), float(f[2] * f[3])) for f in found]
+        out = {}
+        if faces:
+            big = max(f[2] for f in faces)
+            near = [f for f in faces if f[2] >= big / 4]  # the band, not a face in the crowd
+            wt = sum(f[2] for f in near)
+            out = {"x": round(sum(f[0] * f[2] for f in near) / wt / small.shape[1], 3), "y": round(sum(f[1] * f[2] for f in near) / wt / small.shape[0], 3)}
+    except ImportError:
+        return {}
+    except Exception as e:
+        note_error(f"focus: {e}")
+        return {}
+    kv_set(k, out)
+    return out
+
+
 def cover_path(art, size):
     return os.path.join(COVERS, art[:2], f"{art}_{size}.jpg")
 
@@ -3446,6 +3491,8 @@ class Handler(BaseHTTPRequestHandler):
                         return self.reply(f.read(), "image/jpeg", "max-age=31536000, immutable")
                 except OSError:
                     return self.reply(b"", "text/plain", "no-store", 404)
+            if url.path == "/api/focus":
+                return self.reply(focus(qs.get("u", "")[:2000]), cache="max-age=86400")
             if url.path == "/api/artist-photos":
                 return self.reply(artist_photo_choices(qs.get("name", "")))
             if url.path == "/img":

@@ -316,6 +316,30 @@ function kinRow(x) {
   const info = A.artistInfo.get(norm(x.name)), img = (info && info[3]) || x.image || "", here = onShelves(x.name);
   return `<a class="kin ${here ? "own" : "new"}" href="${artistHref(x.name)}">${img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 120))}" alt="">` : `<i>${esc(x.name.replace(/^the /i, "").slice(0, 1))}</i>`}<span><b>${esc(x.name)}</b><em>${here ? "on your shelves" : "new to you"}</em></span></a>`;
 }
+// a big artist photograph cropped around the faces in it (found by the server, once per picture), the faces about 40%
+// down the frame so heads and a little air above them stay in; without a face, the stylesheet's crop from near the top
+const focusCache = new Map();
+function frameAt(img) {
+  const f = img.focusAt, bw = img.clientWidth, bh = img.clientHeight, nw = img.naturalWidth, nh = img.naturalHeight;
+  if (!f || f.y == null || !nw || !bw || !bh) return;
+  const sc = Math.max(bw / nw, bh / nh), W = nw * sc, H = nh * sc;
+  const at = (c, full, box, where) => full - box < 1 ? 50 : Math.max(0, Math.min(100, (c * full - where * box) / (full - box) * 100));
+  img.style.objectPosition = at(f.x, W, bw, .5).toFixed(1) + "% " + at(f.y, H, bh, .4).toFixed(1) + "%";
+}
+function frameFaces(root) {
+  (root || document).querySelectorAll("img[data-focus]:not([data-framed])").forEach(img => {
+    img.setAttribute("data-framed", "");
+    const u = img.getAttribute("data-focus");
+    if (!focusCache.has(u)) focusCache.set(u, api("/api/focus?u=" + encodeURIComponent(u)).catch(() => ({})));
+    focusCache.get(u).then(f => { img.focusAt = f; if (img.complete) frameAt(img); else img.addEventListener("load", () => frameAt(img)); if (sizeWatch) sizeWatch.observe(img); });
+  });
+}
+// framed again whenever its size changes: shown from a hidden tab, the screen turned (where ResizeObserver is missing, on any tap)
+const sizeWatch = window.ResizeObserver ? new ResizeObserver(list => list.forEach(e => frameAt(e.target))) : null;
+const reframe = () => document.querySelectorAll("img[data-framed]").forEach(frameAt);
+if (window.MutationObserver) new MutationObserver(() => frameFaces()).observe(document.documentElement, { childList: true, subtree: true });
+window.addEventListener("resize", reframe);
+if (!sizeWatch) document.addEventListener("click", () => setTimeout(reframe, 50));
 function face(name, image, sub, cls) {
   // someone on the shelves wears their own picture (the one chosen for them), whatever another list offers: Qobuz's
   // similar artists can name a namesake ("LUNA", a singer, for Luna the band)
@@ -565,7 +589,7 @@ function drawHero(box, name, kicker) {
     if (box.dataset.name !== name) return;
     const text = (p.wiki && p.wiki.extract) || (p.qobuz && p.qobuz.bio) || "";
     const albums = albumsBy(name);
-    const bg = p.hero ? `<img class="hero-img" src="${esc(pic(p.hero, 1600))}" alt="">` : albums.length ? `<img class="hero-img blur" src="${cover(albums[0][4], 300)}" alt="">` : "";
+    const bg = p.hero ? `<img class="hero-img" src="${esc(pic(p.hero, 1600))}" data-focus="${esc(p.hero)}" alt="">` : albums.length ? `<img class="hero-img blur" src="${cover(albums[0][4], 300)}" alt="">` : "";
     box.className = "hero";
     box.innerHTML = `${bg}<div class="hero-shade"></div><div class="hero-text"><div class="kicker">${kicker}</div>
       <h1>${hearted(p.qobuz && p.qobuz.name || name, mk("artist", norm(p.qobuz && p.qobuz.name || name), "heart"), `<a href="${artistHref(name)}">`, "</a>")}</h1><div class="meta">${heroMeta(p)}</div>
@@ -603,7 +627,7 @@ function becauseHtml(p) {
 }
 function spotlightHtml(p) {
   const name = (p.qobuz && p.qobuz.name) || p.name, text = (p.wiki && p.wiki.extract) || (p.qobuz && p.qobuz.bio) || "";
-  return `<section class="sec spot"><a class="spot-pic" href="${artistHref(name)}">${p.hero ? `<img loading="lazy" src="${esc(pic(p.hero, 1600))}" alt="">` : ""}</a>
+  return `<section class="sec spot"><a class="spot-pic" href="${artistHref(name)}">${p.hero ? `<img loading="lazy" src="${esc(pic(p.hero, 1600))}" data-focus="${esc(p.hero)}" alt="">` : ""}</a>
     <div class="spot-text"><div class="kicker">Artist of the day</div><h2><a href="${artistHref(name)}">${esc(name)}</a></h2><div class="meta">${heroMeta(p)}</div>
     ${dropcap(paras(standfirst(text, 700)).slice(0, 2))}<div class="mini">${albumsBy(name).slice(0, 6).map(a => `<a href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""></a>`).join("")}</div></div></section>`;
 }
@@ -631,7 +655,7 @@ VIEWS.artist = function (el, name) {
     const owned = new Set(mine.map(a => plain(a[1])));
     const groups = {};
     ((p.qobuz && p.qobuz.releases) || []).forEach(r => { if (!owned.has(plain(r.album))) (groups[r.group] = groups[r.group] || []).push(r); });
-    const bg = p.hero ? `<img class="hero-img" src="${esc(pic(p.hero, 1600))}" alt="">` : p.thumb ? `<img class="hero-img blur" src="${esc(pic(p.thumb, 320))}" alt="">`
+    const bg = p.hero ? `<img class="hero-img" src="${esc(pic(p.hero, 1600))}" data-focus="${esc(p.hero)}" alt="">` : p.thumb ? `<img class="hero-img blur" src="${esc(pic(p.thumb, 320))}" alt="">`
       : mine.length ? `<img class="hero-img blur" src="${cover(mine[0][4], 300)}" alt="">` : "";
     const rels = {};
     ((p.mb && p.mb.rels) || []).forEach(r => { const w = relWords(r.type, r.dir); (rels[w] = rels[w] || []).some(x => x.name === r.name) || rels[w].push(r); });
@@ -743,7 +767,7 @@ VIEWS.mag = function (el, name) {
           ${on("features", "stations") ? `<button class="seed-btn ${isSeed(realName) ? "on" : ""}" data-act="seedSheet" data-v="${esc(realName)}">${icon("radio_plus")} Add to a station</button>` : ""}<button data-act="artistBan" data-v="${esc(realName)}">${icon("ban")} Never play</button>
           ${p.hero ? "" : `<button data-act="artistPic">${icon("person")} Choose a picture</button>`}</div></nav>
       <div class="mag-page" data-tab="story" ${tab === "story" || (tab === "live" && !liveCount) ? "" : "hidden"}>
-      ${p.hero ? `<figure class="mag-fig"><button class="pic-edit" data-act="artistPic" aria-label="Change their picture">${icon("edit")}</button><img src="${esc(pic(p.hero, 1600))}" alt=""><figcaption>${esc(realName)}${mb.area ? ", of " + esc(mb.area) : ""}${mb.begin ? `, ${mb.begin}${mb.end ? "–" + mb.end : " to the present"}` : ""}.</figcaption></figure>` : ""}
+      ${p.hero ? `<figure class="mag-fig"><button class="pic-edit" data-act="artistPic" aria-label="Change their picture">${icon("edit")}</button><img src="${esc(pic(p.hero, 1600))}" data-focus="${esc(p.hero)}" alt=""><figcaption>${esc(realName)}${mb.area ? ", of " + esc(mb.area) : ""}${mb.begin ? `, ${mb.begin}${mb.end ? "–" + mb.end : " to the present"}` : ""}.</figcaption></figure>` : ""}
       <div class="mag-cols">
         <div class="mag-body">${body || `<p class="dim">Their story is still being gathered.</p>`}</div>
         <aside class="mag-side"><div class="ff"><div class="ff-h">Fact file</div><dl>
@@ -836,7 +860,7 @@ VIEWS.front = function (el) {
     if (h.spotlight) profile(h.spotlight).then(p => {
       const box = $("#fp-artist", el); if (!box) return;
       const text = (p.qobuz && p.qobuz.bio) || (p.wiki && p.wiki.extract) || "";
-      box.insertAdjacentHTML("beforeend", `<a class="fp-artist-body" href="${artistHref(h.spotlight)}">${p.hero ? `<img src="${esc(pic(p.hero, 1600))}" alt="">` : ""}<div class="fp-artist-text"><h2>${esc((p.qobuz && p.qobuz.name) || h.spotlight)}</h2><p>${esc(standfirst(paras(text)[0] || "", 150))}</p><span class="fp-more">Read the profile</span></div></a>`);
+      box.insertAdjacentHTML("beforeend", `<a class="fp-artist-body" href="${artistHref(h.spotlight)}">${p.hero ? `<img src="${esc(pic(p.hero, 1600))}" data-focus="${esc(p.hero)}" alt="">` : ""}<div class="fp-artist-text"><h2>${esc((p.qobuz && p.qobuz.name) || h.spotlight)}</h2><p>${esc(standfirst(paras(text)[0] || "", 150))}</p><span class="fp-more">Read the profile</span></div></a>`);
     }).catch(() => {});
     leadWords(el, lead);
     settlingStrip(el);
