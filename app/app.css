@@ -1230,3 +1230,8 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .empty-shelves p { max-width: 520px; margin: 0 auto; }
 .empty-shelves { height: auto; min-height: 100%; padding: 40px 16px; text-align: center; } /* grows rather than spilling over the top */
 @media (max-width: 760px) { #offline { bottom: calc(var(--barh) + 64px + var(--safe-b) + 10px); } } /* above the tab bar too */
+
+/* artist photographs are cropped from the top: a portrait's face is in its upper third, so a crop from the middle takes
+   off heads (a wide picture in a circle or a strip loses only its sides, where this changes nothing) */
+.face .ph img, .kin img, .np-artist img, .art-pick img { object-position: 50% 18%; }
+.mag-fig img, .fp-artist-body img { object-position: 50% 22%; }
