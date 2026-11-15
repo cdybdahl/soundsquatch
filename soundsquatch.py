@@ -88,6 +88,7 @@ LRCLIB = "https://lrclib.net/api/"  # lyrics, synced where it has them; free and
 MUSIC_DIRS = ["/share/music"]  # Lyrion's media folders, as Lyrion has them (asked with each look at the library)
 REMOVED_DIR = os.environ.get("REMOVED_DIR", "/share/music-removed")  # where removed albums' files go: outside the scan, never deleted
 HA_URL = os.environ.get("HA_URL", "")
+DISCOGS_TOKEN = os.path.join(DATA, ".discogs_token")  # the house's Discogs token, for its record collection: never sent back
 HA_TOKEN = os.environ.get("HA_TOKEN_FILE", os.path.join(DATA, ".ha_token"))  # Soundsquatch's own long-lived token (stations)
 AUDIO = (".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".alac", ".ape", ".wv", ".dsf", ".dff")  # the playlist a room's music is saved to on its way to another room
 VERSION = "0.9.0 beta"  # the release tag is v + its number
@@ -295,11 +296,84 @@ def update_loop():
         time.sleep(86400)
 
 
+# ───────────────────────── the records on the shelf: the house's Discogs collection ─────────────────────────
+DISCOGS = "https://api.discogs.com"
+discogs_now = threading.Event()  # set when a token is saved: read the collection now, not tomorrow
+
+
+def discogs_token():
+    try:
+        with open(DISCOGS_TOKEN) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def discogs_get(path, token):
+    req = urllib.request.Request(DISCOGS + path, headers=dict(AGENT, Authorization="Discogs token=" + token, Accept="application/json"))
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def discogs_sync():
+    """The collection, every folder, a page of 100 at a time (Discogs allows 60 asks a minute): kept as the house's
+    physical records, [release id, title, artist, year, cover, format, label and number, when added]."""
+    token = discogs_token()
+    if not token:
+        kv_set("discogs", {})
+        return
+    try:
+        user = discogs_get("/oauth/identity", token)["username"]
+        recs, page, seen = [], 1, set()
+        while True:
+            got = discogs_get(f"/users/{urllib.parse.quote(user)}/collection/folders/0/releases?per_page=100&page={page}&sort=added&sort_order=desc", token)
+            for r in got.get("releases", []):
+                b = r.get("basic_information") or {}
+                if b.get("id") in seen:
+                    continue  # a second copy of the same pressing
+                seen.add(b.get("id"))
+                fmt = (b.get("formats") or [{}])[0]
+                words = " ".join([fmt.get("name") or ""] + [d for d in fmt.get("descriptions") or [] if d in ("LP", "EP", '7"', '10"', '12"', "Single", "Album", "Compilation", "Mini-Album")][:2])
+                if fmt.get("qty") and str(fmt["qty"]) not in ("", "1"):
+                    words = f"{fmt['qty']}× " + words
+                label = (b.get("labels") or [{}])[0]
+                artist = ", ".join(re.sub(r" \(\d+\)$", "", a.get("name") or "") for a in b.get("artists") or [] if a.get("name")) or "Various"
+                recs.append([b.get("id"), b.get("title") or "", artist, int(b.get("year") or 0), b.get("cover_image") or b.get("thumb") or "",
+                             words.strip(), " ".join(x for x in (label.get("name"), label.get("catno")) if x and x != "none"), (r.get("date_added") or "")[:10]])
+            if page >= (got.get("pagination") or {}).get("pages", 1):
+                break
+            page += 1
+            time.sleep(1.2)
+        kv_set("discogs", {"user": user, "at": int(time.time()), "records": recs})
+        payload["version"] += 1  # the shelves' payload carries them
+    except urllib.error.HTTPError as e:
+        kv_set("discogs", dict(kv_get("discogs", {}) or {}, error="the token wasn't accepted" if e.code == 401 else f"Discogs answered {e.code}"))
+    except Exception as e:
+        note_error(f"discogs: {e}")
+
+
+def discogs_loop():
+    while True:
+        discogs_sync()
+        discogs_now.wait(86400)
+        discogs_now.clear()
+
+
+def physical_records(albums):
+    """The collection beside the shelves: each record with the shelves' album it matches (0 for one on vinyl only)."""
+    d = kv_get("discogs", {}) or {}
+    by = {}
+    for a in albums:
+        by.setdefault((key(a[2]), lms_qobuz.plain(a[1])), a[0])
+    return [r + [by.get((key(r[2]), lms_qobuz.plain(r[1])), 0)] for r in d.get("records", [])]
+
+
 def settings_for_app():
     checks = check_settings()
     conn = dict(settings["connections"], lms_password="")  # the password is never sent back
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
+            "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
             "have": {k: v for k, v in HAVE.items()}, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
 
 
@@ -332,6 +406,16 @@ def save_settings(req):
                 settings["house"]["rooms"].pop(pid, None)
     if isinstance(req.get("new_pin"), str):
         settings["house"]["pin"] = pin_hash(req["new_pin"].strip()) if req["new_pin"].strip() else ""
+    if isinstance(req.get("discogs_token"), str):  # "" disconnects
+        t = re.sub(r"\s", "", req["discogs_token"])[:200]
+        if t:
+            with open(DISCOGS_TOKEN + ".tmp", "w") as f:
+                f.write(t)
+            os.chmod(DISCOGS_TOKEN + ".tmp", 0o600)
+            os.replace(DISCOGS_TOKEN + ".tmp", DISCOGS_TOKEN)
+        elif os.path.exists(DISCOGS_TOKEN):
+            os.remove(DISCOGS_TOKEN)
+        discogs_sync()  # at once, so the page says what it found
     token = (req.get("ha_token") or "").strip()
     if token:
         with open(HA_TOKEN + ".tmp", "w") as f:
@@ -999,7 +1083,7 @@ def library_payload():
     for k, a in sorted(artists.items(), key=lambda x: re.sub(r"^the ", "", x[0])):
         d = profiles.get(k, ({},))[0] or {}
         out.append([a["name"], a["id"], a["albums"], pick_photo(d, "thumb") if d else "", (d.get("mb") or {}).get("type") or ""])
-    body = json.dumps({"albums": albums, "artists": out}, ensure_ascii=False, separators=(",", ":")).encode()
+    body = json.dumps({"albums": albums, "artists": out, "physical": physical_records(albums)}, ensure_ascii=False, separators=(",", ":")).encode()
     payload.update(body=gzip.compress(body, 6), built=stamp, at=time.time(), etag='"' + hashlib.sha1(body).hexdigest()[:16] + '"')
     return payload["body"], payload["etag"]
 
@@ -3622,7 +3706,7 @@ if __name__ == "__main__":
     detect()
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
-    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop):
+    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does

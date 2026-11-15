@@ -219,6 +219,11 @@ function useLibrary(lib) {
     A.artists = lib.artists; // [name, id, albums, photo, kind]
     A.artistInfo = new Map(lib.artists.map(a => [norm(a[0]), a]));
     Object.keys(linkCache).forEach(k => { delete linkCache[k]; });
+    // the house's records on the shelf (its Discogs collection): [release id, title, artist, year, cover, format,
+    // label and number, added, the shelves' album it matches or 0 for one only on the shelf]
+    A.physical = lib.physical || []; A.vinylOf = new Map(); A.vinylOnly = [];
+    A.physWord = A.physical.every(r => /^(\d+× )?Vinyl/.test(r[5] || "")) ? "vinyl" : "physical"; // what to call them: all records, or records and CDs
+    A.physical.forEach(r => { if (r[8]) { if (!A.vinylOf.has(r[8])) A.vinylOf.set(r[8], []); A.vinylOf.get(r[8]).push(r); } else A.vinylOnly.push(r); });
     const g = {}; lib.albums.forEach(a => (a[8] || []).forEach(x => { g[x] = (g[x] || 0) + 1; }));
     A.genres = Object.keys(g).map(k => [k, g[k]]).sort((a, b) => b[1] - a[1]);
   }
@@ -307,6 +312,7 @@ const markAt = t => { const el = t.closest(".mk"), i = el.dataset.mark.indexOf("
 function albumCard(a, cls) {
   if (!a) return "";
   if (a.archive) return archCard(a.archive, cls);
+  if (a.vinyl) return vinylCard(a.vinyl, cls);
   const art = a[4] ? `<img loading="lazy" decoding="async" src="${cover(a[4], 300)}" alt="">` : `<div class="noart">${esc((a[1] || "?").slice(0, 1))}</div>`;
   return `<a class="card ${cls || ""}" href="${albumHref(a[0])}"><div class="art">${art}<button class="chip" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}</button></div>
     <div class="t">${esc(a[1])}</div><div class="s">${esc(a[2])}${a[3] ? " &middot; " + a[3] : ""}</div></a>`;
@@ -729,6 +735,7 @@ VIEWS.mag = function (el, name) {
     el.artistTags = { name, all: (mb.genres || []).slice(0, 16), hidden: p.hidden_tags || [] }; // for the pickers: their picture, their tags
     const tags = ((mb.genres || []).filter(g => (p.hidden_tags || []).indexOf(g) < 0)).slice(0, 4);
     // kindred artists, Qobuz's: the ones new to the house first (the point is finding them), then the ones already here
+    const vinylOnly = (A.vinylOnly || []).filter(r => norm(r[2]) === norm(realName) || norm(r[2]) === norm(name)).sort((x, y) => (x[3] || 9999) - (y[3] || 9999));
     const sim = (p.qobuz && p.qobuz.similar) || [], like = sim.filter(x => !onShelves(x.name)).concat(sim.filter(x => onShelves(x.name)));
     const shows = A.archive.filter(x => norm(x.artist) === norm(realName) || norm(x.artist) === norm(name));
     const tab = mine.length || shows.length ? store.get("sq-mag-tab", "story") : (el.magTab || "records"); // nothing on the shelves: their records elsewhere first
@@ -773,7 +780,9 @@ VIEWS.mag = function (el, name) {
           ${fact("In the house", heard.plays ? `${heard.plays} plays, ${heard.finished} heard through${heard.last ? ", last " + new Date(heard.last * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}` : "Not played yet")}
         </dl></div>
         ${studio.length ? `<div class="mag-recs"><div class="ff-h">The records</div>${studio.map(k => `<div class="mr-k">${k[1]}</div>${byYear(kinds[k[0]]).map(a =>
-          `<a class="mr" href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""><span class="y">${yearOf(a) || "&mdash;"}</span><b>${esc(a[1])}</b></a>`).join("")}`).join("")}</div>` : ""}</aside>
+          `<a class="mr" href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""><span class="y">${yearOf(a) || "&mdash;"}</span><b>${esc(a[1])}</b></a>`).join("")}`).join("")}</div>` : ""}
+        ${vinylOnly.length ? `<div class="mag-recs"><div class="ff-h">Only on ${A.physWord}</div>${vinylOnly.map(r =>
+          `<a class="mr" href="#/record/${r[0]}">${r[4] ? `<img loading="lazy" src="${esc(pic(r[4], 150))}" alt="">` : `<i class="mr-blank"></i>`}<span class="y">${r[3] || "&mdash;"}</span><b>${esc(r[1])}<em>${esc(r[5] || "")}</em></b></a>`).join("")}</div>` : ""}</aside>
       </div></div>
       <div class="mag-page" data-tab="records" ${tab === "records" ? "" : "hidden"}>
       ${studio.length ? `<section class="mag-guide"><div class="mag-dept">Buyer's guide</div>${studio.map(k => `<h2>${k[1]} <span>${kinds[k[0]].length}</span></h2>${guide(kinds[k[0]])}`).join("")}</section>` : `<p class="dim">None of their studio records on the shelves yet.</p>`}
@@ -861,6 +870,21 @@ VIEWS.front = function (el) {
     settlingStrip(el);
   }).catch(() => { el.innerHTML = `<div class="mag"><p class="dim">The presses jammed.</p></div>`; });
 };
+// a record the house has only on the shelf: its cover, what it is, and the ways to hear it
+VIEWS.record = function (el, id) {
+  const r = (A.physical || []).find(x => String(x[0]) === String(id));
+  if (!r) { el.innerHTML = `${pageBar("Records", [])}<p class="dim center">That record isn't in the collection any more.</p>`; return; }
+  const theirs = albumsBy(r[2]);
+  el.innerHTML = `<div class="record-page">
+    <div class="record-art">${r[4] ? `<img src="${esc(pic(r[4], 1200))}" alt="">` : `<div class="noart">${esc(r[1].slice(0, 1))}</div>`}</div>
+    <div class="record-text"><div class="kicker">${icon("disc")} On ${esc(formatWord(r).toLowerCase())} only &middot; not among the digital albums</div>
+      <h1>${esc(r[1])}</h1><a class="record-by" href="${artistHref(r[2])}">${esc(r[2])}</a>
+      <dl>${[["Pressed", r[3] || ""], ["Format", r[5]], ["Label", r[6]], ["Added", r[7] ? new Date(r[7] + "T12:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : ""]]
+        .filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join("")}</dl>
+      <div class="acts">${has("qobuz") ? `<button class="btn" data-act="findWork" data-v="${esc(r[2] + " " + r[1])}">${icon("search")} Find it to play</button>` : ""}
+        <a class="btn ghost" href="https://www.discogs.com/release/${r[0]}" target="_blank" rel="noopener">On Discogs</a></div>
+      ${theirs.length ? `<p class="dim">${theirs.length} of their records on the digital shelves: <a href="${artistHref(r[2])}">see them</a>.</p>` : ""}</div></div>`;
+};
 MAG.album = function (el, id) {
   const a = A.byId.get(+id) || [+id, "", "", 0, "", 0, "", 0, []];
   const title = a[1], artist = a[2], more = albumsBy(artist).filter(x => x[0] !== a[0] && !x.archive);
@@ -870,7 +894,7 @@ MAG.album = function (el, id) {
     <div class="mag-dept mag-kind">The record</div>
     <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
     <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
-    <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", a[9] === "qobuz" ? "On Qobuz" : "On the shelves"].filter(Boolean).join(" &middot; ")}</div>
+    <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", a[9] === "qobuz" ? "On Qobuz" : "On the shelves", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
     <div class="mag-album">
       <figure class="mag-cover"><div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div></figure>
       <aside class="mag-side"><div class="ff"><div class="ff-h">The particulars</div><dl>
@@ -922,7 +946,7 @@ VIEWS.album = function (el, id) {
   const title = a[1], artist = a[2], more = albumsBy(artist).filter(x => x[0] !== a[0]);
   el.innerHTML = `${pageBar(esc(title || "Album"), ["Album", esc(artist)], `<button class="pill" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}<span class="pl">Spin it</span></button>`, true)}<div class="album-bg">${a[4] ? `<img src="${cover(a[4], 150)}" alt="">` : ""}</div><div class="album">
     <div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div>
-    <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionsOf(a).length} pressings</button>` : ""].filter(Boolean).join(" &middot; ")}</div>
+    <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionsOf(a).length} pressings</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
       <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
       ${title ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}${(a[8] || []).length ? `<button class="g-edit" data-act="genreEdit" data-v="${a[0]}" aria-label="Edit genres">${icon("edit")}</button>` : `<button class="g-edit named" data-act="genreEdit" data-v="${a[0]}">${icon("edit")} Add genres</button>`}</div>` : ""}
       ${title ? `<div class="al-marks">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</div>` : ""}
@@ -977,6 +1001,19 @@ function loadArchive() { return api("/api/archive/favorites").then(r => { A.arch
 // a show as an album row for the Albums page's sorts: [id, title, artist, year, art, rank, quality, artist id, genres] + .archive
 // a favourite added since Soundsquatch has been watching leads Recently added (newest first); the older ones, undated, close it
 function archRow(x, i) { const r = ["arch:" + i, "Live at " + x.venue, x.artist, +(x.date || "").slice(0, 4) || 0, "", 1e6 + i, "Archive", 0, [], "archive", [], Math.round(x.added || 0)]; r.archive = x; return r; } // [11]: when it was made a favourite
+// a record only on the shelf, as an album row for the Albums page (its cover and page from Discogs)
+function vinylRow(r, i) { const row = ["vinyl:" + r[0], r[1], r[2], r[3], "", 2e6 + i, r[5], 0, [], "vinyl", [], Math.round(Date.parse(r[7] || "") / 1000) || 0]; row.vinyl = r; return row; }
+const formatWord = r => (r[5] || "Vinyl").replace(/^\d+× /, "").split(" ")[0];
+function vinylCard(r, cls) {
+  const img = r[4] ? `<img loading="lazy" decoding="async" src="${esc(pic(r[4], 300))}" alt="">` : `<div class="noart">${esc((r[1] || "?").slice(0, 1))}</div>`;
+  return `<a class="card q ${cls || ""}" href="#/record/${r[0]}"><div class="art">${img}<span class="badge">${esc(formatWord(r))}</span></div>
+    <div class="t">${esc(r[1])}</div><div class="s">${esc(r[2])}${r[3] ? " &middot; " + r[3] : ""}</div></a>`;
+}
+// the line on an album's page when the house has it on the shelf too
+function vinylChip(a) {
+  const rs = A.vinylOf && A.vinylOf.get(a[0]);
+  return rs ? `<span class="vinyl-chip" title="${esc(rs.map(r => [r[5], r[6], r[3] || ""].filter(Boolean).join(", ")).join("; "))}">${icon("disc")} Also on ${esc(rs.map(r => r[5] || "vinyl").join(", ").replace(/^Vinyl/, "vinyl"))}</span>` : "";
+}
 A.shows = {}; // every show a card has been drawn for, by its archive.org identifier: what its page starts from
 function archCard(x, cls) {
   const img = x.image ? `<img loading="lazy" decoding="async" src="${esc(x.image)}" alt="">` : `<div class="noart">${esc(x.artist.slice(0, 1))}</div>`;
@@ -1113,12 +1150,12 @@ const SORTS = { added: ["Recently added", (a, b) => (b[11] || 0) - (a[11] || 0) 
 function byName(a, b) { a = norm(a).replace(/^the /, ""); b = norm(b).replace(/^the /, ""); return a < b ? -1 : a > b ? 1 : 0; }
 VIEWS.albums = function (el) {
   const sort = store.get("sq-sort", "added"), genre = store.get("sq-genre", "");
-  const shows = genre === "" || genre === "@archive" ? A.archive.map(archRow) : [];
+  const shows = (genre === "" || genre === "@archive" ? A.archive.map(archRow) : []).concat(genre === "" || genre === "@vinyl" ? A.vinylOnly.map(vinylRow) : []);
   if (!A.heard && focusOn()) loadHeard().then(() => { if (current && current.el === el) VIEWS.albums(el); });
   const list = (genre === "@archive" ? [] : A.albums.filter(a => albumIn(a, genre))).concat(shows).filter(focusMatch).sort(SORTS[sort][1]);
   const tags = {}; Object.keys(A.marks.album).forEach(k => A.marks.album[k][2].forEach(t => { tags[t] = 1; }));
-  const filters = [["@loved", icon("heart_on") + " Loved"], ["@rated", icon("star_on") + " Four stars and up"]].concat(A.archive.length ? [["@archive", "Live from the Archive"]] : []).concat(A.albums.some(a => (a[10] || []).length) ? [["@versions", "With other pressings"]] : []).concat(Object.keys(tags).sort().map(t => ["#" + t, "#" + esc(t)]));
-  const label = genre === "@versions" ? "multi-pressing " : genre === "@loved" ? "loved " : genre === "@rated" ? "four-star " : genre === "@archive" ? "Archive " : genre ? esc(genre) + " " : "";
+  const filters = [["@loved", icon("heart_on") + " Loved"], ["@rated", icon("star_on") + " Four stars and up"]].concat(A.archive.length ? [["@archive", "Live from the Archive"]] : []).concat(A.physical.length ? [["@vinyl", icon("disc") + (A.physWord === "vinyl" ? " On vinyl" : " Physical copies")]] : []).concat(A.albums.some(a => (a[10] || []).length) ? [["@versions", "With other pressings"]] : []).concat(Object.keys(tags).sort().map(t => ["#" + t, "#" + esc(t)]));
+  const label = genre === "@vinyl" ? A.physWord + " " : genre === "@versions" ? "multi-pressing " : genre === "@loved" ? "loved " : genre === "@rated" ? "four-star " : genre === "@archive" ? "Archive " : genre ? esc(genre) + " " : "";
   const countText = `${list.length.toLocaleString()} ${label}albums${focusOn() ? " in the dig" : ""}`;
   el.innerHTML = `${pageBar("Albums", ["The library", countText],
       `<button class="pill focus-btn ${focusOn() ? "on" : ""}" data-act="focusOpen">${icon("tag")}<span class="pl">Dig${focusOn() ? ` &middot; ${focusOn()}` : ""}</span></button><div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="sortAlbums" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`, false, "segs grow albums-acts")}
@@ -1177,6 +1214,7 @@ function albumIn(a, f) {
   if (!f) return true;
   const m = markOf("album", albumKey(a));
   if (f === "@versions") return (a[10] || []).length > 0;
+  if (f === "@vinyl") return A.vinylOf.has(a[0]);
   if (f === "@loved") return !!m[0];
   if (f === "@rated") return m[1] >= 4;
   if (f.charAt(0) === "#") return m[2].indexOf(f.slice(1)) >= 0;
@@ -1383,6 +1421,16 @@ VIEWS.settings = function (el) {
   // the rooms as Lyrion has them now: a player added since this screen opened is listed too
   Promise.all([api("/api/settings"), lms("", ["players", 0, 50]).then(r => { A.rooms = (r.players_loop || []).filter(p => p.connected); }).catch(() => {})]).then(r => { A.cfg = r[0]; drawSettings(el); }).catch(() => { $(".settings", el).innerHTML = `<p class="dim">The server isn't answering.</p>`; });
 };
+// the house's Discogs collection: connected (whose, how many, when read) or how to connect it
+function discogsRow(c) {
+  const d = c.discogs || {};
+  const now = d.set ? (d.error ? `<span class="check bad">${esc(d.error)}</span>` : d.user ? `<span class="check good">${esc(d.user)}'s collection: ${d.records.toLocaleString()} records</span>` : `<span class="check">reading the collection&hellip;</span>`) : `<span class="check bad">not connected</span>`;
+  return `<div class="set-field conn" data-k="discogs"><span><b>Discogs</b><em>your vinyl (and CDs) beside the digital albums: each matched to its album here, the rest listed as records you have only on vinyl. Read once a day; nothing is sent to Discogs but the token</em></span>
+    <span class="conn-now">${now}<button class="pill" data-act="connEdit">${d.set ? "Change" : "Connect"}</button></span>
+    <input data-discogs type="password" placeholder="${d.set ? "a new token (leave empty to disconnect)" : "your Discogs token"}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <p class="plan-note">On discogs.com: Settings, Developers, then Generate new token. Copy it here.</p>
+    <div class="acts"><button class="btn" data-act="discogsSave">Save and read the collection</button></div></div>`;
+}
 function drawSettings(el) {
   const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
   const rooms = A.rooms.filter(p => p.modelname !== "Group"), start = device.get("room", "");
@@ -1413,6 +1461,7 @@ function drawSettings(el) {
         </div>`; }).join("")}
       <div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>
       <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`)}
+    ${section("For every screen in the house", "Your records", discogsRow(c))}
     ${section("What Lyrion adds", "Lyrion's plugins", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
       ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`)}
     ${section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`)}
@@ -1862,6 +1911,7 @@ const ACT = {
     .then(() => { if (v === "home_assistant" || v === "stations") loadStations().catch(() => {}); if (v === "home_assistant") setTimeout(() => loadLibrary().catch(() => {}), 4000); }); },
   setDisc: v => { const f = {}; f[v] = !A.cfg.discover[v]; saveSettings({ discover: f }, `${DISC.find(x => x[0] === v)[1]} ${f[v] ? "shown" : "hidden"} on Discover`); },
   connEdit: (v, t) => { t.closest(".conn").classList.add("open"); t.closest(".settings").classList.add("editing"); const i = t.closest(".conn").querySelector("[data-conn]"); if (i) i.focus(); },
+  discogsSave: () => { const i = $("[data-discogs]"); toast("Reading the collection…"); saveSettings({ discogs_token: i ? i.value.trim() : "" }, "Saved"); },
   saveConn: () => {
     const conn = {}; document.querySelectorAll("[data-conn]").forEach(i => { conn[i.dataset.conn] = i.value.trim(); });
     saveSettings({ connections: conn }, "Saved; checks below");

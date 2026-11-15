@@ -97,7 +97,8 @@ give it a password.
 Artist names and album titles, sent to MusicBrainz, Wikidata and Wikipedia, LRCLIB (for lyrics), the Cover Art
 Archive, Apple and Deezer (for covers you choose), and to Qobuz and Discogs through Lyrion's own plugins. Nothing about who listens
 or when: the listening log stays in `./data`. Once a day it asks GitHub for the newest release number, which sends
-nothing but the question.
+nothing but the question. If you connect Discogs (Settings, Your records), it reads your collection there once a day
+with your token; nothing goes the other way.
 
 ### Telling us
 
