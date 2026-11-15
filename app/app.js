@@ -223,6 +223,8 @@ function useLibrary(lib) {
     // label and number, added, the shelves' album it matches or 0 for one only on the shelf]
     A.physical = lib.physical || []; A.vinylOf = new Map(); A.vinylOnly = [];
     A.physWord = A.physical.every(r => /^(\d+× )?Vinyl/.test(r[5] || "")) ? "vinyl" : "physical"; // what to call them: all records, or records and CDs
+    const tab = $('#rail a[data-tab="vinyl"]');
+    if (tab) { tab.hidden = !A.physical.length; tab.querySelector("span").textContent = A.physWord === "vinyl" ? "Vinyl" : "Records"; }
     A.physical.forEach(r => { if (r[8]) { if (!A.vinylOf.has(r[8])) A.vinylOf.set(r[8], []); A.vinylOf.get(r[8]).push(r); } else A.vinylOnly.push(r); });
     const g = {}; lib.albums.forEach(a => (a[8] || []).forEach(x => { g[x] = (g[x] || 0) + 1; }));
     A.genres = Object.keys(g).map(k => [k, g[k]]).sort((a, b) => b[1] - a[1]);
@@ -362,7 +364,7 @@ function route() {
   if (current) { current.scroll = main().scrollTop; current.el.hidden = true; }
   const parts = h.slice(2).split("/"), kind = parts[0] || "discover", arg = decodeURIComponent(parts.slice(1).join("/"));
   document.querySelectorAll("#rail a").forEach(a => a.classList.toggle("on", a.dataset.tab === kind || (kind === "discover" && a.dataset.tab === "discover") ||
-    (kind === "genre" && a.dataset.tab === "genres") || (kind === "playlist" && a.dataset.tab === "playlists")));
+    (kind === "genre" && a.dataset.tab === "genres") || (kind === "record" && a.dataset.tab === "vinyl") || (kind === "playlist" && a.dataset.tab === "playlists")));
   let v = A.views.get(h);
   const fresh = !v || (kind === "discover" && Date.now() - A.homeAt > 15 * 60000);
   if (!v) {
@@ -1006,9 +1008,24 @@ function vinylRow(r, i) { const row = ["vinyl:" + r[0], r[1], r[2], r[3], "", 2e
 const formatWord = r => (r[5] || "Vinyl").replace(/^\d+× /, "").split(" ")[0];
 function vinylCard(r, cls) {
   const img = r[4] ? `<img loading="lazy" decoding="async" src="${esc(pic(r[4], 300))}" alt="">` : `<div class="noart">${esc((r[1] || "?").slice(0, 1))}</div>`;
-  return `<a class="card q ${cls || ""}" href="#/record/${r[0]}"><div class="art">${img}<span class="badge">${esc(formatWord(r))}</span></div>
+  const fmt = (r[5] || "").replace(/^Vinyl ?/, "") || formatWord(r);
+  return `<a class="card q ${cls || ""}" href="${r[8] ? albumHref(r[8]) : "#/record/" + r[0]}"><div class="art">${img}<span class="badge">${esc(fmt)}</span>${r[8] ? `<button class="chip" data-act="playAlbum" data-v="${r[8]}" aria-label="Spin it">${icon("play")}</button>` : ""}</div>
     <div class="t">${esc(r[1])}</div><div class="s">${esc(r[2])}${r[3] ? " &middot; " + r[3] : ""}</div></a>`;
 }
+// the physical collection as a tab of its own: every record, newest first (or by artist or year); those also among the
+// digital albums open (and play) as those albums do, the rest open their own page
+const VINYL_KINDS = [["", "Everything"], ["both", "Also digital"], ["only", "Only on vinyl"], ["LP", "LPs"], ["EP", "EPs"], ['7"', '7"'], ['10"', '10"'], ['12"', '12"'], ["CD", "CDs"], ["Cassette", "Cassettes"]];
+const vinylIs = (r, k) => !k ? true : k === "both" ? !!r[8] : k === "only" ? !r[8] : k === "CD" || k === "Cassette" ? (r[5] || "").indexOf(k) >= 0 : (" " + (r[5] || "") + " ").indexOf(" " + k + " ") >= 0;
+VIEWS.vinyl = function (el) {
+  const sort = store.get("sq-vsort", "added"), kind = store.get("sq-vkind", "");
+  const kinds = VINYL_KINDS.map(k => k[0] === "only" && A.physWord !== "vinyl" ? ["only", "Only physical"] : k).filter(k => !k[0] || A.physical.some(r => vinylIs(r, k[0])));
+  const rows = A.physical.filter(r => vinylIs(r, kind)).map(vinylRow).sort(SORTS[sort][1]);
+  const both = A.physical.filter(r => r[8]).length;
+  el.innerHTML = `${pageBar(A.physWord === "vinyl" ? "Vinyl" : "Records", ["The collection", `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
+      `<div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="vinylSort" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`)}
+    <div class="toolbar"><div class="chips">${kinds.map(k => `<button class="${k[0] === kind ? "on" : ""}" data-act="vinylKind" data-v="${esc(k[0])}">${k[1]}</button>`).join("")}</div></div>
+    ${rows.length ? `<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of those in the collection.</p>`}`;
+};
 // the line on an album's page when the house has it on the shelf too
 function vinylChip(a) {
   const rs = A.vinylOf && A.vinylOf.get(a[0]);
@@ -1911,6 +1928,8 @@ const ACT = {
     .then(() => { if (v === "home_assistant" || v === "stations") loadStations().catch(() => {}); if (v === "home_assistant") setTimeout(() => loadLibrary().catch(() => {}), 4000); }); },
   setDisc: v => { const f = {}; f[v] = !A.cfg.discover[v]; saveSettings({ discover: f }, `${DISC.find(x => x[0] === v)[1]} ${f[v] ? "shown" : "hidden"} on Discover`); },
   connEdit: (v, t) => { t.closest(".conn").classList.add("open"); t.closest(".settings").classList.add("editing"); const i = t.closest(".conn").querySelector("[data-conn]"); if (i) i.focus(); },
+  vinylSort: v => { store.set("sq-vsort", v); VIEWS.vinyl(current.el); },
+  vinylKind: v => { store.set("sq-vkind", v); VIEWS.vinyl(current.el); },
   discogsSave: () => { const i = $("[data-discogs]"); toast("Reading the collection…"); saveSettings({ discogs_token: i ? i.value.trim() : "" }, "Saved"); },
   saveConn: () => {
     const conn = {}; document.querySelectorAll("[data-conn]").forEach(i => { conn[i.dataset.conn] = i.value.trim(); });
