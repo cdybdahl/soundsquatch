@@ -311,11 +311,6 @@ function albumCard(a, cls) {
   return `<a class="card ${cls || ""}" href="${albumHref(a[0])}"><div class="art">${art}<button class="chip" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}</button></div>
     <div class="t">${esc(a[1])}</div><div class="s">${esc(a[2])}${a[3] ? " &middot; " + a[3] : ""}</div></a>`;
 }
-// a kindred artist in the margin: their picture in a circle, the name, and whether they're new to the house
-function kinRow(x) {
-  const info = A.artistInfo.get(norm(x.name)), img = (info && info[3]) || x.image || "", here = onShelves(x.name);
-  return `<a class="kin ${here ? "own" : "new"}" href="${artistHref(x.name)}">${img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 120))}" alt="">` : `<i>${esc(x.name.replace(/^the /i, "").slice(0, 1))}</i>`}<span><b>${esc(x.name)}</b><em>${here ? "on your shelves" : "new to you"}</em></span></a>`;
-}
 // a big artist photograph cropped around the faces in it (found by the server, once per picture), the faces about 40%
 // down the frame so heads and a little air above them stay in; without a face, the stylesheet's crop from near the top
 const focusCache = new Map();
@@ -777,8 +772,6 @@ VIEWS.mag = function (el, name) {
           ${(mb.genres || []).length ? fact("Sounds like", tags.map(esc).join(", ") + ` <button class="g-edit ff-edit" data-act="artistTags" aria-label="Choose their tags">${icon("edit")}</button>`) : ""}
           ${fact("In the house", heard.plays ? `${heard.plays} plays, ${heard.finished} heard through${heard.last ? ", last " + new Date(heard.last * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}` : "Not played yet")}
         </dl></div>
-        ${like.length ? `<div class="mag-kin"><div class="ff-h">If you like them</div>${like.slice(0, 12).map(kinRow).join("")}
-          ${like.length > 12 ? `<details><summary>${like.length - 12} more</summary>${like.slice(12).map(kinRow).join("")}</details>` : ""}</div>` : ""}
         ${studio.length ? `<div class="mag-recs"><div class="ff-h">The records</div>${studio.map(k => `<div class="mr-k">${k[1]}</div>${byYear(kinds[k[0]]).map(a =>
           `<a class="mr" href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""><span class="y">${yearOf(a) || "&mdash;"}</span><b>${esc(a[1])}</b></a>`).join("")}`).join("")}</div>` : ""}</aside>
       </div></div>
@@ -788,6 +781,8 @@ VIEWS.mag = function (el, name) {
       ${liveCount ? `<div class="mag-page" data-tab="live" ${tab === "live" ? "" : "hidden"}><section class="mag-guide"><div class="mag-dept">On stage</div>
         ${kinds.live.length ? `<h2>On the shelves <span>${kinds.live.length}</span></h2>${guide(kinds.live)}` : ""}
         ${shows.length ? `<h2>From the Internet Archive <span>${shows.length}</span></h2><div class="grid">${shows.map(x => archCard(x)).join("")}</div>` : ""}</section></div>` : ""}
+      ${like.length ? `<section class="mag-like"><div class="mag-dept">If you like ${esc(realName)}</div><h2>Kindred spirits <span>${like.filter(x => !onShelves(x.name)).length} new to you</span></h2>
+        <div class="faces">${like.map(x => `<div>${onShelves(x.name) ? face(x.name, x.image, "on your shelves") : face(x.name, x.image, "new to you", "new")}</div>`).join("")}</div></section>` : ""}
     </article>`;
     if (p.partial && tries++ < 40) setTimeout(load, tries < 10 ? 1200 : 4000);
   }).catch(() => { el.innerHTML = `<div class="mag"><p class="dim">The presses jammed.</p></div>`; });
