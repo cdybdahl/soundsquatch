@@ -478,7 +478,7 @@ function drawDiscover(el) {
   if (A.cover) A.cover.stories = A.cover.stories.filter(st => st.kind !== "night" || on("features", "archive"));
   if (A.heroAlbum) drawAlbumHero($("#d-hero", el), A.heroAlbum);
   else if (A.heroPick) drawHero($("#d-hero", el), A.heroPick, "Picked at random from your shelves");
-  else if (on("discover", "cover") && A.cover && A.cover.stories.length) drawCover($("#d-hero", el));
+  else if (on("discover", "cover") && coverStories().length) drawCover($("#d-hero", el));
   else drawHero($("#d-hero", el), h.spotlight, "Artist of the day");
   const out = [];
   if (on("discover", "stations") && A.stations && A.stations.stations.length) out.push(section("The radio", "Stations", shelf(A.stations.stations.map(stationCard).concat([newStationCard()]))));
@@ -486,7 +486,7 @@ function drawDiscover(el) {
   if (on("discover", "rotation") && h.rotation.length) out.push(section("From the listening log", "On rotation", shelf(h.rotation.map(n => face(n, "", albumsBy(n).length + " on the shelves")))));
   if (on("discover", "back") && h.back.length) out.push(section("Pick up where you left off", "Back to it", shelf(h.back.map(id => albumCard(A.byId.get(id))))));
   if (on("discover", "new") && (h.new || []).length) out.push(section("Out lately", "New from your artists", shelf(h["new"].map(newCard))));
-  if (on("discover", "spotlight") && h.spotlight && (A.heroPick || A.heroAlbum || (on("discover", "cover") && A.cover && A.cover.stories.length))) out.push(`<div id="d-spot"></div>`); // the artist of the day, when something else leads
+  if (on("discover", "spotlight") && h.spotlight && (A.heroPick || A.heroAlbum || (on("discover", "cover") && coverStories().length))) out.push(`<div id="d-spot"></div>`); // the artist of the day, when something else leads
   if (on("discover", "fresh")) out.push(section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
   if (on("discover", "rediscover") && h.rediscover.length) out.push(section("Not heard lately", "Rediscover", `<div class="mosaic">${h.rediscover.slice(0, 12).map((id, i) => albumCard(A.byId.get(id), i === 0 ? "big" : "")).join("")}</div>`));
   if (on("discover", "connections") && h.connections.length) out.push(section("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`));
@@ -548,6 +548,14 @@ function coverSlide(st, i) {
     acts = `<button class="btn" data-act="shuffleArtist" data-v="${esc(st.artist)}">${icon("shuffle")} ${st.member ? esc(st.artist) : "Their records"}</button><a class="btn ghost" href="${href}">${st.member ? "The band" : "Their page"}</a>`;
     stamp = st.kind === "born" ? `<div class="stamp-born"><span>Born</span><b>${when}</b><span>${st.date.slice(0, 4)}</span></div>`
       : `<div class="stamp-memory"><span>In memory</span><b>${esc(st.name)}</b><i>${st.born ? st.born + " – " : ""}${st.died}</i></div>`;
+  } else if (st.kind === "home" || st.kind === "shelf") { // from the record shelf: the cover as Discogs has it
+    const r = st.rec;
+    kicker = st.kind === "home" ? "Came home" : "From the record shelf";
+    head = st.kind === "home" ? cap(inWords(st.years)) + (st.years === 1 ? " year" : " years") + " ago today" : shelfWhen(r);
+    title = st.title; by = esc(st.artist) + (st.year ? " &middot; " + st.year : ""); bg = pic(st.art, 1200); href = recordHref(r);
+    text = shelfText(st);
+    acts = (r[8] ? `<button class="btn" data-act="playAlbum" data-v="${r[8]}">${icon("play")} Spin it</button>` : "") + `<a class="btn ${r[8] ? "ghost" : ""}" href="${href}">The record</a>`;
+    stamp = `<div class="stamp-record"><span>From</span><b>the</b><span>shelf</span></div>`;
   } else {
     kicker = "Record of the day"; head = "Not heard lately"; title = st.title; by = esc(st.artist) + (st.year ? " &middot; " + st.year : ""); bg = cover(st.art, 1600); href = albumHref(st.album_id);
     acts = `<button class="btn" data-act="playAlbum" data-v="${st.album_id}">${icon("play")} Spin it</button><a class="btn ghost" href="${href}">The record</a>`;
@@ -557,8 +565,10 @@ function coverSlide(st, i) {
     ${stamp}<div class="sl-text"><div class="kicker">${kicker}</div><div class="sl-head">${esc(head)}</div><h1><a href="${href}">${esc(title)}</a></h1><div class="sl-by">${by}</div>
       ${text ? `<p class="stand">${esc(standfirst(text, 220))}</p>` : ""}<div class="acts">${acts}</div></div>${credit ? `<div class="sl-credit">Photo: ${esc(credit)}</div>` : ""}</div>`;
 }
+// the day's stories from the server, then the record shelf's
+const coverStories = () => ((A.cover && A.cover.stories) || []).concat(shelfStories());
 function drawCover(box) {
-  const stories = A.cover.stories;
+  const stories = coverStories();
   box.className = "cover";
   box.innerHTML = `<div class="slides">${stories.map(coverSlide).join("")}</div>${stories.length > 1 ? `<div class="dots">${stories.map((s, i) => `<button class="${i === 0 ? "on" : ""}" data-act="coverGo" data-v="${i}" aria-label="Story ${i + 1}"></button>`).join("")}</div>` : ""}`;
   box.querySelectorAll(".sl-bg img").forEach(img => tint(img, img.closest(".slide")));
@@ -819,18 +829,21 @@ VIEWS.front = function (el) {
         night: ["On this night", `${years} ago tonight`, x.artist, "Live at " + x.venue + (x.place ? ", " + x.place.split(",")[0] : ""), "#/show/" + encodeURIComponent(x.id || ""), x.bg ? pic(x.bg, big ? 1600 : 640) : pic(x.image, 640)],
         record: ["Record of the day", "Not heard lately", x.title, x.artist + (x.year ? ", " + x.year : ""), albumHref(x.album_id), cover(x.art, big ? 1600 : 600)],
         pick: ["Picked at random", "From your shelves", x.title, x.artist + (x.year ? ", " + x.year : ""), albumHref(x.album_id), cover(x.art, big ? 1600 : 600)],
+        home: ["Came home", `${years} ago today`, x.title, x.artist + (x.year ? ", " + x.year : ""), x.rec && recordHref(x.rec), x.art && pic(x.art, big ? 1200 : 600)],
+        shelf: ["From the record shelf", x.rec && shelfWhen(x.rec), x.title, x.artist + (x.year ? ", " + x.year : ""), x.rec && recordHref(x.rec), x.art && pic(x.art, big ? 1200 : 600)],
         pickArtist: ["Picked at random", "From your shelves", x.name, (albumsBy(x.name).length) + " records on the shelves", artistHref(x.name), ""],
         born: ["Born on this day", cap(inWords(x.years)) + " today", x.name, x.member ? "Of " + x.artist : "", artistHref(x.member ? x.artist : x.name), x.pic ? pic(x.pic, big ? 1600 : 640) : ""],
         died: ["Remembered", `${years} ago today`, x.name, (x.member ? "Of " + x.artist + " · " : "") + (x.born ? x.born + "–" + x.died : ""), artistHref(x.member ? x.artist : x.name), x.pic ? pic(x.pic, big ? 1600 : 640) : ""] }[x.kind];
       if (!k) return "";
-      const text = x.text ? standfirst(x.text, big ? 300 : 150) : x.kind === "night" && x.others ? `One of ${x.others + 1} shows in your Archive collections recorded on this date.` : "";
-      return `<article class="fp-story ${big ? "lead" : ""}"><a href="${k[4]}">${k[5] ? `<figure${x.album_id ? ` class="sq"` : ""}><img src="${esc(k[5])}" alt=""></figure>` : ""}</a>
+      const text = x.text ? standfirst(x.text, big ? 300 : 150) : x.kind === "night" && x.others ? `One of ${x.others + 1} shows in your Archive collections recorded on this date.`
+        : x.rec ? shelfText(x) : "";
+      return `<article class="fp-story ${big ? "lead" : ""}"><a href="${k[4]}">${k[5] ? `<figure${x.album_id || x.rec ? ` class="sq"` : ""}><img src="${esc(k[5])}" alt=""></figure>` : ""}</a>
         <div class="mag-dept">${k[0]}</div><div class="fp-when">${esc(k[1])}</div><h2><a href="${k[4]}">${esc(k[2])}</a></h2><div class="fp-by">${esc(k[3])}</div>${text ? `<p>${esc(text)}</p>` : ""}${x.album_id ? `<button class="fp-spin" data-act="playAlbum" data-v="${x.album_id}">${icon("play")} Spin it</button>` : ""}</article>`;
     };
     const picked = A.heroAlbum && A.byId.get(A.heroAlbum);
     const lead = picked ? { kind: "pick", album_id: picked[0], title: picked[1], artist: picked[2], art: picked[4], year: picked[3], text: "" }
       : A.heroPick ? { kind: "pickArtist", name: A.heroPick } : stories[0];
-    const rest = picked || A.heroPick ? stories : stories.slice(1);
+    const rest = shelfStories().concat(picked || A.heroPick ? stories : stories.slice(1)); // the record shelf's, when there is one, at the head of the column
     const cards = ids => ids.map(id => A.byId.get(id)).filter(Boolean);
     const mini = (a, sub) => `<a class="fp-mini" href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""><span><b>${esc(a[1])}</b><em>${esc(sub || a[2])}</em></span></a>`;
     const round = [].concat.apply([], (h.round || []).map(g => cards(g.albums).map(a => [g.age, a]))).slice(0, 6);
@@ -1006,11 +1019,28 @@ function archRow(x, i) { const r = ["arch:" + i, "Live at " + x.venue, x.artist,
 // a record only on the shelf, as an album row for the Albums page (its cover and page from Discogs)
 function vinylRow(r, i) { const row = ["vinyl:" + r[0], r[1], r[2], r[3], "", 2e6 + i, r[5], 0, [], "vinyl", [], Math.round(Date.parse(r[7] || "") / 1000) || 0]; row.vinyl = r; return row; }
 const formatWord = r => (r[5] || "Vinyl").replace(/^\d+× /, "").split(" ")[0];
+// the format, short: LP, 2×LP, 12" EP, Box set (less "Vinyl", "Album" and "Compilation")
+const shortFormat = r => (r[5] || "").replace(/\b(Vinyl|Album|Compilation)\b/g, "").replace(/× +/, "×").replace(/\s+/g, " ").trim() || formatWord(r);
+/* the record shelf's stories for the day: one that came home on this date in an earlier year (when one did), and one pulled
+   from the shelf, the same all day. As cover stories: { kind, rec, title, artist, year, art, album_id (when also digital) } */
+function shelfStories() {
+  const rs = A.physical || []; if (!rs.length) return [];
+  const now = new Date(), md = ("0" + (now.getMonth() + 1)).slice(-2) + "-" + ("0" + now.getDate()).slice(-2), rnd = seeded("shelf" + now.toDateString());
+  const as = (kind, r, more) => Object.assign({ kind: kind, rec: r, title: (r[1] || "").trim(), artist: r[2], year: recordYear(r), art: r[4], album_id: r[8] || 0 }, more);
+  const home = shuffled(rs.filter(r => (r[7] || "").slice(5, 10) === md && +r[7].slice(0, 4) < now.getFullYear()), rnd);
+  const out = home.length ? [as("home", home[0], { years: now.getFullYear() - +home[0][7].slice(0, 4), others: home.length - 1 })] : [];
+  const pick = shuffled(rs.filter(r => r[4] && r !== home[0]), rnd)[0];
+  return pick ? out.concat([as("shelf", pick)]) : out;
+}
+// what a record is, in a line: 2×LP, Clear Vinyl · Temporary Residence TRR355LP
+const pressLine = r => [shortFormat(r) + (pressDetails(r).t ? ", " + Array.from(new Set(pressDetails(r).t.split(/,\s*/))).join(", ") : ""), r[6]].filter(Boolean).join(" · "); // a box set's discs say their colour once
+const shelfWhen = r => (r[8] ? "On " : "Only on ") + shortFormat(r);
+const shelfText = x => (x.kind === "home" ? `${x.others ? `One of ${x.others + 1} records` : "It"} came into the collection on this date in ${x.rec[7].slice(0, 4)}. ` : "") + pressLine(x.rec) + ".";
+const recordHref = r => r[8] ? albumHref(r[8]) : "#/record/" + r[0];
 function vinylCard(r, cls) {
   const img = r[4] ? `<img loading="lazy" decoding="async" src="${esc(pic(r[4], 300))}" alt="">` : `<div class="noart">${esc((r[1] || "?").slice(0, 1))}</div>`;
-  // the badge, short: LP, 2×LP, 12" EP, Box set (the format less "Vinyl", "Album" and "Compilation")
-  const fmt = (r[5] || "").replace(/\b(Vinyl|Album|Compilation)\b/g, "").replace(/× +/, "×").replace(/\s+/g, " ").trim() || formatWord(r);
-  return `<a class="card q ${cls || ""}" href="${r[8] ? albumHref(r[8]) : "#/record/" + r[0]}"><div class="art">${img}<span class="badge">${esc(fmt)}</span>${r[8] ? `<button class="chip" data-act="playAlbum" data-v="${r[8]}" aria-label="Spin it">${icon("play")}</button>` : ""}</div>
+  const fmt = shortFormat(r);
+  return `<a class="card q ${cls || ""}" href="${recordHref(r)}"><div class="art">${img}<span class="badge">${esc(fmt)}</span>${r[8] ? `<button class="chip" data-act="playAlbum" data-v="${r[8]}" aria-label="Spin it">${icon("play")}</button>` : ""}</div>
     <div class="t">${esc(r[1])}</div><div class="s">${esc(r[2])}${r[3] ? " &middot; " + r[3] : ""}</div></a>`;
 }
 // the physical collection as a tab of its own: every record, newest first (or by artist or year); those also among the
@@ -1048,13 +1078,27 @@ VIEWS.vinyl = function (el) {
   const facets = VINYL_FACETS.map(f => [f[0], f[1], f[2]().filter(o => A.physical.some(r => f[3](r, o[0]))), f[3]]).filter(f => f[2].length > 1 || pick[f[0]]);
   const rows = A.physical.filter(r => facets.every(f => !pick[f[0]] || f[3](r, pick[f[0]]))).map(vinylRow).sort(SORTS[sort][1]);
   const both = A.physical.filter(r => r[8]).length, picked = Object.keys(pick).filter(k => pick[k]).length;
+  A.vinylShown = rows.map(x => x.vinyl);
   el.innerHTML = `${pageBar(A.physWord === "vinyl" ? "Vinyl" : "Records", ["The collection", picked ? `${rows.length.toLocaleString()} of ${A.physical.length.toLocaleString()} records` : `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
       `<div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="vinylSort" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`)}
     <div class="vfacets">${facets.map(f => `<div class="vfacet"><span class="vf-h">${f[1]}</span><div class="chips">${f[2].map(o =>
       `<button class="${pick[f[0]] === o[0] ? "on" : ""}" data-act="vinylPick" data-v="${esc(f[0] + "|" + o[0])}">${esc(o[1])}</button>`).join("")}</div></div>`).join("")}
       ${picked ? `<button class="vf-clear" data-act="vinylPick" data-v="">Clear the filters</button>` : ""}</div>
-    ${rows.length ? `<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}`;
+    ${rows.length ? `${vinylPull()}<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}`;
 };
+A.vinylShown = [];
+// a record pulled from the shelf at random (from those the filters show), larger than the rest; Another pulls again
+function vinylPull() {
+  const rs = A.vinylShown.length ? A.vinylShown : A.physical;
+  let r; do r = rs[Math.floor(Math.random() * rs.length)]; while (rs.length > 1 && r === A.vinylPulled);
+  A.vinylPulled = r;
+  const d = pressDetails(r), what = (d.s || d.g || []).slice(0, 3).join(", ");
+  return `<section class="vpull"><a class="vpull-art" href="${recordHref(r)}">${r[4] ? `<img src="${esc(pic(r[4], 800))}" alt="">` : `<div class="noart">${esc((r[1] || "?").slice(0, 1))}</div>`}</a>
+    <div class="vpull-text"><div class="kicker">${icon("disc")} Pulled from the shelf</div><h2><a href="${recordHref(r)}">${esc(r[1].trim())}</a></h2>
+      <a class="vpull-by" href="${artistHref(r[2])}">${esc(r[2])}</a><p>${[recordYear(r) || "", what].filter(Boolean).map(esc).join(" &middot; ")}</p><p class="dim">${esc(pressLine(r))}</p>
+      <div class="acts">${r[8] ? `<button class="btn" data-act="playAlbum" data-v="${r[8]}">${icon("play")} Spin it</button>` : has("qobuz") ? `<button class="btn" data-act="findWork" data-v="${esc(r[2] + " " + r[1])}">${icon("search")} Find it to play</button>` : ""}
+        <button class="btn ghost" data-act="vinylPull">${icon("dice")} Another</button></div></div></section>`;
+}
 // the line on an album's page when the house has it on the shelf too
 function vinylChip(a) {
   const rs = A.vinylOf && A.vinylOf.get(a[0]);
@@ -1959,6 +2003,7 @@ const ACT = {
   setDisc: v => { const f = {}; f[v] = !A.cfg.discover[v]; saveSettings({ discover: f }, `${DISC.find(x => x[0] === v)[1]} ${f[v] ? "shown" : "hidden"} on Discover`); },
   connEdit: (v, t) => { t.closest(".conn").classList.add("open"); t.closest(".settings").classList.add("editing"); const i = t.closest(".conn").querySelector("[data-conn]"); if (i) i.focus(); },
   vinylSort: v => { store.set("sq-vsort", v); VIEWS.vinyl(current.el); },
+  vinylPull: () => { const box = $(".vpull", current.el); if (box) box.outerHTML = vinylPull(); },
   vinylPick: v => { // a facet's choice ("format|lp"), tapped again to let it go; empty clears them all
     const pick = v ? store.get("sq-vf", {}) : {}, i = v.indexOf("|"), k = v.slice(0, i), o = v.slice(i + 1);
     if (v) pick[k] = pick[k] === o ? "" : o;

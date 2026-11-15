@@ -1267,3 +1267,15 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .vfacet .chips { flex-wrap: wrap; margin: 0; padding: 0; }
 .vf-clear { justify-self: start; margin-left: 108px; background: none; border: 0; padding: 4px 0; font: 600 13px var(--sans); color: var(--accent); cursor: pointer; }
 @media (max-width: 760px) { .vfacet { grid-template-columns: minmax(0, 1fr); gap: 6px; } .vfacet .chips { flex-wrap: nowrap; } .vf-clear { margin-left: 0; } }
+/* the Vinyl page's record pulled at random: the cover large, what it is beside it */
+.vpull { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 32px; align-items: center; margin: 4px var(--gut) 28px; padding-bottom: 28px; border-bottom: 1px solid var(--line, rgba(236, 228, 214, .15)); }
+.vpull-art { display: block; aspect-ratio: 1; background: var(--bg3); border-radius: 4px; overflow: hidden; box-shadow: 0 24px 50px rgba(0, 0, 0, .55); }
+.vpull-art img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.vpull-art .noart { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font: 90px var(--display); color: var(--faint); }
+.vpull-text .kicker { display: flex; align-items: center; gap: 6px; }
+.vpull-text h2 { font: 700 clamp(30px, 4vw, 48px)/1 var(--display); margin: 10px 0 6px; }
+.vpull-text h2 a, .vpull-by { color: inherit; text-decoration: none; }
+.vpull-by { font: 600 18px var(--sans); }
+.vpull-text p { margin: 10px 0 0; font: 16px/1.45 var(--serif); }
+.vpull-text .acts { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+@media (max-width: 640px) { .vpull { grid-template-columns: 120px minmax(0, 1fr); gap: 16px; align-items: start; } .vpull-text h2 { font-size: 26px; margin-top: 6px; } .vpull-by { font-size: 15px; } .vpull-text p { font-size: 14px; } }
