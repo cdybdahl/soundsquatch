@@ -2047,6 +2047,9 @@ const ACT = {
     if (!$("#np").hidden) closeNp();
     const s = A.views.get("#/search"); if (s) { s.el.remove(); A.views.delete("#/search"); } // drawn afresh: the order follows where it was opened
     if (!A.playlists) playlistsList().catch(() => {});
+    // iPad Safari brings up the cursor and keyboard only for a field focused during the tap itself, and the search
+    // field is drawn a moment later: a stand-in takes the focus now, and the field takes it over from there
+    if (!oskOn()) { const stand = document.createElement("input"); stand.setAttribute("aria-hidden", "true"); stand.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;border:0;padding:0"; document.body.appendChild(stand); stand.focus(); setTimeout(() => stand.remove(), 1500); }
     location.hash = "#/search";
   },
   searchClear: () => {
