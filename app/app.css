@@ -1261,3 +1261,9 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .vinyl-empty h2 { font: 700 30px/1.1 var(--display); margin: 14px 0 10px; }
 .vinyl-empty p { color: var(--dim); font: 17px/1.5 var(--serif); }
 .vinyl-empty .seed-add { margin-top: 20px; }
+.vfacets { padding: 6px var(--gut) 18px; display: grid; gap: 8px; }
+.vfacet { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px; }
+.vf-h { font: 700 11px var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--dim); }
+.vfacet .chips { flex-wrap: wrap; margin: 0; padding: 0; }
+.vf-clear { justify-self: start; margin-left: 108px; background: none; border: 0; padding: 4px 0; font: 600 13px var(--sans); color: var(--accent); cursor: pointer; }
+@media (max-width: 760px) { .vfacet { grid-template-columns: minmax(0, 1fr); gap: 6px; } .vfacet .chips { flex-wrap: nowrap; } .vf-clear { margin-left: 0; } }

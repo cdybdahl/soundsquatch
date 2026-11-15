@@ -317,7 +317,7 @@ def discogs_get(path, token):
 
 def discogs_sync():
     """The collection, every folder, a page of 100 at a time (Discogs allows 60 asks a minute): kept as the house's
-    physical records, [release id, title, artist, year, cover, format, label and number, when added]."""
+    physical records, [release id, title, artist, year, cover, format, label and number, when added, {details}]."""
     token = discogs_token()
     if not token:
         kv_set("discogs", {})
@@ -338,8 +338,11 @@ def discogs_sync():
                     words = f"{fmt['qty']}× " + words
                 label = (b.get("labels") or [{}])[0]
                 artist = ", ".join(re.sub(r" \(\d+\)$", "", a.get("name") or "") for a in b.get("artists") or [] if a.get("name")) or "Various"
+                descs = [d for f in b.get("formats") or [] for d in f.get("descriptions") or []]
                 recs.append([b.get("id"), b.get("title") or "", artist, int(b.get("year") or 0), b.get("cover_image") or b.get("thumb") or "",
-                             words.strip(), " ".join(x for x in (label.get("name"), label.get("catno")) if x and x != "none"), (r.get("date_added") or "")[:10]])
+                             words.strip(), " ".join(x for x in (label.get("name"), label.get("catno")) if x and x != "none"), (r.get("date_added") or "")[:10],
+                             {"g": b.get("genres") or [], "s": b.get("styles") or [], "d": descs, "t": ", ".join(f.get("text") or "" for f in b.get("formats") or [] if f.get("text")),
+                              "box": any(f.get("name") == "Box Set" for f in b.get("formats") or []), "r": r.get("rating") or 0}])
             if page >= (got.get("pagination") or {}).get("pages", 1):
                 break
             page += 1
@@ -360,12 +363,13 @@ def discogs_loop():
 
 
 def physical_records(albums):
-    """The collection beside the shelves: each record with the shelves' album it matches (0 for one on vinyl only)."""
+    """The collection beside the shelves: each record with the shelves' album it matches (0 for one on vinyl only) and,
+    last, what Discogs says of it (genres, styles, the pressing's descriptions and notes, a box set, the house's rating)."""
     d = kv_get("discogs", {}) or {}
     by = {}
     for a in albums:
         by.setdefault((key(a[2]), lms_qobuz.plain(a[1])), a[0])
-    return [r + [by.get((key(r[2]), lms_qobuz.plain(r[1])), 0)] for r in d.get("records", [])]
+    return [r[:8] + [by.get((key(r[2]), lms_qobuz.plain(r[1])), 0), r[8] if len(r) > 8 else {}] for r in d.get("records", [])]
 
 
 def settings_for_app():

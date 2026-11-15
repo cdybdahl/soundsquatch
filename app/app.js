@@ -222,7 +222,7 @@ function useLibrary(lib) {
     // the house's records on the shelf (its Discogs collection): [release id, title, artist, year, cover, format,
     // label and number, added, the shelves' album it matches or 0 for one only on the shelf]
     A.physical = lib.physical || []; A.vinylOf = new Map(); A.vinylOnly = [];
-    A.physWord = A.physical.every(r => /^(\d+× )?Vinyl/.test(r[5] || "")) ? "vinyl" : "physical"; // what to call them: all records, or records and CDs
+    A.physWord = A.physical.some(r => /\b(CD|Cassette|DVD|Blu-ray)\b/.test(r[5] || "")) ? "physical" : "vinyl"; // what to call them: all records, or records and CDs
     const tab = $('#rail a[data-tab="vinyl"]');
     if (tab) { tab.querySelector("span").textContent = A.physWord === "vinyl" ? "Vinyl" : "Records"; }
     A.physical.forEach(r => { if (r[8]) { if (!A.vinylOf.has(r[8])) A.vinylOf.set(r[8], []); A.vinylOf.get(r[8]).push(r); } else A.vinylOnly.push(r); });
@@ -1008,14 +1008,33 @@ function vinylRow(r, i) { const row = ["vinyl:" + r[0], r[1], r[2], r[3], "", 2e
 const formatWord = r => (r[5] || "Vinyl").replace(/^\d+× /, "").split(" ")[0];
 function vinylCard(r, cls) {
   const img = r[4] ? `<img loading="lazy" decoding="async" src="${esc(pic(r[4], 300))}" alt="">` : `<div class="noart">${esc((r[1] || "?").slice(0, 1))}</div>`;
-  const fmt = (r[5] || "").replace(/^Vinyl ?/, "") || formatWord(r);
+  // the badge, short: LP, 2×LP, 12" EP, Box set (the format less "Vinyl", "Album" and "Compilation")
+  const fmt = (r[5] || "").replace(/\b(Vinyl|Album|Compilation)\b/g, "").replace(/× +/, "×").replace(/\s+/g, " ").trim() || formatWord(r);
   return `<a class="card q ${cls || ""}" href="${r[8] ? albumHref(r[8]) : "#/record/" + r[0]}"><div class="art">${img}<span class="badge">${esc(fmt)}</span>${r[8] ? `<button class="chip" data-act="playAlbum" data-v="${r[8]}" aria-label="Spin it">${icon("play")}</button>` : ""}</div>
     <div class="t">${esc(r[1])}</div><div class="s">${esc(r[2])}${r[3] ? " &middot; " + r[3] : ""}</div></a>`;
 }
 // the physical collection as a tab of its own: every record, newest first (or by artist or year); those also among the
 // digital albums open (and play) as those albums do, the rest open their own page
-const VINYL_KINDS = [["", "Everything"], ["both", "Also digital"], ["only", "Only on vinyl"], ["LP", "LPs"], ["EP", "EPs"], ['7"', '7"'], ['10"', '10"'], ['12"', '12"'], ["CD", "CDs"], ["Cassette", "Cassettes"]];
-const vinylIs = (r, k) => !k ? true : k === "both" ? !!r[8] : k === "only" ? !r[8] : k === "CD" || k === "Cassette" ? (r[5] || "").indexOf(k) >= 0 : (" " + (r[5] || "") + " ").indexOf(" " + k + " ") >= 0;
+// the filters, one choice in each row, the rows together: which shelves, what format, what pressing, Discogs's genre, the decade
+const COLOURED = /\b(clear|translucent|transparent|colou?red|splatter|marbled?|swirl|smoke|blue|red|white|green|yellow|pink|purple|orange|gold|silver|bone|cream|grey|gray|black ice)\b/i;
+const pressDetails = r => r[9] || {};
+const VINYL_FACETS = [
+  ["have", "Shelves", () => [["both", "Also digital"], ["only", A.physWord === "vinyl" ? "Only on vinyl" : "Only physical"]], (r, v) => v === "both" ? !!r[8] : !r[8]],
+  ["format", "Format", () => [["lp", "LP"], ["dlp", "Double LP and more"], ["ep", '12" and EPs'], ["small", '7" and 10"'], ["box", "Box sets"], ["cd", "CDs"], ["tape", "Cassettes"]], (r, v) => {
+    const f = r[5] || "", d = pressDetails(r);
+    return v === "lp" ? /^Vinyl LP/.test(f) : v === "dlp" ? /^\d+× Vinyl/.test(f) : v === "ep" ? /12"|\bEP\b/.test(f) && !/LP/.test(f) : v === "small" ? /7"|10"/.test(f) : v === "box" ? !!d.box || /Box Set/.test(f) : v === "cd" ? /CD/.test(f) : /Cassette/.test(f);
+  }],
+  ["pressing", "Pressing", () => [["original", "Original"], ["reissue", "Reissue"], ["limited", "Limited"], ["rsd", "Record Store Day"], ["colour", "Coloured"], ["heavy", "180g"]], (r, v) => {
+    const d = pressDetails(r), ds = (d.d || []).join("|"), t = d.t || "";
+    return v === "original" ? !/Reissue|Repress|Remastered/.test(ds) : v === "reissue" ? /Reissue|Repress|Remastered/.test(ds) : v === "limited" ? /Limited|Numbered|Special Edition|Deluxe/.test(ds)
+      : v === "rsd" ? /Record Store Day/.test(ds) : v === "colour" ? COLOURED.test(t) : /180/.test(t);
+  }],
+  ["genre", "Genre", () => { const c = {}; A.physical.forEach(r => (pressDetails(r).g || []).forEach(g => { c[g] = (c[g] || 0) + 1; })); return Object.keys(c).sort((x, y) => c[y] - c[x]).map(g => [g, g]); },
+    (r, v) => (pressDetails(r).g || []).indexOf(v) >= 0],
+  ["decade", "Decade", () => Array.from(new Set(A.physical.map(recordYear).filter(y => y > 1900).map(y => y - y % 10))).sort().map(d => [String(d), d + "s"]),
+    (r, v) => { const y = recordYear(r); return y > 1900 && String(y - y % 10) === v; }]];
+// the year the music came out: the digital album's, when it's among them (a reissue's pressing year says less), else the pressing's
+const recordYear = r => (r[8] && A.byId.get(r[8]) && A.byId.get(r[8])[3]) || r[3];
 VIEWS.vinyl = function (el) {
   if (!A.physical.length) { // not connected yet (or an empty collection): how to bring it in, here
     el.innerHTML = `${pageBar("Vinyl", ["The collection", "not connected yet"])}<div class="vinyl-empty">${icon("disc")}
@@ -1025,14 +1044,16 @@ VIEWS.vinyl = function (el) {
       ${(A.cfg && A.cfg.discogs && A.cfg.discogs.error) ? `<p class="check bad">${esc(A.cfg.discogs.error)}</p>` : ""}</div>`;
     return;
   }
-  const sort = store.get("sq-vsort", "added"), kind = store.get("sq-vkind", "");
-  const kinds = VINYL_KINDS.map(k => k[0] === "only" && A.physWord !== "vinyl" ? ["only", "Only physical"] : k).filter(k => !k[0] || A.physical.some(r => vinylIs(r, k[0])));
-  const rows = A.physical.filter(r => vinylIs(r, kind)).map(vinylRow).sort(SORTS[sort][1]);
-  const both = A.physical.filter(r => r[8]).length;
-  el.innerHTML = `${pageBar(A.physWord === "vinyl" ? "Vinyl" : "Records", ["The collection", `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
+  const sort = store.get("sq-vsort", "added"), pick = store.get("sq-vf", {});
+  const facets = VINYL_FACETS.map(f => [f[0], f[1], f[2]().filter(o => A.physical.some(r => f[3](r, o[0]))), f[3]]).filter(f => f[2].length > 1 || pick[f[0]]);
+  const rows = A.physical.filter(r => facets.every(f => !pick[f[0]] || f[3](r, pick[f[0]]))).map(vinylRow).sort(SORTS[sort][1]);
+  const both = A.physical.filter(r => r[8]).length, picked = Object.keys(pick).filter(k => pick[k]).length;
+  el.innerHTML = `${pageBar(A.physWord === "vinyl" ? "Vinyl" : "Records", ["The collection", picked ? `${rows.length.toLocaleString()} of ${A.physical.length.toLocaleString()} records` : `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
       `<div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="vinylSort" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`)}
-    <div class="toolbar"><div class="chips">${kinds.map(k => `<button class="${k[0] === kind ? "on" : ""}" data-act="vinylKind" data-v="${esc(k[0])}">${k[1]}</button>`).join("")}</div></div>
-    ${rows.length ? `<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of those in the collection.</p>`}`;
+    <div class="vfacets">${facets.map(f => `<div class="vfacet"><span class="vf-h">${f[1]}</span><div class="chips">${f[2].map(o =>
+      `<button class="${pick[f[0]] === o[0] ? "on" : ""}" data-act="vinylPick" data-v="${esc(f[0] + "|" + o[0])}">${esc(o[1])}</button>`).join("")}</div></div>`).join("")}
+      ${picked ? `<button class="vf-clear" data-act="vinylPick" data-v="">Clear the filters</button>` : ""}</div>
+    ${rows.length ? `<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}`;
 };
 // the line on an album's page when the house has it on the shelf too
 function vinylChip(a) {
@@ -1170,7 +1191,8 @@ function redrawDiscover() { const v = A.views.get("#/"); if (v && v === current)
 const newStationCard = () => `<div class="card q station new-station" data-act="stationNew"><div class="art"><div class="st-plus">+</div><div class="st-name">New station</div></div><div class="s">Seeded from artists you choose</div></div>`;
 
 /* ───────────────────────── albums, artists, genres ───────────────────────── */
-const SORTS = { added: ["Recently added", (a, b) => (b[11] || 0) - (a[11] || 0) || a[5] - b[5]], // by when each joined the shelves, albums and Archive shows alike artist: ["Artist", (a, b) => byName(a[2], b[2]) || (a[3] - b[3])], title: ["Title", (a, b) => byName(a[1], b[1])],
+// by when each joined the shelves (albums and Archive shows alike), by artist, title or year
+const SORTS = { added: ["Recently added", (a, b) => (b[11] || 0) - (a[11] || 0) || a[5] - b[5]], artist: ["Artist", (a, b) => byName(a[2], b[2]) || (a[3] - b[3])], title: ["Title", (a, b) => byName(a[1], b[1])],
   year: ["Year", (a, b) => (b[3] - a[3]) || byName(a[2], b[2])] };
 function byName(a, b) { a = norm(a).replace(/^the /, ""); b = norm(b).replace(/^the /, ""); return a < b ? -1 : a > b ? 1 : 0; }
 VIEWS.albums = function (el) {
@@ -1937,7 +1959,11 @@ const ACT = {
   setDisc: v => { const f = {}; f[v] = !A.cfg.discover[v]; saveSettings({ discover: f }, `${DISC.find(x => x[0] === v)[1]} ${f[v] ? "shown" : "hidden"} on Discover`); },
   connEdit: (v, t) => { t.closest(".conn").classList.add("open"); t.closest(".settings").classList.add("editing"); const i = t.closest(".conn").querySelector("[data-conn]"); if (i) i.focus(); },
   vinylSort: v => { store.set("sq-vsort", v); VIEWS.vinyl(current.el); },
-  vinylKind: v => { store.set("sq-vkind", v); VIEWS.vinyl(current.el); },
+  vinylPick: v => { // a facet's choice ("format|lp"), tapped again to let it go; empty clears them all
+    const pick = v ? store.get("sq-vf", {}) : {}, i = v.indexOf("|"), k = v.slice(0, i), o = v.slice(i + 1);
+    if (v) pick[k] = pick[k] === o ? "" : o;
+    store.set("sq-vf", pick); VIEWS.vinyl(current.el);
+  },
   discogsSave: () => {
     const i = $("[data-discogs]"); if (i && !i.value.trim() && !(A.cfg && A.cfg.discogs && A.cfg.discogs.set)) return toast("Paste the token first");
     toast("Reading the collection…");
