@@ -818,7 +818,7 @@ VIEWS.front = function (el) {
         died: ["Remembered", `${years} ago today`, x.name, (x.member ? "Of " + x.artist + " · " : "") + (x.born ? x.born + "–" + x.died : ""), artistHref(x.member ? x.artist : x.name), x.pic ? pic(x.pic, big ? 1600 : 640) : ""] }[x.kind];
       if (!k) return "";
       const text = x.text ? standfirst(x.text, big ? 300 : 150) : x.kind === "night" && x.others ? `One of ${x.others + 1} shows in your Archive collections recorded on this date.` : "";
-      return `<article class="fp-story ${big ? "lead" : ""}"><a href="${k[4]}">${k[5] ? `<figure><img src="${esc(k[5])}" alt=""></figure>` : ""}</a>
+      return `<article class="fp-story ${big ? "lead" : ""}"><a href="${k[4]}">${k[5] ? `<figure${x.album_id ? ` class="sq"` : ""}><img src="${esc(k[5])}" alt=""></figure>` : ""}</a>
         <div class="mag-dept">${k[0]}</div><div class="fp-when">${esc(k[1])}</div><h2><a href="${k[4]}">${esc(k[2])}</a></h2><div class="fp-by">${esc(k[3])}</div>${text ? `<p>${esc(text)}</p>` : ""}${x.album_id ? `<button class="fp-spin" data-act="playAlbum" data-v="${x.album_id}">${icon("play")} Spin it</button>` : ""}</article>`;
     };
     const picked = A.heroAlbum && A.byId.get(A.heroAlbum);

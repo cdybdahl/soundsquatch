@@ -1235,3 +1235,9 @@ html.mag .mast-line span { letter-spacing: .24em; }
    off heads (a wide picture in a circle or a strip loses only its sides, where this changes nothing) */
 .face .ph img, .kin img, .np-artist img, .art-pick img { object-position: 50% 18%; }
 .mag-fig img, .fp-artist-body img { object-position: 50% 10%; }
+
+/* an album cover is always a square, whole: never cut to a frame's shape (a cover that isn't square itself sits inside
+   its square, on the frame's ground) */
+.card .art img, .album-art img, .np-art img, .bar-art img, .mini img, .song img, .nx img, .hrow img, .qs > img, .art-pick img,
+.hero .hero-cover, .ver-art, .mag-guide img, .mag-guide button.mag-away img, .fp-mini img, .mr img, .gm img, .card.station .gm img, .gtile img { object-fit: contain; }
+.fp-story figure.sq img, .fp-also .fp-story figure.sq img { aspect-ratio: 1; object-fit: contain; background: #1b1815; }
