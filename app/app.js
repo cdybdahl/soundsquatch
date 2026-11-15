@@ -224,7 +224,7 @@ function useLibrary(lib) {
     A.physical = lib.physical || []; A.vinylOf = new Map(); A.vinylOnly = [];
     A.physWord = A.physical.every(r => /^(\d+× )?Vinyl/.test(r[5] || "")) ? "vinyl" : "physical"; // what to call them: all records, or records and CDs
     const tab = $('#rail a[data-tab="vinyl"]');
-    if (tab) { tab.hidden = !A.physical.length; tab.querySelector("span").textContent = A.physWord === "vinyl" ? "Vinyl" : "Records"; }
+    if (tab) { tab.querySelector("span").textContent = A.physWord === "vinyl" ? "Vinyl" : "Records"; }
     A.physical.forEach(r => { if (r[8]) { if (!A.vinylOf.has(r[8])) A.vinylOf.set(r[8], []); A.vinylOf.get(r[8]).push(r); } else A.vinylOnly.push(r); });
     const g = {}; lib.albums.forEach(a => (a[8] || []).forEach(x => { g[x] = (g[x] || 0) + 1; }));
     A.genres = Object.keys(g).map(k => [k, g[k]]).sort((a, b) => b[1] - a[1]);
@@ -1017,6 +1017,14 @@ function vinylCard(r, cls) {
 const VINYL_KINDS = [["", "Everything"], ["both", "Also digital"], ["only", "Only on vinyl"], ["LP", "LPs"], ["EP", "EPs"], ['7"', '7"'], ['10"', '10"'], ['12"', '12"'], ["CD", "CDs"], ["Cassette", "Cassettes"]];
 const vinylIs = (r, k) => !k ? true : k === "both" ? !!r[8] : k === "only" ? !r[8] : k === "CD" || k === "Cassette" ? (r[5] || "").indexOf(k) >= 0 : (" " + (r[5] || "") + " ").indexOf(" " + k + " ") >= 0;
 VIEWS.vinyl = function (el) {
+  if (!A.physical.length) { // not connected yet (or an empty collection): how to bring it in, here
+    el.innerHTML = `${pageBar("Vinyl", ["The collection", "not connected yet"])}<div class="vinyl-empty">${icon("disc")}
+      <h2>Your records, beside the digital ones</h2>
+      <p>Soundsquatch reads your collection from Discogs: the albums you have on vinyl say so, and the records you have only on vinyl are kept here with the rest. On discogs.com, go to Settings, Developers, and press Generate new token; paste it here.</p>
+      <div class="seed-add"><input data-discogs type="password" placeholder="your Discogs token" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button class="btn" data-act="discogsSave">Read the collection</button></div>
+      ${(A.cfg && A.cfg.discogs && A.cfg.discogs.error) ? `<p class="check bad">${esc(A.cfg.discogs.error)}</p>` : ""}</div>`;
+    return;
+  }
   const sort = store.get("sq-vsort", "added"), kind = store.get("sq-vkind", "");
   const kinds = VINYL_KINDS.map(k => k[0] === "only" && A.physWord !== "vinyl" ? ["only", "Only physical"] : k).filter(k => !k[0] || A.physical.some(r => vinylIs(r, k[0])));
   const rows = A.physical.filter(r => vinylIs(r, kind)).map(vinylRow).sort(SORTS[sort][1]);
@@ -1930,7 +1938,11 @@ const ACT = {
   connEdit: (v, t) => { t.closest(".conn").classList.add("open"); t.closest(".settings").classList.add("editing"); const i = t.closest(".conn").querySelector("[data-conn]"); if (i) i.focus(); },
   vinylSort: v => { store.set("sq-vsort", v); VIEWS.vinyl(current.el); },
   vinylKind: v => { store.set("sq-vkind", v); VIEWS.vinyl(current.el); },
-  discogsSave: () => { const i = $("[data-discogs]"); toast("Reading the collection…"); saveSettings({ discogs_token: i ? i.value.trim() : "" }, "Saved"); },
+  discogsSave: () => {
+    const i = $("[data-discogs]"); if (i && !i.value.trim() && !(A.cfg && A.cfg.discogs && A.cfg.discogs.set)) return toast("Paste the token first");
+    toast("Reading the collection…");
+    saveSettings({ discogs_token: i ? i.value.trim() : "" }, "Saved").then(() => setTimeout(() => loadLibrary().then(() => { if (current && current.kind === "vinyl") VIEWS.vinyl(current.el); }), 1500));
+  },
   saveConn: () => {
     const conn = {}; document.querySelectorAll("[data-conn]").forEach(i => { conn[i.dataset.conn] = i.value.trim(); });
     saveSettings({ connections: conn }, "Saved; checks below");
