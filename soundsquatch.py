@@ -3704,7 +3704,7 @@ def find_record(song):
     return by[0] if by else None
 
 
-def tt_clip(x8, wav, run_seconds, run):
+def tt_clip(x8, wav, run_seconds, run, at=0):
     """A clip to name (from the Ear). Not while the lid is shut: then it is the tuner, a tape or the streamer."""
     if tt_lid() is False or TT_INDEX is None:
         return False
@@ -3726,6 +3726,8 @@ def tt_clip(x8, wav, run_seconds, run):
             return False
         song = dict(got, how="shazam")
     song["at"], song["run"] = time.time(), run
+    if at:  # where the song began, by the stream's clock: the clip's start, less how far into the song it was
+        song["start"] = at - len(x8) / turntable.RATE - float(song.get("offset") or 0)
     TT["runs"][run] = song
     for k in [k for k in TT["runs"] if k < run - 20]:
         TT["runs"].pop(k, None)
@@ -3746,7 +3748,10 @@ def tt_heard(song):
                                  "artist": rec[2] if rec else song["artist"], "title": rec[1].strip() if rec else song.get("album") or ""}
             threading.Thread(target=tt_suggest, args=(spin,), daemon=True).start()
         pos, side = record_side(rec[0], song["title"]) if rec else ("", "")
-        song.update(pos=pos, side=side)
+        song.update(pos=pos, side=side, rec=[rec[0], rec[1].strip(), rec[2]] if rec else None)
+        if song.get("start"):
+            TT.setdefault("marks", []).append(dict(song))
+            TT["marks"] = TT["marks"][-200:]
         last = spin["songs"][-1] if spin["songs"] else None
         if not last or lms_qobuz.plain(last["title"]) != lms_qobuz.plain(song["title"]):
             spin["songs"].append({k: song.get(k) for k in ("title", "artist", "pos", "side", "how", "at", "run")})
@@ -3879,45 +3884,74 @@ def suggestion(why, where, year, x):
     return {"why": why, "where": "Not in the house yet", "title": x["title"], "artist": "", "year": year, "href": "", "image": ""}
 
 
-def tt_song(path, seconds, run):
-    """A song the Ear wrote: named and tagged by what was heard during it, and put in its record's folder (CAPTURE_DIR,
-    Artist - Record). A scrap under twenty seconds (a needle set down, a cough) is not a song and is not kept."""
-    if seconds < 20 or tt_lid() is False:
-        os.remove(path) if os.path.exists(path) else None
-        return
-    song = TT["runs"].get(run)
-    spin = TT["spin"]
-    if not song and spin and spin["id"]:  # never named: the record's next song, by its tracklist
-        t = tt_next_in_order(spin)
-        if t:
-            song = TT["runs"][run] = {"title": t["title"], "artist": t["artists"] or spin["artist"], "album": spin["title"], "how": "order", "at": time.time(), "run": run}
-            tt_heard(song)
-    artist = (spin and spin["artist"]) or (song and song["artist"]) or "Unknown"
-    album = (spin and spin["title"]) or (song and song.get("album")) or time.strftime("Heard %Y-%m-%d")
-    title = (song and song["title"]) or time.strftime("Unnamed %H.%M")
-    pos = (song and song.get("pos")) or ""
-    safe = lambda t: re.sub(r'[\\/:*?"<>|]+', "-", t).strip(" .")[:120] or "-"
-    folder = os.path.join(capture_dir(), safe(f"{artist} - {album}"))
-    os.makedirs(folder, exist_ok=True)
-    dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title}") + ".flac")
-    n = 2
-    while os.path.exists(dest):  # the side played again: the next take beside the first
-        dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title} (take {n})") + ".flac")
-        n += 1
-    try:
-        from mutagen.flac import FLAC
-        f = FLAC(path)
-        f.update({"title": title, "artist": (song and song["artist"]) or artist, "albumartist": artist, "album": album, "comment": "From the turntable, " + time.strftime("%Y-%m-%d")})
-        if pos:
-            f["tracknumber"] = pos
-        if spin and spin["record"]:
-            f["discogs_release_id"] = str(spin["record"][0])
-        f.save()
-    except Exception as e:
-        note_error(f"turntable tags: {e}")
+def tt_side(path, s0, s1, gaps):
+    """A side the Ear wrote whole (by the stream's clock, s0 to s1, with its quiet moments), cut into its songs: each
+    song from where the naming says it began (the median of its matches, moved to the end of a quiet moment within a
+    few seconds when there is one) to where the next began. Each is tagged and filed in its record's folder (CAPTURE_DIR,
+    Artist - Record, "A2 Title.flac"). Sound before the first named song (the needle set down, a song nothing could
+    name) is kept only when it's long enough to be one, as "Unnamed". The whole side, once cut, is not kept."""
     import shutil
-    shutil.move(path, dest)  # whole, and only then where Lyrion looks
-    TT["captured"] = True
+    import subprocess
+    try:
+        if s1 - s0 < 20:
+            return
+        marks = [m for m in TT.get("marks", []) if s0 - 900 < m["start"] < s1 - 5]
+        by = {}
+        for m in marks:
+            by.setdefault(lms_qobuz.plain(m["title"]), []).append(m)
+        songs = []
+        for ms in by.values():
+            starts = sorted(m["start"] for m in ms)
+            start = starts[len(starts) // 2]
+            near = [g[1] for g in gaps if abs(g[1] - start) < 4]  # a quiet moment just before: the song starts as it ends
+            start = min(near, key=lambda g: abs(g - start)) - 0.3 if near else start - 0.5
+            songs.append((max(s0, start), ms[-1]))
+        songs.sort(key=lambda x: x[0])
+        if songs and songs[0][0] - s0 > 30:  # a stretch nothing named, long enough to be a song
+            songs.insert(0, (s0, None))
+        safe = lambda t: re.sub(r'[\\/:*?"<>|]+', "-", t).strip(" .")[:120] or "-"
+        for n, (start, m) in enumerate(songs):
+            end = songs[n + 1][0] if n + 1 < len(songs) else s1
+            if end - start < 20:
+                continue
+            rec = (m or {}).get("rec") or (songs[-1][1] or {}).get("rec")
+            artist = rec[2] if rec else (m or {}).get("artist") or "Unknown"
+            album = rec[1] if rec else (m or {}).get("album") or time.strftime("Heard %Y-%m-%d")
+            title = m["title"] if m else time.strftime("Unnamed %H.%M")
+            pos = (m or {}).get("pos") or ""
+            folder = os.path.join(capture_dir(), safe(f"{artist} - {album}"))
+            os.makedirs(folder, exist_ok=True)
+            dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title}") + ".flac")
+            k = 2
+            while os.path.exists(dest):  # the side played again: the next take beside the first
+                dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title} (take {k})") + ".flac")
+                k += 1
+            tmp = dest + ".part"
+            subprocess.run(["ffmpeg", "-v", "quiet", "-y", "-ss", f"{start - s0:.3f}", "-to", f"{end - s0:.3f}", "-i", path, "-c:a", "flac", "-f", "flac", tmp], timeout=600)
+            try:
+                from mutagen.flac import FLAC
+                f = FLAC(tmp)
+                f.update({"title": title, "artist": (m or {}).get("artist") or artist, "albumartist": artist, "album": album,
+                          "comment": "From the turntable, " + time.strftime("%Y-%m-%d")})
+                if pos:
+                    f["tracknumber"] = pos
+                if rec:
+                    f["discogs_release_id"] = str(rec[0])
+                f.save()
+            except Exception as e:
+                note_error(f"turntable tags: {e}")
+            shutil.move(tmp, dest)  # whole, and only then where Lyrion looks
+            TT["captured"] = True
+    except Exception as e:
+        note_error(f"turntable side: {type(e).__name__}: {e}"[:200])
+    finally:
+        if os.path.exists(path):
+            os.remove(path)  # the side's own working copy: its songs are filed
+    if TT.pop("captured", False) and not TT["spin"]:
+        try:
+            rpc("", "rescan")
+        except Exception:
+            pass
 
 
 def capture_dir():
@@ -3958,7 +3992,7 @@ def tt_index_loop():
 
 def start_turntable():
     global EAR
-    EAR = turntable.Ear(TURNTABLE_PORT, tt_clip, tt_quiet, os.path.join(DATA, "turntable", "songs"), tt_song, lambda: settings["features"].get("turntable_capture") and tt_lid() is not False)
+    EAR = turntable.Ear(TURNTABLE_PORT, tt_clip, tt_quiet, os.path.join(DATA, "turntable", "songs"), tt_side, lambda: settings["features"].get("turntable_capture") and tt_lid() is not False)
     EAR.start()
     threading.Thread(target=tt_index_loop, name="turntable-index", daemon=True).start()
 

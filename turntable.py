@@ -196,6 +196,7 @@ SR, CH = 44100, 2
 BLOCK = 1470  # 1/30 s: one visualiser frame
 QUIET_DB = -48  # below this a block is the run-out groove, the gap between songs, or nothing at all
 GAP = 1.2  # this long below it is a gap between songs
+SIDE_GAP = 20  # this long, the side is over (the run-out groove, the arm lifted)
 BANDS = np.unique(np.geomspace(2, 1024, 33).astype(int))  # the visualiser's bands over a 2048-point spectrum, 40 Hz up
 
 
@@ -204,15 +205,19 @@ class Ear:
     a clip should be named: 6 s into a stretch of sound (a quick guess), at 11 s (to be sure), then now and then while it
     lasts. on_quiet(seconds) while it is quiet. Frames for visualisers go to each queue in self.watchers.
 
-    With capture_dir set (and capturing() true), each stretch of sound between gaps (a song, as a record has them) is
-    written as a FLAC of its own, from a moment before it began to its end; on_song(path, seconds, run) then names it."""
+    With capture_dir set (and capturing() true), each side is written whole, from a moment before the needle's first
+    sound to the run-out (twenty seconds of quiet, or the listener gone); on_side(path, start, end, gaps) then cuts it
+    into its songs. Silences can't be trusted to part the songs (a record's gaps are short, and some songs run into the
+    next), so the cuts come from the naming: each match says how far into its song the clip was, so where every song
+    began; the quiet moments (gaps, by the stream's clock) only steady the cut."""
 
-    def __init__(self, port, on_clip, on_quiet, capture_dir=None, on_song=None, capturing=lambda: True):
+    def __init__(self, port, on_clip, on_quiet, capture_dir=None, on_side=None, capturing=lambda: True):
         self.port, self.on_clip, self.on_quiet = port, on_clip, on_quiet
-        self.capture_dir, self.on_song, self.capturing = capture_dir, on_song, capturing
-        self.run = 0  # which stretch of sound this is (each a song, unless the record segues)
-        self.song = None  # (ffmpeg, path, started) while one is being written
-        self.preroll = []  # the last second and a half of raw blocks, so a song's first notes are kept
+        self.capture_dir, self.on_side, self.capturing = capture_dir, on_side, capturing
+        self.run = 0  # which stretch of sound this is (between gaps: usually a song)
+        self.side = None  # (ffmpeg, path, started) while a side is being written
+        self.gaps = []  # (quiet began, quiet ended) by the stream's clock, while a side is written
+        self.preroll = []  # the last second and a half of raw blocks, so the side's first notes are kept
         self.ring = np.zeros(SR * 30, np.float32)  # the last 30 s, mono
         self.filled = 0
         self.lock = threading.Lock()
@@ -257,7 +262,7 @@ class Ear:
                 pass
             finally:
                 self.connected = False
-                self.end_song()
+                self.end_side()
                 conn.close()
 
     def block(self, raw):
@@ -276,20 +281,24 @@ class Ear:
             self.quiet_for += len(x) / SR
             if self.quiet_for >= GAP and self.run_start is not None:
                 self.run_start, self.asked = None, []
-                self.end_song()
+            if self.quiet_for >= SIDE_GAP:
+                self.end_side()
         else:
+            if self.quiet_for >= 0.4 and self.side:
+                self.gaps.append((self.clock - self.quiet_for, self.clock))
             if self.run_start is None:
                 self.run_start, self.run = self.clock, self.run + 1
-                self.begin_song()
+            if not self.side:
+                self.begin_side()
             self.quiet_for = 0.0
         for q in list(self.streams):
             q.append(raw)
             del q[:-300]  # ten seconds behind at most
-        if self.song:
+        if self.side:
             try:
-                self.song[0].stdin.write(raw)
+                self.side[0].stdin.write(raw)
             except Exception:
-                self.song = None
+                self.side = None
         self.preroll = (self.preroll + [raw])[-45:]
         if self.watchers:
             with self.lock:
@@ -340,32 +349,32 @@ class Ear:
             self.asked.append(due)
             try:
                 x8, wav = self.clip(min(run, 10))
-                if self.on_clip(x8, wav, run, self.run):
+                if self.on_clip(x8, wav, run, self.run, self.clock):
                     named.add(self.run)
             except Exception:
                 pass
 
-    def begin_song(self):
+    def begin_side(self):
         if not self.capture_dir or not self.capturing():
             return
         import time
         os.makedirs(self.capture_dir, exist_ok=True)
-        path = os.path.join(self.capture_dir, f".song-{int(time.time())}-{self.run}.flac")
+        path = os.path.join(self.capture_dir, f".side-{int(time.time())}.flac")
         p = subprocess.Popen(["ffmpeg", "-v", "quiet", "-y", "-f", "s16le", "-ar", str(SR), "-ac", str(CH), "-i", "-", "-c:a", "flac", path], stdin=subprocess.PIPE)
         for raw in self.preroll:
             p.stdin.write(raw)
-        self.song = (p, path, self.clock - len(self.preroll) * BLOCK / SR, self.run)
+        self.side, self.gaps = (p, path, self.clock - len(self.preroll) * BLOCK / SR), []
 
-    def end_song(self):
-        """The song written to its end (the gap's first moments with it); handed on to be named."""
-        song, self.song = self.song, None
-        if not song:
+    def end_side(self):
+        """The side written to its end; handed on to be cut into songs."""
+        side, self.side = self.side, None
+        if not side:
             return
-        p, path, started, run = song
+        p, path, started = side
         try:
             p.stdin.close()
             p.wait(timeout=60)
         except Exception:
             p.kill()
-        if self.on_song:
-            threading.Thread(target=self.on_song, args=(path, self.clock - started, run), daemon=True).start()
+        if self.on_side:
+            threading.Thread(target=self.on_side, args=(path, started, self.clock - self.quiet_for, list(self.gaps)), daemon=True).start()

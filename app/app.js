@@ -1818,7 +1818,14 @@ function runSearch(el, q) {
 }
 
 /* ───────────────────────── playing ───────────────────────── */
-function curTrack() { const st = A.st; if (!st) return null; return (st.playlist_loop || [])[0] || st.remoteMeta || null; }
+function curTrack() { const st = A.st; if (!st) return null; return asTurntable((st.playlist_loop || [])[0] || st.remoteMeta || null); }
+// a room playing the turntable's live stream: shown as the record it is (its cover, the song, the record), marked as vinyl
+function asTurntable(t) {
+  if (!t || !(/\/turntable\.(flac|mp3)/.test(t.url || "") || t.title === "The turntable")) return t;
+  const tt = A.tt || {}, r = tt.record || {}, song = tt.song || {};
+  return Object.assign({}, t, { title: song.title || (r.title ? "On the turntable" : "The turntable"), artist: r.artist || song.artist || "", album: r.title || "",
+    year: r.year || "", artwork_url: r.image || "", turntable: true, href: r.href || "", pos: song.pos || "" });
+}
 function trackArt(t, s) { if (!t) return ""; if (t.artwork_url) return t.artwork_url.charAt(0) === "/" ? t.artwork_url : pic(t.artwork_url); return t.coverid && String(t.coverid).charAt(0) !== "-" ? cover(t.coverid, s) : t.artwork_track_id ? cover(t.artwork_track_id, s) : ""; }
 function send(cmd, words) {
   return lms(A.room, cmd).then(r => { if (words) toast(words); setTimeout(poll, 250); return r; }).catch(() => toast("Lyrion didn't answer"));
@@ -2692,8 +2699,19 @@ function ttRecordList(q) {
   return rs.map(r => `<button class="tt-rec" data-act="ttPickSong" data-v="${r[0]}">${r[4] ? `<img src="${esc(pic(r[4], 150))}" alt="">` : ""}<span><b>${esc(r[1].trim())}</b><i>${esc(r[2])}</i></span></button>`).join("");
 }
 Object.assign(ACT, {
-  ttRooms: () => openSheet(`<h2>Hear the turntable in&hellip;</h2><div class="sheet-list">${(A.rooms || []).map(p => `<button data-act="ttPlay" data-v="${esc(p.playerid)}">${icon("speaker")} ${esc(roomName(p.playerid))}</button>`).join("")}</div>`),
-  ttPlay: v => api("/api/turntable/play", { player: v }).then(r => toast(r.ok ? `The turntable is playing in ${roomName(v)}` : r.error)),
+  // the rooms as the room picker shows them (each with what it's doing now); a tap sends the turntable there
+  ttRooms: () => lms("", ["players", 0, 50]).then(r0 => {
+    A.rooms = (r0.players_loop || []).filter(p => p.connected);
+    const listed = A.rooms.filter(p => p.modelname !== "Group");
+    return Promise.all(listed.map(p => lms(p.playerid, ["status", "-", 1, "tags:a"]).catch(() => ({})))).then(sts => [listed, sts]);
+  }).then(r => openSheet(`<div class="kicker">${icon("disc")} The turntable</div><h3>Hear it in</h3><div class="rooms">${r[0].map((p, i) => {
+    const s2 = r[1][i] || {}, t = (s2.playlist_loop || [])[0] || s2.remoteMeta || {}, on = +s2.power !== 0 && p.power;
+    const vinyl = /turntable\.(flac|mp3)/.test(t.url || "") || t.title === "The turntable";
+    const mode = vinyl && s2.mode === "play" ? "playing the turntable" : s2.mode === "play" ? "playing" : s2.mode === "pause" && +s2.playlist_tracks ? "paused" : !on ? "off" : "idle";
+    const what = mode === "playing" || mode === "paused" ? (t.title ? ` &middot; ${esc(t.title)}${t.artist ? " &mdash; " + esc(t.artist) : ""}` : "") : "";
+    return `<div class="room st-${mode === "playing the turntable" ? "playing" : mode} ${vinyl ? "on" : ""}"><button class="room-go" data-act="ttPlay" data-v="${esc(p.playerid)}">${mode.indexOf("playing") === 0 ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em><span class="state">${mode}</span>${what}</em></span></button></div>`;
+  }).join("")}</div><p class="plan-note">The record plays on in the room it's in; a room chosen here hears it a few seconds behind, so pick one out of earshot of the turntable.</p>`)),
+  ttPlay: v => api("/api/turntable/play", { player: v }).then(r => { closeSheet(); toast(r.ok ? `The turntable is playing in ${roomName(v)}` : r.error); }),
   ttName: v => { const p = v.split("|"); api("/api/turntable/name", { record: +p[0], pos: p[1] || "" }).then(r => { toast(r.ok ? "Thanks" : r.error); ttPoll(); }); },
   ttPickRecord: (v, el) => {
     const box = el.closest(".tt-ask").querySelector(".tt-pick");
@@ -2723,8 +2741,8 @@ function drawNp() {
       <div class="np-transport"><div class="np-prog"><div class="track"><i></i></div><div class="times"><span class="at"></span><span class="left"></span></div></div>
         <div class="np-ctl"><button class="sm shuf" data-act="shuffleMode" aria-label="Shuffle">${icon("shuffle")}</button><button data-act="prev">${icon("prev")}</button><button class="pp big" data-act="toggle"></button><button data-act="next">${icon("next")}</button><button class="sm rep" data-act="repeat" aria-label="Repeat">${icon("repeat")}<i></i></button></div>
         ${fixedVolume(A.room) ? "" : `<div class="np-vol">${icon("vol")}<input class="vol" type="range" min="0" max="100" aria-label="Volume"></div>`}</div></div>
-      <div class="np-right"><div class="np-info"><div class="kicker">Now playing in <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
-        <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (libAlbum ? `<a class="alb" href="${albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
+      <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
+        <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${quality(t)}</button>
         <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
@@ -2752,6 +2770,7 @@ function upNext() {
     : `<p class="dim">The queue ends here.</p>`;
 }
 function quality(t) {
+  if (t.turntable) return `<span class="q hi tt-q">${icon("disc")} Vinyl${t.pos ? " &middot; " + esc(t.pos) : ""}</span>`;
   const kind = t.type || "", bits = +t.samplesize || 0, rate = +t.samplerate || 0;
   if (["flc", "wav", "aif", "alc", "wvp", "ape"].indexOf(kind) >= 0) return `<span class="q hi">${(bits || 16) === 16 && rate === 44100 ? "CD quality" : (bits || 16) + "-bit / " + (rate / 1000) + " kHz"}</span>`;
   return t.bitrate ? `<span class="q">${esc(kind.toUpperCase())} ${esc(String(t.bitrate).replace(/kbps.*/i, ""))} kbps</span>` : "";
