@@ -3673,14 +3673,23 @@ def discogs_release(rid):
     return out
 
 
-def record_side(rec_id, title):
-    """Where a song is on a record: (position such as "B2", its side "B"), by its title in Discogs's tracklist."""
-    want = lms_qobuz.plain(title)
-    for t in discogs_release(rec_id).get("tracks") or []:
-        if t["type"] == "track" and want and (lms_qobuz.plain(t["title"]) == want or want in lms_qobuz.plain(t["title"]) or lms_qobuz.plain(t["title"]) in want):
-            m = re.match(r"^([A-Za-z]+)", t["pos"])
-            return t["pos"], (m.group(1).upper() if m else "")
-    return "", ""
+def record_side(rec_id, title, heard=()):
+    """Where a song is on a record: (position such as "B2", its side "B"), by its title in Discogs's tracklist. When a
+    title is on the record twice (a side of live takes, a reprise), the one not yet heard this spin; a live take to a
+    title that says live."""
+    want, best = lms_qobuz.plain(title), None
+    live = "live" in (title or "").lower()
+    for i, t in enumerate(discogs_release(rec_id).get("tracks") or []):
+        have = lms_qobuz.plain(t["title"])
+        if t["type"] != "track" or not want or not (have == want or want in have or have in want):
+            continue
+        score = (2 if have == want else 0) + (2 if ("live" in t["title"].lower()) == live else 0) + (1 if t["pos"] not in heard else 0)
+        if not best or score > best[0]:
+            best = (score, t["pos"])
+    if not best:
+        return "", ""
+    m = re.match(r"^([A-Za-z]+)", best[1])
+    return best[1], (m.group(1).upper() if m else "")
 
 
 def physical_now():
@@ -3755,7 +3764,11 @@ def tt_heard(song):
             spin = TT["spin"] = {"id": rec[0] if rec else 0, "record": rec, "start": time.time(), "songs": [], "counted": False, "suggest": [],
                                  "artist": rec[2] if rec else song["artist"], "title": rec[1].strip() if rec else song.get("album") or ""}
             threading.Thread(target=tt_suggest, args=(spin,), daemon=True).start()
-        pos, side = record_side(rec[0], song["title"]) if rec else ("", "")
+        last = spin["songs"][-1] if spin["songs"] else None
+        if last and last["pos"] and lms_qobuz.plain(last["title"]) == lms_qobuz.plain(song["title"]):
+            pos, side = last["pos"], last["side"]  # the same song named again
+        else:
+            pos, side = record_side(rec[0], song["title"], {x["pos"] for x in spin["songs"]}) if rec else ("", "")
         song.update(pos=pos, side=side, rec=[rec[0], rec[1].strip(), rec[2]] if rec else None)
         if song.get("start"):
             TT.setdefault("marks", []).append(dict(song))

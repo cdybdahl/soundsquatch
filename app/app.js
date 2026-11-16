@@ -1168,7 +1168,8 @@ function ttPanel() {
     <div class="vpull-text"><div class="kicker">${icon("disc")} On the turntable${t.state === "side over" ? " &middot; the side is over" : t.state === "record over" ? " &middot; that's the record" : ""}</div><h2>${r.title ? `<a href="${r.href}">${esc(r.title)}</a>` : "Listening&hellip;"}</h2>
       ${r.artist ? `<a class="vpull-by" href="${artistHref(r.artist)}">${esc(r.artist)}</a>` : ""}
       <p>${song ? `${song.pos ? esc(song.pos) + " &middot; " : ""}&ldquo;${esc(song.title)}&rdquo;` : ""}${r.plays ? ` <span class="dim">played ${r.plays} ${r.plays === 1 ? "time" : "times"}</span>` : ""}</p>
-      <canvas class="tt-vis" width="600" height="60"></canvas>${ttAsk(t)}${ttTracklist(t, true)}
+      </div>
+    <div class="tt-more"><canvas class="tt-vis" width="600" height="60"></canvas>${ttAsk(t)}${ttTracklist(t, true)}
       <div class="acts"><button class="btn" data-act="openNp">Now playing</button><button class="btn ghost" data-act="ttRooms">${icon("speaker")} Hear it in a room</button></div>
       ${ttSuggest(t)}</div></section>`;
 }
@@ -2687,11 +2688,14 @@ A.tt = null;
 function ttPoll() {
   clearTimeout(A.ttT);
   if (document.hidden) { A.ttT = setTimeout(ttPoll, 5000); return; }
+  // the level changes every poll; what's shown changes only with the rest
+  const key = t => JSON.stringify(Object.assign({}, t, { level: 0 }));
   api("/api/turntable").then(t => {
-    const was = JSON.stringify(A.tt);
+    const was = key(A.tt);
     A.tt = t;
-    if (JSON.stringify(t) !== was) {
+    if (key(t) !== was) {
       paintPlayer();
+      const ct = curTrack(); if (ct && ct.turntable && !$("#np").hidden) drawNp();
       if (current && current.kind === "vinyl") { const box = $(".tt-panel", current.el); if (box || ttOn()) VIEWS.vinyl(current.el); }
     }
   }).catch(() => {}).then(() => { A.ttT = setTimeout(ttPoll, 3000); });
@@ -2760,7 +2764,7 @@ function ttTracklist(t, oneSide) {
   const sideOf = x => ((/^[A-Za-z]+/.exec(x.pos) || [""])[0]).toUpperCase(), playing = now ? sideOf({ pos: now }) : t.side || "";
   let side = null;
   const rows = tracks.filter(x => !oneSide || !playing || sideOf(x) === playing).map(x => {
-    const sd = sideOf(x), head = sd && sd !== side ? `<div class="disc">Side ${esc(sd)}</div>` : ""; side = sd || side;
+    const sd = sideOf(x), head = sd && sd !== side && !(oneSide && playing) ? `<div class="disc">Side ${esc(sd)}</div>` : ""; side = sd || side;
     return `${head}<div class="tl-row ${x.pos === now ? "now" : heard[x.pos] ? "heard" : ""}"><span class="n">${x.pos === now ? `<span class="eq"><i></i><i></i><i></i></span>` : heard[x.pos] ? icon("check") : esc(x.pos)}</span><span class="tt">${esc(x.title)}</span><span class="d">${esc(x.dur || "")}</span></div>`;
   }).join("");
   return `<div class="tt-tl"><div class="kicker">${oneSide && playing ? "Side " + esc(playing) : "The record"}</div>${rows}</div>`;
@@ -2770,18 +2774,19 @@ function ttSuggest(t) {
     `<a class="tt-sug" href="${s.href || "#/vinyl"}" data-close="1">${s.image ? `<img src="${esc(s.image.charAt(0) === "/" ? s.image : pic(s.image, 300))}" alt="">` : `<span class="noart">${esc((s.title || "?").slice(0, 1))}</span>`}
       <span><em>${esc(s.why)}</em><b>${esc(s.title)}</b><i>${esc([s.artist, s.year, s.where].filter(Boolean).join(" · "))}</i></span></a>`).join("")}</div>` : "";
 }
-// a song nothing could name: is it the record's next song? else which record is on, then which song
+// a song nothing could name: a short card wherever the turntable shows (the guess, if there is one, a tap away); the
+// rest is asked in a sheet as wide as the phone: the record's songs as rows, or another record found by name
 function ttAsk(t) {
   if (!t.unnamed) return "";
-  const g = t.unnamed.guess;
-  return `<div class="tt-ask"><b>Shazam doesn't know this one.</b>${g ? ` Is it ${esc(g.pos)}, &ldquo;${esc(g.title)}&rdquo;?
-    <div class="acts"><button class="btn" data-act="ttName" data-v="${t.record.id}|${esc(g.pos)}">Yes</button><button class="btn ghost" data-act="ttPickSong" data-v="${t.record.id}">Another song</button><button class="btn ghost" data-act="ttPickRecord">Another record</button></div>`
-    : ` Which record is on?<div class="acts">${t.record && t.record.id ? `<button class="btn" data-act="ttPickSong" data-v="${t.record.id}">A song from ${esc(t.record.title)}</button>` : ""}<button class="btn ghost" data-act="ttPickRecord">Choose the record</button></div>`}<div class="tt-pick"></div></div>`;
+  const g = t.unnamed.guess, r = t.record || {};
+  return `<div class="tt-ask"><div class="kicker">What's this song?</div><p>Nothing could name it${g ? `. Is it ${esc(g.pos)}, &ldquo;${esc(g.title)}&rdquo;?` : r.title ? ` &mdash; which song from ${esc(r.title)} is it?` : ` &mdash; which record is on?`}</p>
+    <div class="acts">${g ? `<button class="btn" data-act="ttName" data-v="${r.id}|${esc(g.pos)}">Yes, ${esc(g.title)}</button><button class="btn ghost" data-act="ttAskSheet" data-v="${r.id}">Something else</button>`
+      : `<button class="btn" data-act="ttAskSheet" data-v="${r.id || ""}">${r.id ? "Choose the song" : "Choose the record"}</button>`}</div></div>`;
 }
 function ttRecordList(q) {
   const n = norm(q || "");
-  const rs = (A.physical || []).filter(r => !n || norm(r[1]).indexOf(n) >= 0 || norm(r[2]).indexOf(n) >= 0).slice(0, 30);
-  return rs.map(r => `<button class="tt-rec" data-act="ttPickSong" data-v="${r[0]}">${r[4] ? `<img src="${esc(pic(r[4], 150))}" alt="">` : ""}<span><b>${esc(r[1].trim())}</b><i>${esc(r[2])}</i></span></button>`).join("");
+  const rs = (A.physical || []).filter(r => !n || norm(r[1]).indexOf(n) >= 0 || norm(r[2]).indexOf(n) >= 0).slice(0, 40);
+  return rs.length ? rs.map(r => `<button class="tt-rec" data-act="ttAskSheet" data-v="${r[0]}">${r[4] ? `<img src="${esc(pic(r[4], 150))}" alt="">` : `<span class="noart"></span>`}<span><b>${esc(r[1].trim())}</b><i>${esc(r[2])}</i></span></button>`).join("") : `<p class="dim">No record by that name.</p>`;
 }
 Object.assign(ACT, {
   // the rooms as the room picker shows them (each with what it's doing now); a tap sends the turntable there
@@ -2801,19 +2806,29 @@ Object.assign(ACT, {
     closeSheet(); toast(r.ok ? `The turntable is playing in ${roomName(v)}` : r.error);
     if (r.ok) { A.room = v; store.set("sq-room", v); A.st = null; A.curKey = "\u0000"; poll(); }
   }),
-  ttName: v => { const p = v.split("|"); api("/api/turntable/name", { record: +p[0], pos: p[1] || "" }).then(r => { toast(r.ok ? "Thanks" : r.error); ttPoll(); }); },
-  ttPickRecord: (v, el) => {
-    const box = el.closest(".tt-ask").querySelector(".tt-pick");
-    box.innerHTML = `<input class="tt-find" type="search" placeholder="the record or the artist" autocomplete="off"><div class="tt-recs">${ttRecordList("")}</div>`;
-    const i = box.querySelector("input"); i.addEventListener("input", () => { box.querySelector(".tt-recs").innerHTML = ttRecordList(i.value); }); i.focus();
-  },
-  ttPickSong: (v, el) => {
-    const box = el.closest(".tt-ask").querySelector(".tt-pick");
-    box.innerHTML = `<p class="dim">Reading its tracklist&hellip;</p>`;
+  ttName: v => { const p = v.split("|"); closeSheet(); api("/api/turntable/name", { record: +p[0], pos: p[1] || "" }).then(r => { toast(r.ok ? "Thanks" : r.error); ttPoll(); }); },
+  // the sheet: a record's songs, by side, the side playing first; or, with no record, the shelves to find it on
+  ttAskSheet: v => {
+    if (!v) return ACT.ttPickRecord();
+    const t = A.tt || {}, same = t.record && +t.record.id === +v, r = same ? t.record : (A.physical || []).find(x => +x[0] === +v);
+    const title = same ? r.title : r ? r[1].trim() : "", artist = same ? r.artist : r ? r[2] : "";
+    openSheet(`<div class="tt-sheet"><div class="kicker">${icon("disc")} What's this song?</div><h3>${esc(title || "The record")}</h3>${artist ? `<div class="dim">${esc(artist)}</div>` : ""}
+      <div class="tt-songs"><p class="dim">Reading its songs&hellip;</p></div><button class="btn ghost wide" data-act="ttPickRecord">It's another record</button></div>`);
     api("/api/record?id=" + v).then(d => {
-      const ts = (d.tracks || []).filter(x => x.type === "track");
-      box.innerHTML = ts.length ? `<div class="chips">${ts.map(x => `<button data-act="ttName" data-v="${v}|${esc(x.pos)}">${esc(x.pos)} ${esc(x.title)}</button>`).join("")}</div>` : `<button class="btn" data-act="ttName" data-v="${v}|">It's this record</button>`;
-    });
+      const box = $("#sheet .tt-songs"); if (!box) return;
+      const ts = (d.tracks || []).filter(x => x.type === "track"), playing = same && t.side ? t.side.toUpperCase() : "", heard = {};
+      if (same) (t.songs || []).forEach(x => { if (x[1]) heard[x[1]] = 1; });
+      const sideOf = x => ((/^[A-Za-z]+/.exec(x.pos) || [""])[0]).toUpperCase();
+      const order = ts.filter(x => sideOf(x) === playing).concat(ts.filter(x => sideOf(x) !== playing));
+      let side = null;
+      box.innerHTML = order.length ? order.map(x => { const sd = sideOf(x), head = sd && sd !== side ? `<div class="disc">Side ${esc(sd)}${sd === playing ? " &middot; playing" : ""}</div>` : ""; side = sd || side;
+        return `${head}<button class="tt-song ${heard[x.pos] ? "heard" : ""}" data-act="ttName" data-v="${v}|${esc(x.pos)}"><span class="n">${esc(x.pos)}</span><span>${esc(x.title)}</span>${heard[x.pos] ? icon("check") : `<span class="d">${esc(x.dur || "")}</span>`}</button>`; }).join("")
+        : `<button class="btn wide" data-act="ttName" data-v="${v}|">It's this record</button>`;
+    }).catch(() => { const box = $("#sheet .tt-songs"); if (box) box.innerHTML = `<button class="btn wide" data-act="ttName" data-v="${v}|">It's this record</button>`; });
+  },
+  ttPickRecord: () => {
+    openSheet(`<div class="tt-sheet"><div class="kicker">${icon("disc")} Which record is on?</div><input class="tt-find" type="search" placeholder="The record or the artist" autocomplete="off"><div class="tt-recs">${ttRecordList("")}</div></div>`);
+    const i = $("#sheet .tt-find"); i.addEventListener("input", () => { $("#sheet .tt-recs").innerHTML = ttRecordList(i.value); });
   }
 });
 function openNp() { const np = $("#np"); np.hidden = false; drawNp(); requestAnimationFrame(() => np.classList.add("on")); poll(); }
@@ -2832,7 +2847,7 @@ function drawNp() {
         ${fixedVolume(A.room) ? "" : `<div class="np-vol">${icon("vol")}<input class="vol" type="range" min="0" max="100" aria-label="Volume"></div>`}</div></div>
       <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
-        <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>
+        <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>${t.turntable && A.tt ? ttAsk(A.tt) : ""}
         <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
       <div class="np-next"></div></div></div>`;
