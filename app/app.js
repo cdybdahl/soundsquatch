@@ -950,7 +950,7 @@ MAG.album = function (el, id) {
       <div class="al-head"><div class="mag-dept mag-kind">The record</div>
         <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
-        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
+        <div class="mag-by">${[a[6] && a[9] !== "vinyl" ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Spin it next">${icon("next_up")}<span>Next</span></button>
           <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>
           ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}" aria-label="Add ${esc(artist)} to a station">${icon("radio_plus")}<span>Station</span></button>` : ""}
@@ -975,7 +975,7 @@ MAG.album = function (el, id) {
     const total = d.tracks.reduce((s, t) => s + t.duration, 0);
     let disc = null;
     $(".mag-tracks", el).outerHTML = `<div class="tracks mag-tracks">${d.tracks.map((t, i) => {
-      const head = multi && t.disc !== disc ? `<div class="disc">Side ${esc(t.disc)}</div>` : ""; disc = t.disc;
+      const head = multi && t.disc !== disc ? `<div class="disc">Side ${esc(a[9] === "vinyl" && +t.disc ? String.fromCharCode(64 + +t.disc) : t.disc)}</div>` : ""; disc = t.disc; // a captured record's sides by their letters
       return `${head}<div class="trk" data-act="playTrack" data-v="${d.id}:${i}"><span class="n">${esc(t.n || i + 1)}</span><span class="tt">${esc(t.title)}${various && t.artist ? `<em>${esc(t.artist)}</em>` : ""}</span>${mk("track", trackKey(t), "loved")}<span class="d">${mmss(t.duration)}</span><button class="trk-more" data-act="trackMenu" data-v="${d.id}:${i}" aria-label="More">${icon("more")}</button></div>`;
     }).join("")}</div>`;
     const len = $(".mag-len", el); if (len) len.textContent = `${d.tracks.length} tracks, ${Math.round(total / 60)} minutes`;

@@ -1461,3 +1461,7 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .ver-chip .ic { width: 13px; height: 13px; vertical-align: -2px; }
 .np-src { display: inline-flex; align-items: center; gap: 5px; margin-right: 10px; font: 600 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 236, 226, .75); vertical-align: middle; }
 .np-src .ic { width: 15px; height: 15px; color: var(--accent); }
+/* the facts line under an album's standfirst: room for the pressings button when it wraps */
+.mag-by { line-height: 2.1; }
+.mag-by .ver-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px; border-radius: 13px; font: 600 12px/1.4 var(--sans); letter-spacing: .03em; text-transform: none; color: rgba(236, 228, 214, .9); vertical-align: middle; }
+.mag-by .ver-chip .ic { width: 14px; height: 14px; color: var(--accent); vertical-align: 0; }
