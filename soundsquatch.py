@@ -3823,6 +3823,7 @@ def tt_heard(song):
         if not last or lms_qobuz.plain(last["title"]) != lms_qobuz.plain(song["title"]):
             spin["songs"].append({k: song.get(k) for k in ("title", "artist", "pos", "side", "how", "at", "run")})
         TT.update(state="playing", song=song, side_over_at=0)
+        tt_save()
         heard = len({lms_qobuz.plain(x["title"]) for x in spin["songs"]})
         if rec and not spin["counted"] and (heard >= 2 or time.time() - spin["start"] > 480):
             spin["counted"] = True
@@ -3859,6 +3860,7 @@ def tt_end_spin():
     """The spin over: kept in the turntable's history (the newest 500)."""
     spin, TT["spin"] = TT["spin"], None
     TT.update(state="idle", song=None, side_over_at=0)
+    tt_save()
     if not spin or not spin["songs"]:
         return
     TT.update(state="record over", done=spin, over_at=time.time())  # what to play next, for ten minutes
@@ -4181,8 +4183,19 @@ def tt_index_loop():
         time.sleep(86400)
 
 
+def tt_save():
+    """The record on the turntable now, kept, so a restart (a deploy, a crash) doesn't forget it or the house's choice."""
+    try:
+        kv_set("tt_spin", {"spin": TT["spin"], "song": TT["song"], "state": TT["state"], "at": time.time()})
+    except Exception as e:
+        note_error(f"turntable save: {e}")
+
+
 def start_turntable():
     global EAR
+    kept = kv_get("tt_spin") or {}
+    if kept.get("spin") and time.time() - kept.get("at", 0) < 1200:  # back as it was, if it was playing in the last twenty minutes
+        TT.update(spin=kept["spin"], song=kept.get("song"), state=kept.get("state") or "playing")
     EAR = turntable.Ear(TURNTABLE_PORT, tt_clip, tt_quiet, os.path.join(DATA, "turntable", "songs"), tt_side, lambda: settings["features"].get("turntable_capture") and tt_lid() is not False)
     EAR.start()
     threading.Thread(target=tt_index_loop, name="turntable-index", daemon=True).start()
@@ -4223,6 +4236,8 @@ def tt_unnamed():
     """The stretch of sound playing now when nothing has named it for 25 s: (run, the likely song by the tracklist)."""
     if not EAR or EAR.run_start is None or EAR.run in TT["runs"] or EAR.clock - EAR.run_start < 25 or tt_lid() is False:
         return None
+    if TT["spin"] and TT["spin"].get("chosen") and TT["spin"]["songs"]:
+        return None  # the house said which record; a quiet bar on it isn't a new question
     return EAR.run, tt_next_in_order(TT["spin"])
 
 
