@@ -1625,13 +1625,19 @@ VIEWS.settings = function (el) {
   Promise.all([api("/api/settings"), lms("", ["players", 0, 50]).then(r => { A.rooms = (r.players_loop || []).filter(p => p.connected); }).catch(() => {})]).then(r => { A.cfg = r[0]; drawSettings(el); }).catch(() => { $(".settings", el).innerHTML = `<p class="dim">The server isn't answering.</p>`; });
 };
 // the house's Discogs collection: connected (whose, how many, when read) or how to connect it
-// the turntable's listener: whether it's sending, the lid's sensor, the house's files fingerprinted, where songs are kept
+// the turntable's listener: whether it's sending, what it knows of the house's files, where songs are kept; and, on
+// Change, the two things it can't find for itself: Home Assistant's sensor for the lid, and the room the turntable is in
 function ttRow(c) {
   const t = c.turntable || {}, ago = t.heard_at ? Math.round(Date.now() / 1000 - t.heard_at) : 0;
   const now = t.listener ? `<span class="check good">listening</span>` : t.heard_at ? `<span class="check">last heard ${ago < 7200 ? Math.round(ago / 60) + " min" : Math.round(ago / 3600) + " h"} ago</span>` : `<span class="check">no listener yet</span>`;
-  return `<div class="set-field" data-k="turntable"><span><b>The turntable</b><em>a listener on the amplifier's record-out (a Pi sending to port ${t.port}) names what the record player plays: ${t.indexing ? `fingerprinting the house's files, ${t.indexing[0]} of ${t.indexing[1]}` : `${(t.indexed || 0).toLocaleString()} of the house's songs fingerprinted`}, then Shazam. ${t.lid ? `The lid: ${esc(t.lid)}.` : "No lid sensor set: everything heard is taken for a record."}
-    ${c.features.turntable_capture ? `Each song is kept, tagged, in ${esc(t.capture)}.` : ""} ${(t.fields || []).length ? `Plays go to Discogs (${esc(t.fields.join(", "))}).` : "Add Plays and Last played fields to your Discogs collection to have plays written there."}</em></span>
-    <span class="conn-now">${now}</span></div>`;
+  return `<div class="set-field conn" data-k="turntable"><span><b>The turntable</b><em>a listener on the amplifier's record-out (a Pi sending to port ${t.port}; see the README) names what the record player plays: ${t.indexing ? `fingerprinting the house's files, ${t.indexing[0]} of ${t.indexing[1]}` : `${(t.indexed || 0).toLocaleString()} of the house's songs fingerprinted`}, then Shazam.
+    ${t.lid ? `The lid: ${esc(t.lid)}.` : "No lid sensor: everything heard is taken for a record."} ${t.room ? `It's in ${esc(roomName(t.room))}.` : ""}
+    ${c.features.turntable_capture ? `Each side is kept, cut into tagged songs, in ${esc(t.capture)}.` : ""} ${(t.fields || []).length ? `Plays go to Discogs (${esc(t.fields.join(", "))}).` : "Add Plays and Last played fields to your Discogs collection to have plays written there."}</em></span>
+    <span class="conn-now">${now}<button class="pill" data-act="connEdit">Change</button></span>
+    <input data-tt-lid type="text" value="${esc(t.lid || "")}" placeholder="the lid's sensor in Home Assistant, e.g. binary_sensor.turntable_lid" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <select data-tt-room><option value="">The room it's in (where its own speakers are)</option>${(A.rooms || []).filter(p => p.modelname !== "Group").map(p => `<option value="${esc(p.playerid)}" ${p.playerid === t.room ? "selected" : ""}>${esc(roomName(p.playerid))}</option>`).join("")}</select>
+    <p class="plan-note">The lid: a door or contact sensor on the turntable's lid (on while it's open). With none, whatever the amplifier plays is taken for a record. The room: so the room pickers can say the turntable is playing there.</p>
+    <div class="acts"><button class="btn" data-act="ttSave">Save</button></div></div>`;
 }
 function discogsRow(c) {
   const d = c.discogs || {};
@@ -2137,6 +2143,7 @@ const ACT = {
     if (v) pick[k] = pick[k] === o ? "" : o;
     store.set("sq-vf", pick); VIEWS.vinyl(current.el);
   },
+  ttSave: () => { const lid = $("[data-tt-lid]"), room = $("[data-tt-room]"); saveSettings({ turntable_lid: lid ? lid.value.trim() : "", turntable_room: room ? room.value : "" }, "Saved"); },
   discogsSave: () => {
     const i = $("[data-discogs]"); if (i && !i.value.trim() && !(A.cfg && A.cfg.discogs && A.cfg.discogs.set)) return toast("Paste the token first");
     toast("Reading the collection…");

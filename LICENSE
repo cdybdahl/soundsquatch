@@ -84,3 +84,6 @@ The fonts in app/ (Newsreader, by The Newsreader Project Authors; Inter, by The 
 SIL Open Font License 1.1, https://openfontlicense.org.
 The face finder's model, face_detection_yunet_2023mar.onnx (YuNet, from the OpenCV Zoo,
 https://github.com/opencv/opencv_zoo), is under the MIT License, copyright (c) 2020 Shiqi Yu.
+The container image also carries ffmpeg (from Debian's packages, under the GNU LGPL/GPL; its source is Debian's,
+https://packages.debian.org/source/ffmpeg), shazamio (MIT License, by dotX12, https://github.com/shazamio/ShazamIO),
+NumPy (BSD 3-Clause), Pillow (MIT-CMU), Mutagen (GPL-2.0-or-later) and OpenCV (Apache 2.0), each under its own terms.

@@ -10,10 +10,11 @@ services:
     network_mode: host
     # ports:
     #   - "8097:8097"
+    #   - "8095:8095"   # the turntable's listener, if you have one
     volumes:
       - ./data:/data
-      # Only if you switch on "Change music files" in Settings: your music, at the very path Lyrion sees it
-      # (Lyrion's Settings > Basic Settings > Media Folders), read-write. For example:
+      # Only if you switch on "Change music files" or "Keep the turntable's songs" in Settings: your music, at the very
+      # path Lyrion sees it (Lyrion's Settings > Basic Settings > Media Folders), read-write. For example:
       # - /srv/music:/srv/music
     environment:
       TZ: America/Chicago        # your time zone: On this day and the listening log go by it

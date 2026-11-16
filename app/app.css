@@ -1474,3 +1474,8 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .al-aside .mag-recs { border-top: 3px solid #ece4d6; padding-top: 12px; }
 .mag-al .mag-review .pull { margin: 22px 0 28px; }
 @media (max-width: 900px) { .al-body { grid-template-columns: minmax(0, 1fr); } .al-aside { margin-top: 30px; } }
+/* a choice in a connection's fields, drawn as its text fields are, shown with them */
+.set-field select { height: 42px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--rule); background: var(--bg2); color: var(--ink); font: 15px var(--sans); width: 100%; }
+.set-field.conn select { display: none; }
+.set-field.conn.open select { display: block; grid-column: 2; margin-top: 8px; }
+@media (max-width: 760px) { .set-field.conn.open select { grid-column: 1; } }

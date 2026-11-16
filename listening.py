@@ -20,7 +20,7 @@ started, how long it really played, and how it ended:
 and, for a skip, where it came from and who it was. "From": the wall panel when the dashboard sent a note saying so
 (/note, through shell_command.listening_note, within a few seconds of the skip), a phone when the player is someone's own
 (OWNERS), otherwise an app. "Who": the player's owner, else the one person home when only one is, else the household.
-Who is home comes in with each call for the summary (/summary?home=chad,tonya), which Home Assistant makes every half
+Who is home comes in with each call for the summary (/summary?home=alex,sam), which Home Assistant makes every half
 minute. "library" says whether the track is in Lyrion's library (a positive id) or came from beyond it (Qobuz's catalogue,
 by way of Don't Stop the Music), and "first" whether this is the first time the log has heard it.
 
@@ -45,7 +45,7 @@ dry; a player is pruned at most ROUNDS times in two minutes, then left alone. On
 would do: course, after an early skip of a track from beyond the library, the next two from beyond it in the queue.
 Every removal, done or only written down, is a row in steward, and in the summary for the Log tab.
 
-  GET  /summary?home=chad,tonya   the JSON for sensor.deepvalley_listening (today, the week, recent plays, a timeline, by player MAC)
+  GET  /summary?home=alex,sam     the JSON for sensor.deepvalley_listening (today, the week, recent plays, a timeline, by player MAC)
   GET  /note?player=MAC&from=wall&what=skip   the dashboard saying a skip (or a ban) came from the wall panel
   GET  /artist?name=Karate                    what the log has heard of an artist (the Music page's artist sheet)
 
@@ -66,9 +66,9 @@ LMS_HOST = os.environ.get("LMS_HOST", "127.0.0.1")
 CLI_PORT = int(os.environ.get("LMS_CLI_PORT", "9090"))
 JSONRPC = f"http://{LMS_HOST}:{os.environ.get('LMS_WEB_PORT', '9000')}/jsonrpc.js"
 DB = os.environ.get("LISTENING_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "log.db"))
-BIND = os.environ.get("LISTENING_BIND", "192.168.1.6")
+BIND = os.environ.get("LISTENING_BIND", "0.0.0.0")
 PORT = int(os.environ.get("LISTENING_PORT", "8099"))
-# A player that belongs to one person (their phone's own Lyrion player): MAC -> "chad" or "tonya"
+# A player that belongs to one person (their phone's own Lyrion player): MAC -> their name, e.g. {"aa:bb:cc:dd:ee:ff": "alex"}
 OWNERS = json.loads(os.environ.get("LISTENING_OWNERS", "{}"))
 NOTE_WINDOW = 15  # seconds either side of a skip in which a note from the wall panel claims it
 CMD_WINDOW = 8  # seconds before a track change in which a skip or a new playlist explains it
@@ -102,7 +102,7 @@ create table if not exists notes (t real, player text, src text, what text);
 create table if not exists steward (t real, player text, title text, artist text, url text, rule text, detail text, acted integer);
 create index if not exists steward_t on steward(t);
 """)
-home_now = ""  # who is home, as Home Assistant last said: "chad,tonya", "tonya", ""
+home_now = ""  # who is home, as Home Assistant last said: "alex,sam", "sam", ""
 rooms = {}  # player MAC -> name
 players = {}  # player MAC -> what it is playing: {"track": {...}, "started", "played", "resumed" (None while paused), "skip", "replace"}
 pending = []  # tracks just ended, as in players with "player", "ended" and "why", until settle writes them
@@ -517,7 +517,7 @@ class Handler(BaseHTTPRequestHandler):
         qs = urllib.parse.parse_qs(url.query)
         if url.path == "/summary":
             if "home" in qs:
-                home_now = ",".join(sorted(p for p in qs["home"][0].lower().split(",") if p in ("chad", "tonya")))
+                home_now = ",".join(sorted(p for p in qs["home"][0].lower().split(",") if re.fullmatch(r"[a-z0-9_-]{1,32}", p)))
             with state:
                 body = json.dumps(summary(), ensure_ascii=False).encode()
         elif url.path == "/artist":

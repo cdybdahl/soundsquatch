@@ -23,10 +23,17 @@ through, and keeps a profile of every artist on the shelves.
 - **Marks**: hearts, stars and tags, kept on the server for the household.
 - **Remove from library**: Qobuz favourites un-favourited, files *moved* to
   `music-removed` (never deleted), with a Recently removed page to put them back.
+- **Your records**, from your Discogs collection: the albums you also have on vinyl (or CD) say so, the records you
+  have only on vinyl are kept beside the digital ones, with filters (format, pressing, genre, decade) and a page for
+  each record (its tracklist by side, credits, the pressing's barcodes and run-out, videos, plays).
+- **The turntable**, with a small listener on your amplifier's record-out: Soundsquatch names what the record player
+  plays (from your own files first, then Shazam), shows it as Now Playing, suggests what to play next, keeps count of
+  plays (on Discogs too), records each side as tagged songs into your library, streams it live to any room, and
+  watches the signal for trouble in the chain (balance, hum, speed, overload).
 
 ## The beta
 
-Soundsquatch 0.9 is a soft beta: it runs every day in one house (about 1,500 albums), and it's now being tried in a
+Soundsquatch 0.10 is a soft beta: it runs every day in one house (about 1,500 albums), and it's now being tried in a
 few more. Expect rough edges, and please say what you find.
 
 ### What you need
@@ -84,6 +91,67 @@ can't be changed from Soundsquatch: it says so and leaves them alone.
 While it's off, genre edits stay in Soundsquatch and the files are never touched. The tags each file had before
 Soundsquatch first changed it are kept, so **Put back** restores them.
 
+### Your records (Discogs)
+
+If you keep your records on [Discogs](https://www.discogs.com), Soundsquatch can show them beside the digital shelves.
+On discogs.com go to **Settings → Developers → Generate new token**, and paste it in **Settings → Your records** (or on
+the **Vinyl** page). Soundsquatch reads the collection once a day.
+
+To have the turntable's plays counted on Discogs too, add two custom fields to your collection there (your
+Collection's settings → **Custom fields** → Add): **Plays** and **Last played**, both of the **Text area** kind.
+Soundsquatch adds to the first and writes the date into the second each time a record is played.
+
+### The turntable
+
+A small listener on your amplifier's record-out (or tape-out) sends what the record player plays to Soundsquatch,
+which does everything else. You need:
+
+- **A Raspberry Pi**, a Pi 3 or newer is plenty (it only records and sends), with **Raspberry Pi OS Lite**. A network
+  cable is steadier than Wi-Fi for a constant stream; on Wi-Fi a Pi 3 only joins 2.4 GHz networks.
+- **A USB audio interface with line inputs**, such as the Behringer UCA202 or UCA222 (any USB sound card with a
+  line-level input works). A turntable straight into the interface won't do: the signal needs its phono stage first,
+  which is why it comes from the amplifier's record-out.
+- **A good power supply for the Pi**: 5.1 V, 2.5 A. The interface takes its power from the Pi, and a weak supply
+  shows up as clicks in the recordings (`vcgencmd get_throttled` on the Pi should say `0x0`).
+
+Wire the amplifier's **REC OUT** to the interface's **inputs**, plug the interface into the Pi, and on the Pi run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cdybdahl/soundsquatch/main/turntable/install.sh | sudo sh -s <the Soundsquatch machine>
+```
+
+It installs ALSA's recorder and netcat and a service that starts at boot: the record-out, CD quality, sent raw over
+one connection to Soundsquatch's port **8095**. **Settings → Your records → The turntable** says when it's listening.
+
+What Soundsquatch does with it:
+
+- **Names each song** six seconds in (sure by eleven): first against fingerprints of your own files of the records in
+  your Discogs collection (made once, overnight, on the Soundsquatch machine), then, only when those can't, by
+  sending ten seconds of it to Shazam. When neither can, the app asks which record and which song.
+- **Shows it** as Now Playing whenever the room's own player is quiet: the record, the song, its side and place in
+  the tracklist, the songs heard, a visualiser, and **Hear it in…** to play it in another room (a live stream from
+  Soundsquatch, a few seconds behind; any player can also open `http://<the Soundsquatch machine>:8097/turntable.flac`).
+- **Suggests what's next**: the band's next record (on the shelf, in the library, or not in the house yet), and an
+  artist who followed (a member's own records first).
+- **Counts plays**: a record counts once two of its songs (or eight minutes) are heard; on Discogs too (above).
+- **Keeps each side**, if you switch on **Settings → Features → Keep the turntable's songs**: recorded whole, then cut
+  into its songs where the naming says each began, tagged (artist, record, side as the disc, its position, the Discogs
+  release) and filed in a `From vinyl` folder in your music, so Lyrion adds them to the library. They show as their
+  own pressing, **Vinyl, captured by Soundsquatch**, and never displace the digital one. Needs the music mounted
+  read-write, as for *Changing music files*.
+- **Checks the signal**: each side's balance, how alike the channels are, surface noise, clicks and hum in the quiet,
+  overload, and the turntable's speed against your own copies. One odd side is the pressing; the same thing side
+  after side is the chain, and the **Vinyl** page says so plainly, with what to try.
+
+Two more settings, on **Change** in that row: Home Assistant's **sensor for the lid** (a contact sensor, on while
+it's open; with none, whatever the amplifier plays is taken for a record, the tuner included), and **the room** the
+turntable is in.
+
+**With Home Assistant** (optional): `http://<the Soundsquatch machine>:8097/api/turntable` is the turntable's state as
+JSON, for a REST sensor: `state` is `idle`, `playing`, `side over` (likely a flip) or `record over`, with the record,
+the song, the songs heard, the suggestions, and the signal check's newest `alert`. Useful automations: pause the
+room's streaming when the lid opens; tell the phones what to play next on `record over`; pass on a new `alert`.
+
 ### A PIN
 
 Anyone on your network can open Soundsquatch. A PIN (**Settings → PIN**) is asked for, once on each device, before the
@@ -98,7 +166,8 @@ Artist names and album titles, sent to MusicBrainz, Wikidata and Wikipedia, LRCL
 Archive, Apple and Deezer (for covers you choose), and to Qobuz and Discogs through Lyrion's own plugins. Nothing about who listens
 or when: the listening log stays in `./data`. Once a day it asks GitHub for the newest release number, which sends
 nothing but the question. If you connect Discogs (Settings, Your records), it reads your collection there once a day
-with your token; nothing goes the other way.
+with your token, and, with a turntable listener, writes each record's plays to its Plays and Last played fields. The
+turntable's sound stays in the house, except a ten-second clip sent to Shazam when your own files can't name a song.
 
 ### Telling us
 
@@ -115,6 +184,8 @@ Soundsquatch is for 64-bit machines (x86, or ARM such as a Raspberry Pi on 64-bi
 | `soundsquatch.py` | the service: app, Lyrion pass-through, crawler, caches (standard library + Pillow) |
 | `app/` | the app itself: plain HTML, CSS and script, no build step, older-Safari safe |
 | `lms_qobuz.py`, `lms_keep_album.py`, `library.py` | helpers for Qobuz (through Lyrion's plugin) and the library's rules |
+| `turntable.py` | the turntable: the stream from the listener, the fingerprints, Shazam, the sides and the signal check |
+| `turntable/` | the listener for the Pi (`listener.sh`) and its installer |
 | `stage-photos.json` | stage photos for *On this night*, from Wikimedia Commons, credited |
 | `Dockerfile`, `compose.yaml` | the container |
 | `install.sh`, `compose.sasquatch.yaml`, `check.py` | the author's own deploy; the script checked first |
@@ -146,4 +217,5 @@ lighter drawing, reduced motion and the starting room are set per device.
 
 Soundsquatch is free for personal and other noncommercial use under the
 [PolyForm Noncommercial License 1.0.0](LICENSE): run it, change it, share it. Selling it, or using it in a business,
-needs a separate licence from the author. The fonts and stage photos keep their own licences, named in LICENSE.
+needs a separate licence from the author. The fonts, stage photos, the face finder's model and the libraries in the
+container (ffmpeg, shazamio and the rest) keep their own licences, named in LICENSE.

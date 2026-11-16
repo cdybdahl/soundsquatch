@@ -78,7 +78,7 @@ def keep(player, url=None):
 
 
 if __name__ == "__main__":
-    player = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else "c0:f5:35:04:67:32"
+    player = sys.argv[1] if len(sys.argv) > 1 else ""
     url = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
     if not PLAYER.match(player):
         sys.exit("not a player id")

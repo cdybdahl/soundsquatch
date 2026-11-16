@@ -94,7 +94,7 @@ HA_URL = os.environ.get("HA_URL", "")
 DISCOGS_TOKEN = os.path.join(DATA, ".discogs_token")  # the house's Discogs token, for its record collection: never sent back
 HA_TOKEN = os.environ.get("HA_TOKEN_FILE", os.path.join(DATA, ".ha_token"))  # Soundsquatch's own long-lived token (stations)
 AUDIO = (".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".alac", ".ape", ".wv", ".dsf", ".dff")  # the playlist a room's music is saved to on its way to another room
-VERSION = "0.9.0 beta"  # the release tag is v + its number
+VERSION = "0.10.0 beta"  # the release tag is v + its number
 AGENT = {"User-Agent": f"Soundsquatch/{VERSION.split()[0]} (a home music app; https://github.com/cdybdahl/soundsquatch)"}
 NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 
@@ -4169,7 +4169,7 @@ def tt_year(rec):
 
 
 def turntable_for_settings():
-    return {"lid": settings["house"].get("turntable_lid", ""), "listener": bool(EAR and EAR.connected), "heard_at": int(EAR.heard_at) if EAR else 0,
+    return {"lid": settings["house"].get("turntable_lid", ""), "room": settings["house"].get("turntable_room", ""), "listener": bool(EAR and EAR.connected), "heard_at": int(EAR.heard_at) if EAR else 0,
             "indexing": TT.get("indexing"), "indexed": len(TT_INDEX.tracks) if TT_INDEX else 0, "port": TURNTABLE_PORT, "capture": capture_dir(),
             "fields": [f["name"] for f in (kv_get("discogs", {}) or {}).get("fields") or [] if f["name"].strip().lower() in ("plays", "last played")]}
 
