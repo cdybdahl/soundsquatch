@@ -1623,6 +1623,8 @@ def tidy(text):
         head = re.match(r"^(.*?)\s*[-=]{3,}$", p) or re.match(r"^=+\s*(.*?)\s*=+$", p)  # Wikipedia's section headings, underlined
         if head:
             p = "§ " + head.group(1).strip() if head.group(1).strip() else ""
+        elif p and not p.startswith("§") and len(p) < 60 and len(p.split()) <= 6 and p[0].isupper() and not re.search(r"[.!?:;,\"'”’)\]]$", p):
+            p = "§ " + p  # a sub-heading that came without its underline ("Critical reception"): a line no sentence ends
         if p:
             out.append(p)
     return "\n\n".join(out)

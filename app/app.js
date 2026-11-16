@@ -980,8 +980,9 @@ MAG.album = function (el, id) {
     if (!title) { $(".mag-head", el).textContent = d.album; }
     const story = text => {
       const list = paras(text || ""), box = $(".mag-review", el); if (!box) return;
-      box.innerHTML = list.length ? list.map((x, i) => `<p${i ? "" : ' class="dc"'}>${linked(x, artist)}</p>`).join("") + `<p class="mag-src">From Wikipedia</p>` : `<p class="dim">No one has written about this one yet.</p>`;
-      const deck = $(".mag-album-deck", el); if (deck && list.length) deck.insertAdjacentHTML("beforeend", ` ${esc(standfirst(list[0], 160))}`);
+      const words = list.filter(x => x.indexOf("\u00a7 ") !== 0); // its headings set as headings, never as text
+      box.innerHTML = words.length ? dropcap(list, artist) + `<p class="mag-src">From Wikipedia</p>` : `<p class="dim">No one has written about this one yet.</p>`;
+      const deck = $(".mag-album-deck", el); if (deck && words.length) deck.insertAdjacentHTML("beforeend", ` ${esc(standfirst(words[0], 160))}`);
     };
     if (d.review != null) story(d.review); else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) story(r.review); }).catch(() => story(""));
     if (on("features", "credits")) creditsFor(a[0]).then(c => { const box = $(".mag-credits", el); if (box && el.isConnected) box.innerHTML = creditsHtml(c) || `<p class="dim">No credits known for it.</p>`; }).catch(() => {});
