@@ -2796,7 +2796,11 @@ Object.assign(ACT, {
     const what = mode === "playing" || mode === "paused" ? (t.title ? ` &middot; ${esc(t.title)}${t.artist ? " &mdash; " + esc(t.artist) : ""}` : "") : "";
     return `<div class="room st-${/turntable/.test(mode) ? "playing" : mode} ${vinyl || (home && s2.mode !== "play") ? "on" : ""}"><button class="room-go" data-act="ttPlay" data-v="${esc(p.playerid)}">${mode.indexOf("playing") === 0 || /is here/.test(mode) ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em><span class="state">${mode}</span>${what}</em></span></button></div>`;
   }).join("")}</div><p class="plan-note">The record plays on in the room it's in; a room chosen here hears it a few seconds behind, so pick one out of earshot of the turntable.</p>`)),
-  ttPlay: v => api("/api/turntable/play", { player: v }).then(r => { closeSheet(); toast(r.ok ? `The turntable is playing in ${roomName(v)}` : r.error); }),
+  // the turntable sent to a room, and the app follows it there, so Now Playing shows that room playing the record
+  ttPlay: v => api("/api/turntable/play", { player: v }).then(r => {
+    closeSheet(); toast(r.ok ? `The turntable is playing in ${roomName(v)}` : r.error);
+    if (r.ok) { A.room = v; store.set("sq-room", v); A.st = null; A.curKey = "\u0000"; poll(); }
+  }),
   ttName: v => { const p = v.split("|"); api("/api/turntable/name", { record: +p[0], pos: p[1] || "" }).then(r => { toast(r.ok ? "Thanks" : r.error); ttPoll(); }); },
   ttPickRecord: (v, el) => {
     const box = el.closest(".tt-ask").querySelector(".tt-pick");
