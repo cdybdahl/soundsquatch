@@ -3963,20 +3963,22 @@ def tt_side(path, s0, s1, gaps):
                 if pos:  # "B3": side B as the second disc, the third song on it (Lyrion keeps only numbers); the position kept as it is
                     f.update(vinyl_numbers(pos))
                 if rec:
-                    f["discogs_release_id"] = str(rec[0])
+                    f.update(record_tags(rec[0]))
                 f.save()
             except Exception as e:
                 note_error(f"turntable tags: {e}")
             shutil.move(tmp, dest)  # whole, and only then where Lyrion looks
+            if rec:
+                record_cover(rec[0], folder)
             TT["captured"] = True
     except Exception as e:
         note_error(f"turntable side: {type(e).__name__}: {e}"[:200])
     finally:
         if os.path.exists(path):
             os.remove(path)  # the side's own working copy: its songs are filed
-    if TT.pop("captured", False) and not TT["spin"]:
+    if TT.pop("captured", False):
         try:
-            rpc("", "rescan")
+            rpc("", "rescan")  # the side's songs into the library now, not when the spin ends (a restart before then would lose it)
         except Exception:
             pass
 
@@ -4033,6 +4035,35 @@ def tt_judge(hist, now):
         out.append({"key": f"noise-{now['id']}", "title": f"{now['title'] or 'That side'} is noisy",
                     "text": f"Its surface noise is {round(now['noise'] - noise[len(noise) // 2])} dB above the collection's usual. The record wants a clean (and if it stays noisy once clean, it may be worn)."})
     return out
+
+
+def record_tags(rid):
+    """What a captured record's songs say of it beside their names: the year the music came out (its album's among the
+    digital ones, else the pressing's), Discogs's genres, and the release."""
+    rec = next((r for r in physical_now()[1] if r[0] == rid), None)
+    out = {"discogs_release_id": str(rid)}
+    if rec:
+        if tt_year(rec):
+            out["date"] = str(tt_year(rec))
+        if (rec[9] or {}).get("g"):
+            out["genre"] = rec[9]["g"]
+    return out
+
+
+def record_cover(rid, folder):
+    """The record's cover from Discogs as folder.jpg in its folder, for Lyrion and any other player (once)."""
+    path = os.path.join(folder, "folder.jpg")
+    rec = next((r for r in physical_now()[1] if r[0] == rid), None)
+    if os.path.exists(path) or not rec or not rec[4]:
+        return
+    try:
+        got = picture(rec[4])
+        if got:
+            with open(path + ".part", "wb") as f:
+                f.write(got[0])
+            os.replace(path + ".part", path)
+    except Exception as e:
+        note_error(f"turntable cover: {e}")
 
 
 def vinyl_numbers(pos):
