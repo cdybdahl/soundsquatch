@@ -3841,22 +3841,32 @@ def tt_suggest(spin):
     later = sorted((x for x in theirs if x[1] and year and x[1] > year), key=lambda x: (x[1], {"vinyl": 0, "digital": 1, "new": 2}[x[0]]))
     if later:
         out.append(suggestion(f"{artist}'s next record", *later[0]))
-    kin = [x["name"] for x in (d.get("qobuz") or {}).get("similar", [])] + [r.get("name") or "" for r in (d.get("mb") or {}).get("rels") or []]
-    kin = [k for k in dict.fromkeys(kin) if k and key(k) != key(artist)]
+    # who came after them: the band's own people first (a member's own records are what followed the band most truly),
+    # then only the closest of the artists like them (Qobuz's eight nearest), those who began later first
+    members = [r.get("name") or "" for r in (d.get("mb") or {}).get("rels") or [] if "member" in (r.get("type") or "")]
+    similar = [x["name"] for x in (d.get("qobuz") or {}).get("similar", [])][:8]
     begun = int(((d.get("mb") or {}).get("begin") or "0")[:4] or 0)
 
     def after(name):  # began later, as far as the house knows
         b = int((((get_profile(name)[0] or {}).get("mb") or {}).get("begin") or "0")[:4] or 0)
         return bool(begun and b and b > begun)
-    for want in ("vinyl", "digital"):
-        pool = [k for k in kin if (any(key(r[2]) == key(k) for r in phys) if want == "vinyl" else any(key(a[2]) == key(k) for a in albums))]
-        pool.sort(key=lambda k: not after(k))
-        if pool:
-            k = pool[0]
-            pick = random.choice([r for r in phys if key(r[2]) == key(k)]) if want == "vinyl" else max((a for a in albums if key(a[2]) == key(k)), key=lambda a: -a[5])
-            year = ((by_id[pick[8]][3] if pick[8] in by_id else 0) or pick[3]) if want == "vinyl" else pick[3]  # the music's year, not a reissue's
-            out.append(suggestion(f"Came after {artist}" if after(k) else f"If you like {artist}", want, year, pick))
+
+    def theirs_on(k, want):
+        return [r for r in phys if key(r[2]) == key(k)] if want == "vinyl" else [a for a in albums if key(a[2]) == key(k)]
+    picked = None
+    solo = (d.get("mb") or {}).get("type") == "Person"  # a person's "members" are the bands they were in
+    for group, why in ((members, lambda k: f"{artist}'s band {k}" if solo else f"{k}, of {artist}"), (sorted(similar, key=lambda k: not after(k)), lambda k: f"Came after {artist}" if after(k) else f"If you like {artist}")):
+        for want in ("vinyl", "digital"):
+            k = next((k for k in group if k and key(k) != key(artist) and theirs_on(k, want)), None)
+            if k:
+                pick = random.choice(theirs_on(k, "vinyl")) if want == "vinyl" else max(theirs_on(k, "digital"), key=lambda a: -a[5])
+                year = ((by_id[pick[8]][3] if pick[8] in by_id else 0) or pick[3]) if want == "vinyl" else pick[3]  # the music's year, not a reissue's
+                picked = suggestion(why(k), want, year, pick)
+                break
+        if picked:
             break
+    if picked:
+        out.append(picked)
     spin["suggest"] = out
 
 
