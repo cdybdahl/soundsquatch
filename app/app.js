@@ -224,7 +224,7 @@ function useLibrary(lib) {
     A.physical = lib.physical || []; A.vinylOf = new Map(); A.vinylOnly = [];
     A.physWord = A.physical.some(r => /\b(CD|Cassette|DVD|Blu-ray)\b/.test(r[5] || "")) ? "physical" : "vinyl"; // what to call them: all records, or records and CDs
     const tab = $('#rail a[data-tab="vinyl"]');
-    if (tab) { tab.querySelector("span").textContent = A.physWord === "vinyl" ? "Vinyl" : "Records"; }
+    if (tab) { tab.querySelector("span").textContent = "Let's get physical"; }
     A.physical.forEach(r => { if (r[8]) { if (!A.vinylOf.has(r[8])) A.vinylOf.set(r[8], []); A.vinylOf.get(r[8]).push(r); } else A.vinylOnly.push(r); });
     const g = {}; lib.albums.forEach(a => (a[8] || []).forEach(x => { g[x] = (g[x] || 0) + 1; }));
     A.genres = Object.keys(g).map(k => [k, g[k]]).sort((a, b) => b[1] - a[1]);
@@ -487,6 +487,7 @@ function drawDiscover(el) {
   if (on("discover", "back") && h.back.length) out.push(section("Pick up where you left off", "Back to it", shelf(h.back.map(id => albumCard(A.byId.get(id))))));
   if (on("discover", "new") && (h.new || []).length) out.push(section("Out lately", "New from your artists", shelf(h["new"].map(newCard))));
   if (on("discover", "spotlight") && h.spotlight && (A.heroPick || A.heroAlbum || (on("discover", "cover") && coverStories().length))) out.push(`<div id="d-spot"></div>`); // the artist of the day, when something else leads
+  if (physicalShelf()) out.push(section("Let's get physical", "From the record shelf", physicalShelf(), `<a class="more" href="#/vinyl">All of them</a>`));
   if (on("discover", "fresh")) out.push(section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
   if (on("discover", "rediscover") && h.rediscover.length) out.push(section("Not heard lately", "Rediscover", `<div class="mosaic">${h.rediscover.slice(0, 12).map((id, i) => albumCard(A.byId.get(id), i === 0 ? "big" : "")).join("")}</div>`));
   if (on("discover", "connections") && h.connections.length) out.push(section("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`));
@@ -851,11 +852,12 @@ VIEWS.front = function (el) {
     const sec = (dept, title, body, cls) => `<section class="fp-sec ${cls || ""}"><div class="mag-dept">${dept}</div><h3>${title}</h3>${body}</section>`;
     el.innerHTML = `<article class="mag fp">
       <header class="fp-plate"><div class="fp-line"><span>Vol. 1 &middot; No. ${issue}</span><span>${esc(date)}</span><span>${A.albums.length.toLocaleString()} records on the shelves</span></div>
-        <h1>Sound<em>squatch</em></h1><div class="fp-line fp-tag"><span>Music for the house</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></div></header>
+        <h1>Sound<em>squatch</em></h1><div class="fp-line fp-tag"><span>Your music, connected.</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></div></header>
       <div class="fp-top">${lead ? story(lead, true) : `<p class="dim">No stories today.</p>`}<div class="fp-also">${rest.map(x => story(x, false)).join("")}
         <div class="fp-lucky"><button data-act="surprise">${icon("dice")} A record at random</button><button data-act="pickArtist">${icon("person")} An artist at random</button></div></div></div>
       ${picked || A.heroPick ? `<div class="fp-back"><button data-act="heroBack">Back to today's paper</button></div>` : ""}
       ${newArrivals(1).length ? sec("Just in", `Recently added <a class="fp-all" href="#/albums" data-act="recentAll">All of them</a>`, shelf(newArrivals(20).map(arrivalCard))) : ""}
+      ${physicalShelf() ? sec("Let's get physical", `From the record shelf <a class="fp-all" href="#/vinyl">All of them</a>`, physicalShelf()) : ""}
       ${st.length ? sec("On the radio", "Stations", shelf(st.map(stationCard))) : ""}
       ${h.spotlight ? `<section class="fp-artist" id="fp-artist"><div class="mag-dept">Artist of the day</div></section>` : ""}
       <div class="fp-pair">
@@ -939,22 +941,21 @@ MAG.album = function (el, id) {
   const title = a[1], artist = a[2], more = albumsBy(artist).filter(x => x[0] !== a[0] && !x.archive);
   const vers = versionsOf(a), tab = store.get("sq-mag-album-tab", "tracks");
   const pane = (k, html) => `<div class="mag-page" data-tab="${k}" ${tab === k ? "" : "hidden"}>${html}</div>`;
-  el.innerHTML = `<article class="mag">${magRun("The Records")}
-    <div class="mag-dept mag-kind">The record</div>
-    <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
-    <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
-    <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", a[9] === "qobuz" ? "On Qobuz" : "On the shelves", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
-    <div class="mag-album">
+  // the opening spread: the cover large on the left; on the right what it is, the standfirst, the particulars, then
+  // one row of buttons (Spin it first) and the house's marks
+  el.innerHTML = `<article class="mag mag-al">${magRun("The Records")}
+    <div class="al-open">
       <figure class="mag-cover"><div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div></figure>
-      <aside class="mag-side"><div class="ff"><div class="ff-h">The particulars</div><dl>
-        <div class="ff-row"><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
-        ${title ? `<div class="ff-row"><dt>Your marks</dt><dd class="al-marks">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}
-      </dl></div>
-      <div class="mag-acts"><button data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}">${icon("next_up")} Spin it next</button>
-        <button data-act="queueAlbum" data-v="${a[0]}">${icon("queue")} Queue it</button><button data-act="addToPlaylist" data-v="album:${a[0]}">${icon("list")} Add to a playlist</button>
-        ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}">${icon("radio_plus")} Add ${esc(artist)} to a station</button>` : ""}
-        <span class="mag-share"></span>
-        ${title ? `<button data-act="removeAsk" data-v="${a[0]}">${icon("trash")} Remove from the library</button>` : ""}</div></aside>
+      <div class="al-head"><div class="mag-dept mag-kind">The record</div>
+        <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
+        <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
+        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", a[9] === "qobuz" ? "On Qobuz" : "On the shelves", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
+        <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Spin it next">${icon("next_up")}<span>Next</span></button>
+          <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>
+          ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}" aria-label="Add ${esc(artist)} to a station">${icon("radio_plus")}<span>Station</span></button>` : ""}
+          <span class="mag-share"></span>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
+        <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
+          ${title ? `<div><dt>Your marks</dt><dd class="al-marks-in">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}</dl></div>
     </div>
     <nav class="mag-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"]].filter(t => t[0] !== "credits" || on("features", "credits")).map(t =>
       `<button class="${t[0] === tab ? "on" : ""}" data-act="magTab" data-v="${t[0]}" data-store="sq-mag-album-tab">${t[1]}</button>`).join("")}</nav>
@@ -965,7 +966,7 @@ MAG.album = function (el, id) {
       `<li><a href="${albumHref(x[0])}"><img loading="lazy" src="${cover(x[4], 300)}" alt=""><span class="y">${x[3] || "&mdash;"}</span><b>${esc(x[1])}</b><em>${esc((x[8] || [])[0] || "")}</em></a></li>`).join("")}</ol></section>` : ""}
   </article>`;
   const img = $(".mag-cover img", el); if (img) tint(img, el);
-  if (title) api("/api/share?album_id=" + a[0]).then(r => { const box = $(".mag-share", el); if (r.url && box && el.isConnected) box.outerHTML = `<button data-act="share" data-v="${esc(JSON.stringify({ title: title + " by " + artist, url: r.url }))}">${icon("share")} Share</button>`; }).catch(() => {});
+  if (title) api("/api/share?album_id=" + a[0]).then(r => { const box = $(".mag-share", el); if (r.url && box && el.isConnected) box.outerHTML = `<button data-act="share" data-v="${esc(JSON.stringify({ title: title + " by " + artist, url: r.url }))}" aria-label="Share">${icon("share")}<span>Share</span></button>`; }).catch(() => {});
   profile(artist).then(p => { const k = $(".mag-kind", el); if (k && title) k.textContent = { album: "The LP", ep: "The EP", live: "Live", comp: "The compilation" }[kindOf(a, p.rgs)]; }).catch(() => {});
   albumData(id).then(d => {
     if (!el.isConnected) return;
@@ -981,7 +982,12 @@ MAG.album = function (el, id) {
     const story = text => {
       const list = paras(text || ""), box = $(".mag-review", el); if (!box) return;
       const words = list.filter(x => x.indexOf("\u00a7 ") !== 0); // its headings set as headings, never as text
-      box.innerHTML = words.length ? dropcap(list, artist) + `<p class="mag-src">From Wikipedia</p>` : `<p class="dim">No one has written about this one yet.</p>`;
+      // a line someone said of it, pulled out: a quotation (opened after a space or a colon, closed before punctuation or a
+      // space), set across both columns midway, never straight after a heading
+      const q = (/(?:^|[\s:(])["\u201c]([^"\u201c\u201d]{70,190})["\u201d](?=[\s.,;:)]|$)/.exec(words.slice(1).join(" ")) || [])[1];
+      let at = Math.max(1, Math.floor(list.length / 2));
+      while (at > 1 && String(list[at - 1]).indexOf("\u00a7 ") === 0) at--;
+      box.innerHTML = words.length ? dropcap(list.slice(0, at), artist) + (q ? `<blockquote class="pull">&ldquo;${esc(q.replace(/[,]$/, ""))}&rdquo;</blockquote>` : "") + prose(list.slice(at), artist) + `<p class="mag-src">From Wikipedia</p>` : `<p class="dim">No one has written about this one yet.</p>`;
       const deck = $(".mag-album-deck", el); if (deck && words.length) deck.insertAdjacentHTML("beforeend", ` ${esc(standfirst(words[0], 160))}`);
     };
     if (d.review != null) story(d.review); else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) story(r.review); }).catch(() => story(""));
@@ -1067,6 +1073,11 @@ function shelfStories() {
   const pick = shuffled(rs.filter(r => r[4] && r !== home[0]), rnd)[0];
   return pick ? out.concat([as("shelf", pick)]) : out;
 }
+// the front page's records from the shelf, whenever there's a collection: a dozen, a different dozen each day
+function physicalShelf() {
+  const rs = (A.physical || []).filter(r => r[4]);
+  return rs.length ? shelf(shuffled(rs, seeded("physical" + new Date().toDateString())).slice(0, 12).map(r => vinylCard(r))) : "";
+}
 // what a record is, in a line: 2×LP, Clear Vinyl · Temporary Residence TRR355LP
 const pressLine = r => [shortFormat(r) + (pressDetails(r).t ? ", " + Array.from(new Set(pressDetails(r).t.split(/,\s*/))).join(", ") : ""), r[6]].filter(Boolean).join(" · "); // a box set's discs say their colour once
 const shelfWhen = r => (r[8] ? "On " : "Only on ") + shortFormat(r);
@@ -1102,7 +1113,7 @@ const VINYL_FACETS = [
 const recordYear = r => (r[8] && A.byId.get(r[8]) && A.byId.get(r[8])[3]) || r[3];
 VIEWS.vinyl = function (el) {
   if (!A.physical.length) { // not connected yet (or an empty collection): how to bring it in, here
-    el.innerHTML = `${pageBar("Vinyl", ["The collection", "not connected yet"])}<div class="vinyl-empty">${icon("disc")}
+    el.innerHTML = `${pageBar("Let's get physical", ["The collection", "not connected yet"])}<div class="vinyl-empty">${icon("disc")}
       <h2>Your records, beside the digital ones</h2>
       <p>Soundsquatch reads your collection from Discogs: the albums you have on vinyl say so, and the records you have only on vinyl are kept here with the rest. On discogs.com, go to Settings, Developers, and press Generate new token; paste it here.</p>
       <div class="seed-add"><input data-discogs type="password" placeholder="your Discogs token" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button class="btn" data-act="discogsSave">Read the collection</button></div>
@@ -1114,7 +1125,7 @@ VIEWS.vinyl = function (el) {
   const rows = A.physical.filter(r => facets.every(f => !pick[f[0]] || f[3](r, pick[f[0]]))).map(vinylRow).sort(SORTS[sort][1]);
   const both = A.physical.filter(r => r[8]).length, picked = Object.keys(pick).filter(k => pick[k]).length;
   A.vinylShown = rows.map(x => x.vinyl);
-  el.innerHTML = `${pageBar(A.physWord === "vinyl" ? "Vinyl" : "Records", ["The collection", picked ? `${rows.length.toLocaleString()} of ${A.physical.length.toLocaleString()} records` : `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
+  el.innerHTML = `${pageBar("Let's get physical", ["The collection", picked ? `${rows.length.toLocaleString()} of ${A.physical.length.toLocaleString()} records` : `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
       `<div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="vinylSort" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`)}
     <div class="vfacets">${facets.map(f => `<div class="vfacet"><span class="vf-h">${f[1]}</span><div class="chips">${f[2].map(o =>
       `<button class="${pick[f[0]] === o[0] ? "on" : ""}" data-act="vinylPick" data-v="${esc(f[0] + "|" + o[0])}">${esc(o[1])}</button>`).join("")}</div></div>`).join("")}

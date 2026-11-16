@@ -1386,3 +1386,46 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
   .np-next { order: 6; }
   .np-extra { flex-wrap: wrap; }
 }
+
+/* the magazine's album page, uplifted: an opening spread (the cover large, beside it the headline, the standfirst, the
+   particulars, one row of buttons and the house's marks), the tracks as a contents page in two columns, the story in two
+   columns with its headings ruled and a line from it pulled out across both */
+.mag-al .al-open { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 0 48px; margin-top: 26px; align-items: center; }
+.mag-al .mag-cover { margin: 0; }
+.mag-al .mag-cover .album-art { box-shadow: 0 30px 70px rgba(0, 0, 0, .55), 0 0 0 1px rgba(236, 228, 214, .14); }
+.mag-al .al-head .mag-dept { margin-top: 0; }
+.mag-al .mag-head-album { font-size: clamp(44px, 6vw, 88px); line-height: .92; margin-top: 10px; text-wrap: balance; }
+.mag-al .mag-deck { font-size: 21px; line-height: 1.45; margin-top: 16px; }
+.mag-al .mag-by { margin-top: 18px; }
+.al-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 22px; }
+.al-acts button { display: inline-flex; align-items: center; gap: 7px; height: 42px; padding: 0 14px; border-radius: 21px; border: 1px solid rgba(236, 228, 214, .22); background: none; color: #ece4d6; font: 600 13px var(--sans); letter-spacing: .04em; cursor: pointer; }
+.al-acts button .ic { width: 17px; height: 17px; color: var(--accent); }
+.al-acts .al-spin { background: #ece4d6; border-color: #ece4d6; color: #141210; padding: 0 22px; font-size: 14px; }
+.al-acts .al-spin .ic { color: #141210; }
+.al-acts button[data-act="removeAsk"] { margin-left: auto; width: 42px; padding: 0; justify-content: center; border-color: transparent; }
+.al-acts button[data-act="removeAsk"] .ic { color: rgba(236, 228, 214, .45); }
+.al-acts .seed-btn.on { border-color: var(--accent); }
+.al-marks { margin: 22px 0 0; display: grid; gap: 12px; border-top: 1px solid rgba(236, 228, 214, .15); padding-top: 14px; }
+.al-marks > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: center; gap: 12px; }
+.al-marks dt { font: 700 10px var(--sans); letter-spacing: .22em; text-transform: uppercase; color: rgba(236, 228, 214, .5); }
+.al-marks dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mag-al .mag-tabs { margin-top: 40px; }
+@media (min-width: 900px) {
+  .mag-al .mag-tracks { column-count: 2; column-gap: 48px; column-rule: 1px solid rgba(236, 228, 214, .1); }
+  .mag-al .mag-tracks .trk, .mag-al .mag-tracks .disc { break-inside: avoid; -webkit-column-break-inside: avoid; }
+  .mag-al .mag-review { column-count: 2; column-gap: 44px; column-rule: 1px solid rgba(236, 228, 214, .1); max-width: none; }
+}
+.mag-al .mag-review { font: 18px/1.6 var(--serif); }
+.mag-al .mag-review p { text-align: left; hyphens: auto; -webkit-hyphens: auto; margin: 0 0 .95em; }
+.mag-al .mag-review h4.sub { break-after: avoid; -webkit-column-break-after: avoid; margin: 1.5em 0 .55em; padding-top: 10px; border-top: 2px solid rgba(236, 228, 214, .8); color: #ece4d6; font: 800 11px var(--sans); letter-spacing: .26em; }
+.mag-al .mag-review .pull { column-span: all; -webkit-column-span: all; margin: 18px 0 30px; padding: 22px 0; border-top: 1px solid rgba(236, 228, 214, .3); border-bottom: 1px solid rgba(236, 228, 214, .3);
+  font: italic 500 clamp(24px, 2.6vw, 34px)/1.25 var(--display); color: var(--accent); text-align: center; text-wrap: balance; }
+.mag-al .mag-src { column-span: all; -webkit-column-span: all; }
+@media (max-width: 760px) {
+  .mag-al .al-open { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .mag-al .mag-cover { max-width: 520px; }
+  .al-acts button span { display: none; }
+  .al-acts .al-spin span { display: inline; }
+  .al-marks > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+.mag-al .mag-review h4.sub + h4.sub { border-top: 0; padding-top: 0; margin-top: -.2em; color: var(--accent); }
