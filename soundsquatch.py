@@ -3955,8 +3955,8 @@ def tt_side(path, s0, s1, gaps):
                 f = FLAC(tmp)
                 f.update({"title": title, "artist": (m or {}).get("artist") or artist, "albumartist": artist, "album": album,
                           "comment": "From the turntable, " + time.strftime("%Y-%m-%d")})
-                if pos:
-                    f["tracknumber"] = pos
+                if pos:  # "B3": side B as the second disc, the third song on it (Lyrion keeps only numbers); the position kept as it is
+                    f.update(vinyl_numbers(pos))
                 if rec:
                     f["discogs_release_id"] = str(rec[0])
                 f.save()
@@ -4027,6 +4027,17 @@ def tt_judge(hist, now):
     if len(noise) >= 10 and now.get("noise") is not None and now["noise"] > noise[len(noise) // 2] + 8:
         out.append({"key": f"noise-{now['id']}", "title": f"{now['title'] or 'That side'} is noisy",
                     "text": f"Its surface noise is {round(now['noise'] - noise[len(noise) // 2])} dB above the collection's usual. The record wants a clean (and if it stays noisy once clean, it may be worn)."})
+    return out
+
+
+def vinyl_numbers(pos):
+    """A record's position ("B3", "A", "C12", "4") as the tags Lyrion orders by: the side as the disc (A 1, B 2…), the
+    song's number on it, and the position itself."""
+    m = re.match(r"^([A-Za-z]*)(\d*)", pos or "")
+    side, n = m.group(1).upper(), m.group(2)
+    out = {"tracknumber": n or "1", "vinyl_position": pos}
+    if side:
+        out["discnumber"] = str(ord(side[0]) - 64)
     return out
 
 
