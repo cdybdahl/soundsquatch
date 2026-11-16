@@ -1176,7 +1176,23 @@ function vinylPull() {
 }
 // the line on an album's page when the house has it on the shelf too
 // where a version plays from, in words: the turntable's own recording of the record marked as such
-const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? `${icon("disc")} Vinyl, captured by Soundsquatch` : "on the shelves";
+const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? "Vinyl, captured by Soundsquatch" : "on the shelves";
+const SOURCE = { qobuz: "Qobuz", vinyl: "Vinyl, captured by Soundsquatch", local: "Your files" };
+/* one pressing in the pressings sheet, each line led by where it plays from, then what tells it apart: the year and the
+   sound for a digital copy; for the turntable's own recording, the pressing it was taken from (its year and label, from
+   Discogs) and the day it was captured, with that pressing's own photograph marked with a record */
+function versionRow(x, i, open) {
+  const vinyl = x[5] === "vinyl", main = A.byId.get(x[0]) || [];
+  const rec = vinyl ? ((A.vinylOf && A.vinylOf.get(main[12] || x[0])) || [])[0] : null;
+  const at = main[11] ? new Date(main[11] * 1000) : null;
+  const added = at ? at.toLocaleDateString(undefined, at.getFullYear() === new Date().getFullYear() ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" }) : "";
+  const label = rec ? ((rec[9] || {}).ln || "").replace(/ \(\d+\)$/, "") : "";
+  const bits = vinyl ? [rec && rec[3] ? rec[3] + " pressing" : "", esc(label), added ? "captured " + added : ""]
+    : [x[3] || "", x[2] ? esc(x[2]) : ""];
+  const art = vinyl && rec && rec[4] ? pic(rec[4], 160) : x[4] ? cover(x[4], 100) : "";
+  return `<a class="room ${x[0] === open ? "on" : ""}" href="${albumHref(x[0])}" data-act="closeSheet"><span class="room-go"><span class="ver-thumb">${art ? `<img class="ver-art" src="${esc(art)}" alt="">` : icon("disc")}${vinyl ? `<i class="ver-badge">${icon("disc")}</i>` : ""}</span>
+    <span><b>${esc(x[1])}</b><em><strong>${SOURCE[x[5]] || SOURCE.local}</strong>${bits.filter(Boolean).map(b => " &middot; " + b).join("")}${i === 0 ? " &middot; shown" : ""}</em></span></span></a>`;
+}
 function vinylChip(a) {
   const rs = A.vinylOf && A.vinylOf.get(a[0]);
   return rs ? `<a class="vinyl-chip" href="#/record/${rs[0][0]}" title="${esc(rs.map(r => [r[5], r[6], r[3] || ""].filter(Boolean).join(", ")).join("; "))}">${icon("disc")} Also on ${esc(rs.map(r => r[5] || "vinyl").join(", ").replace(/^Vinyl/, "vinyl"))}</a>` : "";
@@ -2173,7 +2189,7 @@ const ACT = {
   versions: v => {
     const a = A.byId.get(+v); if (!a) return;
     openSheet(`<div class="kicker">Pressings</div><h3>${esc(a[1])}</h3><div class="dim">${esc(a[2])}</div>
-      <div class="rooms">${versionsOf(a).map((x, i) => `<a class="room ${x[0] === +v ? "on" : ""}" href="${albumHref(x[0])}" data-act="closeSheet"><span class="room-go">${x[4] ? `<img class="ver-art" src="${cover(x[4], 100)}" alt="">` : icon("disc")}<span><b>${esc(x[1])}</b><em>${[x[3] || "", x[2] ? esc(x[2]) : "", sourceWords(x[5]), i === 0 ? "shown" : ""].filter(Boolean).join(" &middot; ")}</em></span></span></a>`).join("")}</div>
+      <div class="rooms">${versionsOf(a).map((x, i) => versionRow(x, i, +v)).join("")}</div>
       <p class="plan-note">The best-sounding pressing is the one shown; the others are kept and play from here.</p>`);
   },
   focusOpen: () => { (A.heard ? Promise.resolve() : loadHeard()).then(openFocus); },

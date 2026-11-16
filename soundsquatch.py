@@ -347,7 +347,7 @@ def discogs_sync():
                              words.strip(), " ".join(x for x in (label.get("name"), label.get("catno")) if x and x != "none"), (r.get("date_added") or "")[:10],
                              {"g": b.get("genres") or [], "s": b.get("styles") or [], "d": descs, "t": ", ".join(f.get("text") or "" for f in b.get("formats") or [] if f.get("text")),
                               "box": any(f.get("name") == "Box Set" for f in b.get("formats") or []), "r": r.get("rating") or 0,
-                              "i": r.get("instance_id"), "f": r.get("folder_id"), "n": {str(n.get("field_id")): n.get("value") for n in r.get("notes") or []}}])
+                              "i": r.get("instance_id"), "f": r.get("folder_id"), "ln": label.get("name") or "", "n": {str(n.get("field_id")): n.get("value") for n in r.get("notes") or []}}])
             if page >= (got.get("pagination") or {}).get("pages", 1):
                 break
             page += 1
