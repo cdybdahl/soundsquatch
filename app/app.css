@@ -1454,7 +1454,7 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .tt-panel .tt-tl { max-width: 560px; }
 /* the pressings sheet: each line led by its source; the turntable's own recording marked on its picture */
 .ver-thumb { position: relative; flex: none; display: inline-flex; }
-.ver-badge { position: absolute; right: -7px; bottom: -7px; width: 26px; height: 26px; border-radius: 13px; background: #141210; color: var(--accent); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--accent); }
-.ver-badge .ic { width: 18px; height: 18px; stroke-width: 2.2; }
+.ver-badge { position: absolute; left: -5px; bottom: -5px; width: 19px; height: 19px; border-radius: 10px; background: #141210; color: var(--accent); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1.5px var(--accent); }
+.ver-badge .ic { width: 13px; height: 13px; stroke-width: 2.2; }
 .room-go em strong { font-style: normal; font-weight: 600; color: rgba(242, 236, 226, .9); }
 .ver-more { display: block; }
