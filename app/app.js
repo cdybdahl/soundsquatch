@@ -224,7 +224,7 @@ function useLibrary(lib) {
     A.physical = lib.physical || []; A.vinylOf = new Map(); A.vinylOnly = [];
     A.physWord = A.physical.some(r => /\b(CD|Cassette|DVD|Blu-ray)\b/.test(r[5] || "")) ? "physical" : "vinyl"; // what to call them: all records, or records and CDs
     const tab = $('#rail a[data-tab="vinyl"]');
-    if (tab) { tab.querySelector("span").textContent = "Let's get physical"; }
+    if (tab) { tab.querySelector("span").textContent = "Vinyl"; }
     A.physical.forEach(r => { if (r[8]) { if (!A.vinylOf.has(r[8])) A.vinylOf.set(r[8], []); A.vinylOf.get(r[8]).push(r); } else A.vinylOnly.push(r); });
     const g = {}; lib.albums.forEach(a => (a[8] || []).forEach(x => { g[x] = (g[x] || 0) + 1; }));
     A.genres = Object.keys(g).map(k => [k, g[k]]).sort((a, b) => b[1] - a[1]);
