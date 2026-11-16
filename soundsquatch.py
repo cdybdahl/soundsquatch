@@ -2166,33 +2166,41 @@ def history(days):
 
 def afterwork(req):
     """The after-work record (Home Assistant's 4:20 mix): a record added to the shelves in the last two weeks that the
-    listening log has never heard (nor judged before), played whole in a room; it is remembered for the verdict that follows."""
-    player = req.get("player") or ""
+    listening log has never heard (nor judged before). "pick" chooses it (announced at 4:15), "another" chooses again
+    from the rest, "play" plays the one chosen, whole and in order, in a room; it is then remembered for the verdict."""
+    what, player = req.get("what") or "play", req.get("player") or ""
     if not lms_qobuz.PLAYER.match(player):
         return {"error": "no such room"}
-    with lib_lock:
-        albums = list(library["albums"])
-    judged = kv_get("afterwork_judged", {})
-    newest = []  # each record as the version that came in last (a new pressing of an old one is what's new): [id, title, artist, when]
-    for e in albums:
-        if e[11] > time.time() - 14 * 86400:
-            v = next((x for x in e[10] if x[6] and x[6] == e[11]), None)
-            newest.append([v[0], v[1], e[2], e[11]] if v else [e[0], e[1], e[2], e[11]])
-    try:
-        c = sqlite3.connect(f"file:{LOG_DB}?mode=ro", uri=True, timeout=5)
-        heard = {copies(r[0] or "", r[1] or "") for r in c.execute("select artist, album from plays where started > ?", (time.time() - 30 * 86400,))}
-        c.close()
-    except Exception:
-        return {"error": "the listening log can't be read"}
-    newest = [v for v in newest if str(v[0]) not in judged and copies(v[2], v[1]) not in heard]
-    if not newest:
-        return {"error": "nothing new and unheard on the shelves"}
-    a = random.choice(newest)
-    if not req.get("dry"):  # dry: which it would be, and nothing played
+    offer = kv_get("afterwork_offer") or {}
+    if what == "play" and offer.get("id") and time.time() - offer.get("at", 0) < 3600:
+        a = [offer["id"], offer["title"], offer["artist"]]
+    else:
+        with lib_lock:
+            albums = list(library["albums"])
+        judged = kv_get("afterwork_judged", {})
+        passed = set(offer.get("passed", [])) | {offer.get("id")} if what == "another" else set()  # those already turned down today
+        newest = []  # each record as the version that came in last (a new pressing of an old one is what's new): [id, title, artist, when]
+        for e in albums:
+            if e[11] > time.time() - 14 * 86400:
+                v = next((x for x in e[10] if x[6] and x[6] == e[11]), None)
+                newest.append([v[0], v[1], e[2], e[11]] if v else [e[0], e[1], e[2], e[11]])
+        try:
+            c = sqlite3.connect(f"file:{LOG_DB}?mode=ro", uri=True, timeout=5)
+            heard = {copies(r[0] or "", r[1] or "") for r in c.execute("select artist, album from plays where started > ?", (time.time() - 30 * 86400,))}
+            c.close()
+        except Exception:
+            return {"error": "the listening log can't be read"}
+        newest = [v for v in newest if str(v[0]) not in judged and copies(v[2], v[1]) not in heard and v[0] not in passed]
+        if not newest:
+            return {"error": "nothing else new and unheard on the shelves" if passed else "nothing new and unheard on the shelves"}
+        a = random.choice(newest)
+        kv_set("afterwork_offer", {"id": a[0], "title": a[1], "artist": a[2], "at": time.time(), "passed": sorted(x for x in passed if x)})
+    if what == "play":
         rpc(player, "playlist", "shuffle", "0")  # a record plays in its order
         rpc(player, "playlistcontrol", "cmd:load", f"album_id:{a[0]}")
         kv_set("afterwork", {"id": a[0], "title": a[1], "artist": a[2], "player": player, "at": time.time()})
-    return {"ok": True, "id": a[0], "title": a[1], "artist": a[2], "choices": len(newest)}
+        kv_set("afterwork_offer", None)
+    return {"ok": True, "id": a[0], "title": a[1], "artist": a[2]}
 
 
 def afterwork_verdict(req):
