@@ -2164,6 +2164,55 @@ def history(days):
     return {"plays": out}
 
 
+def afterwork(req):
+    """The after-work record (Home Assistant's 4:20 mix): a record added to the shelves in the last two weeks that the
+    listening log has never heard (nor judged before), played whole in a room; it is remembered for the verdict that follows."""
+    player = req.get("player") or ""
+    if not lms_qobuz.PLAYER.match(player):
+        return {"error": "no such room"}
+    with lib_lock:
+        albums = list(library["albums"])
+    judged = kv_get("afterwork_judged", {})
+    newest = []  # each record as the version that came in last (a new pressing of an old one is what's new): [id, title, artist, when]
+    for e in albums:
+        if e[11] > time.time() - 14 * 86400:
+            v = next((x for x in e[10] if x[6] and x[6] == e[11]), None)
+            newest.append([v[0], v[1], e[2], e[11]] if v else [e[0], e[1], e[2], e[11]])
+    try:
+        c = sqlite3.connect(f"file:{LOG_DB}?mode=ro", uri=True, timeout=5)
+        heard = {copies(r[0] or "", r[1] or "") for r in c.execute("select artist, album from plays where started > ?", (time.time() - 30 * 86400,))}
+        c.close()
+    except Exception:
+        return {"error": "the listening log can't be read"}
+    newest = [v for v in newest if str(v[0]) not in judged and copies(v[2], v[1]) not in heard]
+    if not newest:
+        return {"error": "nothing new and unheard on the shelves"}
+    a = random.choice(newest)
+    if not req.get("dry"):  # dry: which it would be, and nothing played
+        rpc(player, "playlist", "shuffle", "0")  # a record plays in its order
+        rpc(player, "playlistcontrol", "cmd:load", f"album_id:{a[0]}")
+        kv_set("afterwork", {"id": a[0], "title": a[1], "artist": a[2], "player": player, "at": time.time()})
+    return {"ok": True, "id": a[0], "title": a[1], "artist": a[2], "choices": len(newest)}
+
+
+def afterwork_verdict(req):
+    """Stay or go for the after-work record: staying keeps it off the after-work list for good; going takes it off the
+    shelves as Remove does (its files moved to music-removed, never deleted)."""
+    cur, verdict = kv_get("afterwork"), req.get("verdict")
+    if not cur or verdict not in ("stay", "go"):
+        return {"error": "nothing to judge"}
+    out = {"ok": True, "title": cur["title"], "artist": cur["artist"], "verdict": verdict}
+    if verdict == "go":
+        done = remove_album(int(cur["id"]), cur["player"])
+        if done.get("error"):
+            return dict(out, ok=False, error=done["error"])
+    judged = kv_get("afterwork_judged", {})
+    judged[str(cur["id"])] = verdict
+    kv_set("afterwork_judged", judged)
+    kv_set("afterwork", None)
+    return out
+
+
 def keep_from_log(req):
     """A Qobuz album the log heard, added to the library (a Qobuz favourite), by one of its tracks."""
     url, player = req.get("url") or "", req.get("player") or PLAYER
@@ -3685,7 +3734,7 @@ class Handler(BaseHTTPRequestHandler):
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
-                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/focuses": focuses,
+                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}
         if self.path in routes:
