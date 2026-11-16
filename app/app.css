@@ -1441,3 +1441,14 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .tt-row b { font-weight: 600; } .tt-row i { display: block; font-style: normal; color: var(--dim); font-size: 12px; }
 .tt-row .bad { color: #f0a08a; }
 @media (max-width: 640px) { .tt-row { grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); } .tt-row > span:nth-child(n+5) { display: none; } }
+/* the record's tracklist on the turntable's screens: the song playing marked, those heard ticked */
+.tt-tl { margin: 4px 0 22px; }
+.tt-tl .disc { margin: 14px 0 4px; font: 700 10px var(--sans); letter-spacing: .22em; text-transform: uppercase; color: var(--accent); }
+.tl-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(242, 236, 226, .08); font: 16px var(--serif); color: rgba(242, 236, 226, .78); }
+.tl-row .n { font: 600 12px var(--sans); color: var(--dim); display: flex; align-items: center; }
+.tl-row .n .ic { width: 16px; height: 16px; color: var(--accent); }
+.tl-row .d { font: 13px var(--sans); color: var(--dim); font-variant-numeric: tabular-nums; }
+.tl-row.heard { color: rgba(242, 236, 226, .55); }
+.tl-row.now { color: var(--ink, #f2ece2); font-weight: 600; }
+.tl-row.now .tt { color: var(--accent); }
+.tt-panel .tt-tl { max-width: 560px; }

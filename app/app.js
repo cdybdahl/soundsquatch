@@ -17,6 +17,7 @@ const fixedVolume = id => !!houseRoom(id).fixed;
 
 const ICONS = {
   compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
   tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8" r="1.3"/>',
@@ -1157,7 +1158,7 @@ function ttPanel() {
     <div class="vpull-text"><div class="kicker">${icon("disc")} On the turntable${t.state === "side over" ? " &middot; the side is over" : t.state === "record over" ? " &middot; that's the record" : ""}</div><h2>${r.title ? `<a href="${r.href}">${esc(r.title)}</a>` : "Listening&hellip;"}</h2>
       ${r.artist ? `<a class="vpull-by" href="${artistHref(r.artist)}">${esc(r.artist)}</a>` : ""}
       <p>${song ? `${song.pos ? esc(song.pos) + " &middot; " : ""}&ldquo;${esc(song.title)}&rdquo;` : ""}${r.plays ? ` <span class="dim">played ${r.plays} ${r.plays === 1 ? "time" : "times"}</span>` : ""}</p>
-      <canvas class="tt-vis" width="600" height="60"></canvas>${ttAsk(t)}
+      <canvas class="tt-vis" width="600" height="60"></canvas>${ttAsk(t)}${ttTracklist(t, true)}
       <div class="acts"><button class="btn" data-act="openNp">Now playing</button><button class="btn ghost" data-act="ttRooms">${icon("speaker")} Hear it in a room</button></div>
       ${ttSuggest(t)}</div></section>`;
 }
@@ -2694,9 +2695,32 @@ function drawTtNp() {
         <div class="np-q tt-q">Vinyl${song && song.pos ? " &middot; side " + esc(song.side) + ", " + esc(song.pos) : ""}${r.plays ? ` &middot; played ${r.plays} ${r.plays === 1 ? "time" : "times"}` : ""}</div>
         <div class="np-extra"><button class="pill" data-act="ttRooms">${icon("speaker")} Hear it in a room</button></div></div>
         ${ttAsk(t)}
-        <div class="np-next">${t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : ""}${ttSuggest(t)}</div></div></div>`;
+        <div class="np-next">${ttTracklist(t) || (t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : "")}${ttSuggest(t)}</div></div></div>`;
   const img = $(".np-art img", np); if (img) tint(img, np);
   ttVisual();
+}
+/* the record's tracklist from Discogs, by side: the song playing marked, those heard ticked; with oneSide, only the side
+   playing. Read once a record (the server keeps it a month); drawn again when it comes */
+A.ttTracks = {};
+function ttTracklist(t, oneSide) {
+  const r = t.record || {}; if (!r.id) return "";
+  const tracks = A.ttTracks[r.id];
+  if (!tracks) {
+    if (tracks === undefined) {
+      A.ttTracks[r.id] = null;
+      api("/api/record?id=" + r.id).then(d => { A.ttTracks[r.id] = (d.tracks || []).filter(x => x.type === "track"); A.curKey = "\u0000"; paintPlayer(); if (current && current.kind === "vinyl") VIEWS.vinyl(current.el); }).catch(() => { delete A.ttTracks[r.id]; });
+    }
+    return "";
+  }
+  if (!tracks.length) return "";
+  const now = (t.song || {}).pos || "", heard = {}; (t.songs || []).forEach(x => { if (x[1]) heard[x[1]] = 1; });
+  const sideOf = x => ((/^[A-Za-z]+/.exec(x.pos) || [""])[0]).toUpperCase(), playing = now ? sideOf({ pos: now }) : t.side || "";
+  let side = null;
+  const rows = tracks.filter(x => !oneSide || !playing || sideOf(x) === playing).map(x => {
+    const sd = sideOf(x), head = sd && sd !== side ? `<div class="disc">Side ${esc(sd)}</div>` : ""; side = sd || side;
+    return `${head}<div class="tl-row ${x.pos === now ? "now" : heard[x.pos] ? "heard" : ""}"><span class="n">${x.pos === now ? `<span class="eq"><i></i><i></i><i></i></span>` : heard[x.pos] ? icon("check") : esc(x.pos)}</span><span class="tt">${esc(x.title)}</span><span class="d">${esc(x.dur || "")}</span></div>`;
+  }).join("");
+  return `<div class="tt-tl"><div class="kicker">${oneSide && playing ? "Side " + esc(playing) : "The record"}</div>${rows}</div>`;
 }
 function ttSuggest(t) {
   return (t.suggest || []).length ? `<div class="tt-next"><div class="kicker">${t.state === "record over" ? "Play next" : "After this"}</div>${t.suggest.map(s =>
@@ -2825,7 +2849,7 @@ function paintNp() {
   const vol = $(".vol", np); if (vol && !vol.dragging) vol.value = Math.abs(+st["mixer volume"] || 0);
   const sh = $(".shuf", np); if (sh) sh.classList.toggle("on", !!+st["playlist shuffle"]);
   const rp = $(".rep", np), r = +st["playlist repeat"] || 0; if (rp) { rp.classList.toggle("on", r > 0); $("i", rp).textContent = r === 1 ? "1" : ""; }
-  if (A.npTab === "next" && !A.dragging) { const nx = $(".np-next", np), html = upNext(); if (nx && nx.dataset.h !== html) { nx.innerHTML = html; nx.dataset.h = html; } }
+  if (A.npTab === "next" && !A.dragging) { const tr = curTrack(), nx = $(".np-next", np), html = tr && tr.turntable ? ttTracklist(A.tt || {}) || upNext() : upNext(); if (nx && nx.dataset.h !== html) { nx.innerHTML = html; nx.dataset.h = html; } }
 }
 // the side of Now Playing: what is next, or the words
 function drawNpSide() {
