@@ -958,17 +958,27 @@ MAG.album = function (el, id) {
         <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
           ${title ? `<div><dt>Your marks</dt><dd class="al-marks-in">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}</dl></div>
     </div>
+    <div class="al-body"><div class="al-main">
     <nav class="mag-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"]].filter(t => t[0] !== "credits" || on("features", "credits")).map(t =>
       `<button class="${t[0] === tab ? "on" : ""}" data-act="magTab" data-v="${t[0]}" data-store="sq-mag-album-tab">${t[1]}</button>`).join("")}</nav>
     ${pane("tracks", `<div class="tracks mag-tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div>`)}
     ${pane("story", `<div class="mag-body mag-review"><p class="dim">Looking for its story&hellip;</p></div>`)}
     ${pane("credits", `<div class="mag-credits"><p class="dim">Asking after the credits&hellip;</p></div>`)}
-    ${more.length ? `<section class="mag-guide"><div class="mag-dept">Also on the shelves</div><h2>More by ${esc(artist)}</h2><ol>${more.slice().sort((x, y) => (x[3] || 9999) - (y[3] || 9999)).map(x =>
-      `<li><a href="${albumHref(x[0])}"><img loading="lazy" src="${cover(x[4], 300)}" alt=""><span class="y">${x[3] || "&mdash;"}</span><b>${esc(x[1])}</b><em>${esc((x[8] || [])[0] || "")}</em></a></li>`).join("")}</ol></section>` : ""}
+    </div>
+    <aside class="al-aside">${more.length ? `<div class="mag-recs"><div class="ff-h">More by ${esc(artist)}</div>${more.slice().sort((x, y) => (x[3] || 9999) - (y[3] || 9999)).map(x =>
+      `<a class="mr" href="${albumHref(x[0])}"><img loading="lazy" src="${cover(x[4], 150)}" alt=""><span class="y">${x[3] || "&mdash;"}</span><b>${esc(x[1])}</b></a>`).join("")}</div>` : ""}</aside></div>
+    <div class="al-like"></div>
   </article>`;
   const img = $(".mag-cover img", el); if (img) tint(img, el);
   if (title) api("/api/share?album_id=" + a[0]).then(r => { const box = $(".mag-share", el); if (r.url && box && el.isConnected) box.outerHTML = `<button data-act="share" data-v="${esc(JSON.stringify({ title: title + " by " + artist, url: r.url }))}" aria-label="Share">${icon("share")}<span>Share</span></button>`; }).catch(() => {});
-  profile(artist).then(p => { const k = $(".mag-kind", el); if (k && title) k.textContent = { album: "The LP", ep: "The EP", live: "Live", comp: "The compilation" }[kindOf(a, p.rgs)]; }).catch(() => {});
+  profile(artist).then(p => {
+    const k = $(".mag-kind", el); if (k && title) k.textContent = { album: "The LP", ep: "The EP", live: "Live", comp: "The compilation" }[kindOf(a, p.rgs)];
+    // at the foot, as on the artist's page: those like them, in circles, the ones new to the house first
+    const sim = (p.qobuz && p.qobuz.similar) || [], like = sim.filter(x => !onShelves(x.name)).concat(sim.filter(x => onShelves(x.name)));
+    const box = $(".al-like", el);
+    if (box && like.length) box.outerHTML = `<section class="mag-like"><div class="mag-dept">If you like ${esc(artist)}</div><h2>Kindred spirits <span>${like.filter(x => !onShelves(x.name)).length} new to you</span></h2>
+      <div class="faces">${like.map(x => `<div>${onShelves(x.name) ? face(x.name, x.image, "on your shelves") : face(x.name, x.image, "new to you", "new")}</div>`).join("")}</div></section>`;
+  }).catch(() => {});
   albumData(id).then(d => {
     if (!el.isConnected) return;
     const by = d.artist || artist, multi = d.tracks.some(t => t.disc && t.disc !== d.tracks[0].disc), various = d.tracks.some(t => t.artist && norm(t.artist) !== norm(by));

@@ -964,7 +964,7 @@ a.inlink:hover { color: var(--accent); }
 .mag-fig img { display: block; width: 100%; max-height: 460px; object-fit: cover; filter: grayscale(.25) contrast(1.05); box-shadow: 0 0 0 1px rgba(236, 228, 214, .18), 0 0 0 8px #141210, 0 0 0 9px rgba(236, 228, 214, .12); }
 .mag-fig figcaption { margin-top: 14px; font: italic 15px var(--serif); color: rgba(236, 228, 214, .65); }
 .mag-cols { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 48px; margin-top: 36px; }
-.mag-body { column-count: 2; column-gap: 34px; column-rule: 1px solid rgba(236, 228, 214, .12); font: 18px/1.62 var(--serif); }
+.mag-body { font: 18px/1.62 var(--serif); max-width: 720px; } /* never in columns: text read down and back up again isn't read */
 .mag-body p { margin: 0 0 1em; text-align: justify; hyphens: auto; -webkit-hyphens: auto; }
 .mag-body .dc::first-letter { float: left; font: 700 76px/.8 var(--display); padding: 6px 10px 0 0; color: var(--accent); }
 .pull { column-span: all; -webkit-column-span: all; margin: 18px 0 26px; padding: 18px 0; border-top: 2px solid var(--accent); border-bottom: 1px solid rgba(236, 228, 214, .25); font: italic 600 30px/1.25 var(--display); text-align: center; color: #f4ecdf; }
@@ -1411,9 +1411,9 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .al-marks dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .mag-al .mag-tabs { margin-top: 40px; }
 @media (min-width: 900px) {
-  .mag-al .mag-tracks { column-count: 2; column-gap: 48px; column-rule: 1px solid rgba(236, 228, 214, .1); }
+  .mag-al .mag-tracks { }
   .mag-al .mag-tracks .trk, .mag-al .mag-tracks .disc { break-inside: avoid; -webkit-column-break-inside: avoid; }
-  .mag-al .mag-review { column-count: 2; column-gap: 44px; column-rule: 1px solid rgba(236, 228, 214, .1); max-width: none; }
+  .mag-al .mag-review { max-width: none; }
 }
 .mag-al .mag-review { font: 18px/1.6 var(--serif); }
 .mag-al .mag-review p { text-align: left; hyphens: auto; -webkit-hyphens: auto; margin: 0 0 .95em; }
@@ -1465,3 +1465,12 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .mag-by { line-height: 2.1; }
 .mag-by .ver-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px; border-radius: 13px; font: 600 12px/1.4 var(--sans); letter-spacing: .03em; text-transform: none; color: rgba(236, 228, 214, .9); vertical-align: middle; }
 .mag-by .ver-chip .ic { width: 14px; height: 14px; color: var(--accent); vertical-align: 0; }
+
+/* the album page below its opening: the tabs and what they open, wide, on the left; more by the artist beside them, as
+   the artist's page lists their records; those like them in circles at the foot */
+.al-body { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 0 44px; margin-top: 40px; align-items: start; }
+.al-body .mag-tabs { margin-top: 0; }
+.al-aside { padding-top: 6px; }
+.al-aside .mag-recs { border-top: 3px solid #ece4d6; padding-top: 12px; }
+.mag-al .mag-review .pull { margin: 22px 0 28px; }
+@media (max-width: 900px) { .al-body { grid-template-columns: minmax(0, 1fr); } .al-aside { margin-top: 30px; } }
