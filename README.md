@@ -103,16 +103,79 @@ Soundsquatch adds to the first and writes the date into the second each time a r
 
 ### The turntable
 
-A small listener on your amplifier's record-out (or tape-out) sends what the record player plays to Soundsquatch,
-which does everything else. You need:
+Put a record on, and Soundsquatch knows. A few seconds after the needle drops, Now Playing shows the record and the
+song: its cover, its place on the side, the tracklist with what's been heard ticked off, and a visualiser moving with
+the music. Turn the record over and it carries on. Lift the arm at the end and it suggests what to play next. Every
+side is quietly recorded, cut into its songs and filed in your library, so a record you own only on vinyl is
+there to play anywhere in the house the next day. And it keeps an ear on the turntable itself: a stylus wearing, a
+channel going quiet, a hum creeping in, a belt slowing down.
 
-- **A Raspberry Pi**, a Pi 3 or newer is plenty (it only records and sends), with **Raspberry Pi OS Lite**. A network
-  cable is steadier than Wi-Fi for a constant stream; on Wi-Fi a Pi 3 only joins 2.4 GHz networks.
+All it takes is a small listener (a Raspberry Pi and a USB audio interface, about the price of a record) on the
+amplifier's record-out. The turntable, the cartridge and the amplifier stay exactly as they are.
+
+#### A record, from the needle to the run-out
+
+This is *Pink Moon*, side A to side B, as Soundsquatch had it, with nothing done by hand:
+
+1. **The needle drops.** Six seconds in, "Pink Moon" (A1) is named: not by sending it anywhere, but by matching it
+   against fingerprints of the house's own copy of the album. Eleven seconds in, it's sure. Now Playing switches to
+   the turntable (the room's own streaming paused when the lid went up), with the record's tracklist from Discogs.
+2. **Each song as it comes.** "Place to Be" (A2), "Road" (A3)… each named as it starts, even where one runs straight
+   into the next. Elsewhere in the house, **Hear it in…** plays the turntable live in any room.
+3. **The side ends.** Half a minute of quiet: the side is over, and it's probably being flipped, so nothing is said.
+   Meanwhile the side, recorded whole, is cut into its six songs where the naming says each one began, tagged and
+   filed, and Lyrion is asked to look:
+
+   ```
+   From vinyl/Nick Drake - Pink Moon/
+     A1 Pink Moon.flac          A6 Things Behind the Sun.flac     B4 Harvest Breed.flac
+     A2 Place to Be.flac        B1 Know.flac                      B5 From the Morning.flac
+     A3 Road.flac               B2 Parasite.flac                  folder.jpg
+     A4 Which Will.flac         B3 Free Ride.flac
+     A5 Horn.flac
+   ```
+
+   Each song carries the artist, the record, its side (as the disc) and number, its position as printed (B3), the
+   year the music came out, Discogs's genres and the release, beside the record's cover. In the library it's a
+   pressing of its own, **Vinyl, captured by Soundsquatch**, next to the digital copies and never in their place.
+4. **Side B, the last song.** "From the Morning" is the record's last track, so this time it's over: Home Assistant
+   can tell the phones "That's the record", with what to play next: the band's next record (on the shelf, in the
+   library, or not in the house yet) and an artist who followed (a member's own records first).
+5. **Counted.** The record's plays go up, on Discogs too (*Plays 1, Last played 2026-11-16*).
+6. **Judged.** Each side's signal goes into the turntable's history:
+
+   | | Side A | Side B |
+   |---|---|---|
+   | Left and right | −0.1 dB | −0.4 dB |
+   | The channels in step | 0.95 | 0.95 |
+   | Surface noise, between songs | −55 dB | −54 dB |
+   | Hum, over that noise | 12 dB | 13 dB |
+   | Loudest moment | −0.5 dB | −1.1 dB |
+   | Speed, against the house's own copy | 0.4% slow | 0.4% slow |
+
+   One side says little; the same thing side after side, record after record, is the turntable rather than the
+   pressing, and then it's said plainly, with what to try: *"The right channel is 1.4 dB quieter, on 9 of the last
+   10 sides… swap the turntable's left and right leads at the amplifier: if the quiet side moves, it's before the
+   swap."* The same goes for hum (the ground wire), speed (the belt), overload (the interface's input) and a channel
+   wired backwards; and a record much noisier than the rest of the collection is told it wants a clean.
+
+When a song can't be named from the house's files, ten seconds of it go to Shazam. When Shazam doesn't know it either
+(it doesn't know everything on vinyl), the app asks: *Is it B3, "Free Ride"?*, or which record is on and which
+song, and carries on from there.
+
+#### What you need
+
+- **A Raspberry Pi**: a Pi 3 or newer is plenty (it only records and sends), with **Raspberry Pi OS Lite (64-bit)**.
+  A network cable is steadier than Wi-Fi for a constant stream; on Wi-Fi a Pi 3 only joins 2.4 GHz networks.
 - **A USB audio interface with line inputs**, such as the Behringer UCA202 or UCA222 (any USB sound card with a
-  line-level input works). A turntable straight into the interface won't do: the signal needs its phono stage first,
-  which is why it comes from the amplifier's record-out.
-- **A good power supply for the Pi**: 5.1 V, 2.5 A. The interface takes its power from the Pi, and a weak supply
-  shows up as clicks in the recordings (`vcgencmd get_throttled` on the Pi should say `0x0`).
+  line-level input works). The signal comes from the amplifier's **record-out** (or tape-out) because it needs the
+  phono stage first: a turntable straight into the interface won't do.
+- **A good power supply for the Pi**: 5.1 V, 2.5 A, on a short cable. The interface draws its power through the Pi,
+  and a weak supply shows up as clicks in the recordings (`vcgencmd get_throttled` on the Pi should say `0x0`).
+- **Your records on Discogs** (see *Your records*, above): it's how Soundsquatch knows which record a song is from,
+  its tracklist and sides, and which of your files to fingerprint.
+- Optionally, **a contact sensor on the lid** in Home Assistant, so that what the amplifier plays from the tuner or
+  the streamer isn't taken for a record.
 
 Wire the amplifier's **REC OUT** to the interface's **inputs**, plug the interface into the Pi, and on the Pi run:
 
@@ -120,37 +183,34 @@ Wire the amplifier's **REC OUT** to the interface's **inputs**, plug the interfa
 curl -fsSL https://raw.githubusercontent.com/cdybdahl/soundsquatch/main/turntable/install.sh | sudo sh -s <the Soundsquatch machine>
 ```
 
-It installs ALSA's recorder and netcat and a service that starts at boot: the record-out, CD quality, sent raw over
-one connection to Soundsquatch's port **8095**. **Settings → Your records → The turntable** says when it's listening.
+**Settings → Your records → The turntable** says when it's listening. On **Change** there: the lid's sensor, and the
+room the turntable is in. To keep the recordings, switch on **Settings → Features → Keep the turntable's songs** (the
+music has to be mounted read-write, as for *Changing music files*).
 
-What Soundsquatch does with it:
+#### How it works
 
-- **Names each song** six seconds in (sure by eleven): first against fingerprints of your own files of the records in
-  your Discogs collection (made once, overnight, on the Soundsquatch machine), then, only when those can't, by
-  sending ten seconds of it to Shazam. When neither can, the app asks which record and which song.
-- **Shows it** as Now Playing whenever the room's own player is quiet: the record, the song, its side and place in
-  the tracklist, the songs heard, a visualiser, and **Hear it in…** to play it in another room (a live stream from
-  Soundsquatch, a few seconds behind; any player can also open `http://<the Soundsquatch machine>:8097/turntable.flac`).
-- **Suggests what's next**: the band's next record (on the shelf, in the library, or not in the house yet), and an
-  artist who followed (a member's own records first).
-- **Counts plays**: a record counts once two of its songs (or eight minutes) are heard; on Discogs too (above).
-- **Keeps each side**, if you switch on **Settings → Features → Keep the turntable's songs**: recorded whole, then cut
-  into its songs where the naming says each began, tagged (artist, record, side as the disc, its position, the Discogs
-  release) and filed in a `From vinyl` folder in your music, so Lyrion adds them to the library. They show as their
-  own pressing, **Vinyl, captured by Soundsquatch**, and never displace the digital one. Needs the music mounted
-  read-write, as for *Changing music files*.
-- **Checks the signal**: each side's balance, how alike the channels are, surface noise, clicks and hum in the quiet,
-  overload, and the turntable's speed against your own copies. One odd side is the pressing; the same thing side
-  after side is the chain, and the **Vinyl** page says so plainly, with what to try.
+```
+amplifier REC OUT ─► USB interface ─► Pi ── one raw stream ──► Soundsquatch
+                                                                 ├─ naming: your files' fingerprints, then Shazam
+                                                                 ├─ each side recorded, cut into tagged songs
+                                                                 ├─ the signal check
+                                                                 ├─ levels for the visualiser
+                                                                 └─ a live stream any room can play
+```
 
-Two more settings, on **Change** in that row: Home Assistant's **sensor for the lid** (a contact sensor, on while
-it's open; with none, whatever the amplifier plays is taken for a record, the tuner included), and **the room** the
-turntable is in.
+The Pi does nothing but send: `arecord` (ALSA's recorder) reads the interface at CD quality, and `netcat` passes it,
+raw, over one connection to Soundsquatch's port **8095**, with about a tenth of a second's delay. Everything else
+happens on the Soundsquatch machine. The fingerprints are the spectrogram's peaks paired into hashes, made overnight
+from your files of the records in your collection, and a clip is tried at a few speeds either side of its own, since
+no turntable runs exactly true; the speed that matches is how the speed check knows. Each match says how far into
+its song the clip was, which is where the song began: that's where the sides are cut, not at the silences (a
+record's gaps are short, and some songs run straight on).
 
 **With Home Assistant** (optional): `http://<the Soundsquatch machine>:8097/api/turntable` is the turntable's state as
 JSON, for a REST sensor: `state` is `idle`, `playing`, `side over` (likely a flip) or `record over`, with the record,
-the song, the songs heard, the suggestions, and the signal check's newest `alert`. Useful automations: pause the
-room's streaming when the lid opens; tell the phones what to play next on `record over`; pass on a new `alert`.
+the song, the songs heard, the suggestions, and the signal check's newest `alert`. Three automations make the most of
+it: pause the room's streaming when the lid opens; tell the phones what to play next on `record over`; pass on a new
+`alert`. The live stream is `http://<the Soundsquatch machine>:8097/turntable.flac` (or `.mp3`), for any player.
 
 ### A PIN
 
