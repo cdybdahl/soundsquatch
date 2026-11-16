@@ -1458,3 +1458,4 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .ver-badge .ic { width: 13px; height: 13px; stroke-width: 2.2; }
 .room-go em strong { font-style: normal; font-weight: 600; color: rgba(242, 236, 226, .9); }
 .ver-more { display: block; }
+.ver-chip .ic { width: 13px; height: 13px; vertical-align: -2px; }

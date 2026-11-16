@@ -950,7 +950,7 @@ MAG.album = function (el, id) {
       <div class="al-head"><div class="mag-dept mag-kind">The record</div>
         <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
-        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
+        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Spin it next">${icon("next_up")}<span>Next</span></button>
           <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>
           ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}" aria-label="Add ${esc(artist)} to a station">${icon("radio_plus")}<span>Station</span></button>` : ""}
@@ -1003,7 +1003,7 @@ VIEWS.album = function (el, id) {
   const title = a[1], artist = a[2], more = albumsBy(artist).filter(x => x[0] !== a[0]);
   el.innerHTML = `${pageBar(esc(title || "Album"), ["Album", esc(artist)], `<button class="pill" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}<span class="pl">Spin it</span></button>`, true)}<div class="album-bg">${a[4] ? `<img src="${cover(a[4], 150)}" alt="">` : ""}</div><div class="album">
     <div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div>
-    <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionsOf(a).length} pressings</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
+    <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, versionsOf(a).length)}</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
       <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
       ${title ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}${(a[8] || []).length ? `<button class="g-edit" data-act="genreEdit" data-v="${a[0]}" aria-label="Edit genres">${icon("edit")}</button>` : `<button class="g-edit named" data-act="genreEdit" data-v="${a[0]}">${icon("edit")} Add genres</button>`}</div>` : ""}
       ${title ? `<div class="al-marks">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</div>` : ""}
@@ -1178,6 +1178,8 @@ function vinylPull() {
 // where a version plays from, in words: the turntable's own recording of the record marked as such
 const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? "Vinyl, captured by Soundsquatch" : "on the shelves";
 const SOURCE = { qobuz: "Qobuz", vinyl: "Vinyl, captured by Soundsquatch", local: "Your files" };
+// the pressings button names the one open (the one Spin it plays), then how many there are
+const versionWords = (a, n) => `${a[9] === "vinyl" ? icon("disc") + " " : ""}${SOURCE[a[9]] || SOURCE.local} &middot; ${n} pressings`;
 /* one pressing in the pressings sheet, each line led by where it plays from, then what tells it apart: the year and the
    sound for a digital copy; for the turntable's own recording, the pressing it was taken from (its year and label, from
    Discogs) and the day it was captured, with that pressing's own photograph marked with a record */
@@ -1913,7 +1915,7 @@ const ACT = {
       setTimeout(poll, 400);
     }).catch(() => toast("Qobuz didn't answer"));
   },
-  closeSheet: () => closeSheet(),
+  closeSheet: (v, t) => { closeSheet(); const h = t && t.getAttribute("href"); if (h && h.charAt(0) === "#") location.hash = h; }, // a link in a sheet still goes where it says
   heart: (v, t) => { const m = markAt(t); setMark(m[0], m[1], { heart: !markOf(m[0], m[1])[0] }); },
   rate: (v, t) => { const m = markAt(t), was = markOf(m[0], m[1])[1]; setMark(m[0], m[1], { rating: +v === was ? 0 : +v }); }, // the same star again clears it
   // your own labels for an album (#roadtrip, #sunday), to find them again on the Albums page; the genres are the pencil's
