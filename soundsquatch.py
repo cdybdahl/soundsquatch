@@ -2243,6 +2243,44 @@ def keep_from_log(req):
     return out
 
 
+def morning_loop():
+    """The day's front page made at five in the morning, so the first look of the day doesn't wait for it."""
+    while True:
+        now = time.localtime()
+        at = time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 5, 0, 0, 0, 0, -1))
+        if at <= time.time():
+            at = time.mktime((now.tm_year, now.tm_mon, now.tm_mday + 1, 5, 0, 0, 0, 0, -1))  # tomorrow's five o'clock, summer time or not
+        time.sleep(max(60, at - time.time()))
+        try:
+            warm_the_day()
+        except Exception as e:
+            note_error(f"morning: {type(e).__name__}: {e}"[:200])
+
+
+def warm_the_day():
+    """What the front page asks for, done ahead: the cover stories (their text looked up), Discover's makings, the new
+    releases, and the pictures shown at the sizes the page asks for (the stories', the artist of the day's, the faces on
+    rotation)."""
+    t = time.time()
+    st = cover_stories()
+    h = home()
+    new_releases()
+    for x in st.get("stories") or []:
+        for u, w in ((x.get("bg"), 1600), (x.get("image"), 640), (x.get("pic"), 1600), (x.get("pic"), 640)):
+            if u:
+                picture(u, w)
+    for name in [h.get("spotlight")] + list(h.get("rotation") or [])[:8]:
+        if not name:
+            continue
+        if get_profile(name)[0] is None:
+            build(name)
+        d = get_profile(name)[0] or {}
+        for url, w in ((pick_photo(d), 1600), (pick_photo(d, "thumb"), 320)):
+            if url:
+                picture(url, w)
+    crawl_state["morning"] = f"{time.strftime('%Y-%m-%d %H:%M')}, {round(time.time() - t)} s"
+
+
 def new_releases(days=200):
     """Releases from artists on the shelves that came out lately (MusicBrainz's dates), with whether the shelves have them and
     where Qobuz has them (for playing from the artist's page)."""
@@ -4276,7 +4314,7 @@ if __name__ == "__main__":
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
     start_turntable()
-    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop):
+    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does
