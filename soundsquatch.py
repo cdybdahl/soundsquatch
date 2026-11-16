@@ -3854,7 +3854,8 @@ def tt_suggest(spin):
         if pool:
             k = pool[0]
             pick = random.choice([r for r in phys if key(r[2]) == key(k)]) if want == "vinyl" else max((a for a in albums if key(a[2]) == key(k)), key=lambda a: -a[5])
-            out.append(suggestion(f"Came after {artist}" if after(k) else f"If you like {artist}", want, pick[3], pick))
+            year = ((by_id[pick[8]][3] if pick[8] in by_id else 0) or pick[3]) if want == "vinyl" else pick[3]  # the music's year, not a reissue's
+            out.append(suggestion(f"Came after {artist}" if after(k) else f"If you like {artist}", want, year, pick))
             break
     spin["suggest"] = out
 
@@ -3961,7 +3962,7 @@ def turntable_state():
     un = tt_unnamed()
     plays = (kv_get("tt_plays", {}) or {}).get(str(rec[0]), {}) if rec else {}
     return {"state": TT["state"], "listener": bool(EAR and EAR.connected), "lid": TT["lid"], "level": round(EAR.level, 1) if EAR else None,
-            "record": {"id": rec[0], "title": rec[1].strip(), "artist": rec[2], "year": rec[3], "image": rec[4], "album_id": rec[8],
+            "record": {"id": rec[0], "title": rec[1].strip(), "artist": rec[2], "year": tt_year(rec), "image": rec[4], "album_id": rec[8],
                        "href": f"#/album/{rec[8]}" if rec[8] else f"#/record/{rec[0]}", "plays": plays.get("n", 0), "last": plays.get("last", "")} if rec else
                       ({"id": 0, "title": spin["title"], "artist": spin["artist"]} if spin else None),
             "song": {k: song.get(k) for k in ("title", "artist", "pos", "side", "how")} if song and spin else None,
@@ -4020,6 +4021,13 @@ def turntable_play(req):
     host = BIND if BIND not in ("0.0.0.0", "") else socket.gethostbyname(socket.gethostname())
     rpc(player, "playlist", "play", f"http://{host}:{PORT}/turntable.flac", "The turntable")
     return {"ok": True}
+
+
+def tt_year(rec):
+    """The year a record's music came out: its album's among the digital ones when it's there (a reissue's pressing year
+    says less), else the pressing's."""
+    a = rec[8] and album_row(rec[8])
+    return (a[3] if a else 0) or rec[3]
 
 
 def turntable_for_settings():
