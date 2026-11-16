@@ -950,7 +950,7 @@ MAG.album = function (el, id) {
       <div class="al-head"><div class="mag-dept mag-kind">The record</div>
         <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
-        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", a[9] === "qobuz" ? "On Qobuz" : "On the shelves", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
+        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", a[9] === "vinyl" ? `${icon("disc")} Your vinyl, recorded here` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Spin it next">${icon("next_up")}<span>Next</span></button>
           <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>
           ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}" aria-label="Add ${esc(artist)} to a station">${icon("radio_plus")}<span>Station</span></button>` : ""}
@@ -1175,6 +1175,8 @@ function vinylPull() {
         <button class="btn ghost" data-act="vinylPull">${icon("dice")} Another</button></div></div></section>`;
 }
 // the line on an album's page when the house has it on the shelf too
+// where a version plays from, in words: the turntable's own recording of the record marked as such
+const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? `${icon("disc")} your vinyl, recorded here` : "on the shelves";
 function vinylChip(a) {
   const rs = A.vinylOf && A.vinylOf.get(a[0]);
   return rs ? `<a class="vinyl-chip" href="#/record/${rs[0][0]}" title="${esc(rs.map(r => [r[5], r[6], r[3] || ""].filter(Boolean).join(", ")).join("; "))}">${icon("disc")} Also on ${esc(rs.map(r => r[5] || "vinyl").join(", ").replace(/^Vinyl/, "vinyl"))}</a>` : "";
@@ -1335,14 +1337,14 @@ const FACETS = [
   ["genre", "Genre", () => genreFamilies().map(f => [f[0], f[0]])],
   ["decade", "Decade", () => Array.from(new Set(A.albums.filter(a => a[3] >= 1900).map(a => a[3] - a[3] % 10))).sort().map(d => [String(d), d + "s"])],
   ["sound", "Sound", () => [["hires", "Hi-res"], ["cd", "CD"], ["lossy", "Lossy"]]],
-  ["source", "Plays from", () => [["local", "The shelves"], ["qobuz", "Qobuz"], ["archive", "The Archive"]]],
+  ["source", "Plays from", () => [["local", "The shelves"], ["qobuz", "Qobuz"], ["vinyl", "Your vinyl"], ["archive", "The Archive"]]],
   ["marks", "Marks", () => [["loved", "Hearted"], ["rated", "Four stars and up"]]],
   ["heard", "Listening", () => [["never", "Never played"], ["year", "Not in a year"], ["lately", "In the last month"]]]];
 const FOCUS_TEST = {
   genre: (a, v) => { const fam = v === "Your own" ? ((genreFamilies().find(f => f[0] === v) || [0, []])[1]).map(x => x[0]) : familyOf(v); return (a[8] || []).some(g => fam.indexOf(g) >= 0); },
   decade: (a, v) => a[3] >= 1900 && String(a[3] - a[3] % 10) === v,
   sound: (a, v) => { const q = a[6] || "", m = /^(\d+)\/([\d.]+)/.exec(q); return v === "hires" ? !!m && (+m[1] > 16 || +m[2] > 48) : v === "cd" ? q === "CD" : /^(mp3|aac|ogg|opus|wma)/i.test(q); },
-  source: (a, v) => v === "archive" ? !!a.archive : !a.archive && a[9] === v,
+  source: (a, v) => v === "archive" ? !!a.archive : v === "vinyl" ? !a.archive && (a[9] === v || (a[10] || []).some(x => x[5] === v)) : !a.archive && a[9] === v,
   marks: (a, v) => { const m = markOf("album", albumKey(a)); return v === "loved" ? !!m[0] : m[1] >= 4; },
   heard: (a, v) => { const h = (A.heard || {})[albumKey(a)], now = Date.now() / 1000; return v === "never" ? !h : v === "year" ? !h || h[0] < now - 365 * 86400 : !!h && h[0] > now - 30 * 86400; }
 };
@@ -2171,7 +2173,7 @@ const ACT = {
   versions: v => {
     const a = A.byId.get(+v); if (!a) return;
     openSheet(`<div class="kicker">Pressings</div><h3>${esc(a[1])}</h3><div class="dim">${esc(a[2])}</div>
-      <div class="rooms">${versionsOf(a).map((x, i) => `<a class="room ${x[0] === +v ? "on" : ""}" href="${albumHref(x[0])}" data-act="closeSheet"><span class="room-go">${x[4] ? `<img class="ver-art" src="${cover(x[4], 100)}" alt="">` : icon("disc")}<span><b>${esc(x[1])}</b><em>${[x[3] || "", x[2] ? esc(x[2]) : "", x[5] === "qobuz" ? "on Qobuz" : "on the shelves", i === 0 ? "shown" : ""].filter(Boolean).join(" &middot; ")}</em></span></span></a>`).join("")}</div>
+      <div class="rooms">${versionsOf(a).map((x, i) => `<a class="room ${x[0] === +v ? "on" : ""}" href="${albumHref(x[0])}" data-act="closeSheet"><span class="room-go">${x[4] ? `<img class="ver-art" src="${cover(x[4], 100)}" alt="">` : icon("disc")}<span><b>${esc(x[1])}</b><em>${[x[3] || "", x[2] ? esc(x[2]) : "", sourceWords(x[5]), i === 0 ? "shown" : ""].filter(Boolean).join(" &middot; ")}</em></span></span></a>`).join("")}</div>
       <p class="plan-note">The best-sounding pressing is the one shown; the others are kept and play from here.</p>`);
   },
   focusOpen: () => { (A.heard ? Promise.resolve() : loadHeard()).then(openFocus); },

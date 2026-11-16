@@ -1040,8 +1040,11 @@ def load_library(force=False):
         tracks += got
         if len(got) < step:
             break
-    by_album, streamed, added = {}, set(), {}
+    by_album, streamed, added, captured = {}, set(), {}, set()
+    cap = urllib.parse.quote(capture_dir())  # the turntable's own recordings: versions of their own ("Your vinyl")
     for t in tracks:
+        if cap in (t.get("url") or ""):
+            captured.add(str(t.get("album_id")))
         added[str(t.get("album_id"))] = max(added.get(str(t.get("album_id")), 0), int(float(t.get("addedTime") or 0)))  # when it joined the shelves
         by_album.setdefault(str(t.get("album_id")), Counter())[quality(t)] += 1
         if not (t.get("url") or "").startswith("file:"):
@@ -1055,6 +1058,7 @@ def load_library(force=False):
     for rank, qkey, entry in rows:
         k = keys[entry[0]]  # every version of it under one name: the best copy shows, the others are its versions
         versions.setdefault(k, []).append((qkey, entry))
+        qkey = (qkey, str(entry[0]) not in captured)  # a recording of the house's own record never displaces the master on a tie
         if k not in best or qkey > best[k][0]:
             if k in best:
                 entry[5] = min(rank, best[k][1][5])
@@ -1066,9 +1070,10 @@ def load_library(force=False):
         genres = {k: json.loads(g) for k, g in c.execute("select k, genres from album_genres")}
     for e in albums:
         e.append(genres.get(copies(e[2], e[1]), []))
-        e.append("qobuz" if str(e[0]) in streamed else "local")  # [9] where it plays from
+        src = lambda i: "vinyl" if str(i) in captured else "qobuz" if str(i) in streamed else "local"
+        e.append(src(e[0]))  # [9] where it plays from: the shelves, Qobuz, or the turntable's own recording
         k = keys[e[0]]  # [10] its other versions: [id, title, quality, year, art, source], best first
-        e.append([[v[0], v[1], v[6], v[3], v[4], "qobuz" if str(v[0]) in streamed else "local", added.get(str(v[0]), 0)]
+        e.append([[v[0], v[1], v[6], v[3], v[4], src(v[0]), added.get(str(v[0]), 0)]
                   for _, v in sorted(versions.get(k, []), key=lambda x: x[0], reverse=True) if v[0] != e[0]])
         e.append(max([added.get(str(e[0]), 0)] + [v[6] for v in e[10]]))  # [11] when it (or a pressing of it) joined the shelves
     artists = {}
