@@ -3749,10 +3749,104 @@ def discogs_lookup(song):
             {"g": hit.get("genre") or [], "s": hit.get("style") or [], "d": fmts, "t": "", "box": False, "r": 0, "i": None, "f": None, "ln": (hit.get("label") or [""])[0], "n": {}, "new": True}]
 
 
+def tt_lengths(rec):
+    """Each song's length on a record, {position: seconds}: Discogs's, else the house's own copy's, else MusicBrainz's
+    (by title); kept once found."""
+    k = f"tl:{rec[0]}"
+    out = kv_get(k)
+    if out:
+        return out
+    tracks = [t for t in discogs_release(rec[0]).get("tracks") or [] if t["type"] == "track"]
+
+    def secs(d):
+        try:
+            return float(sum(int(p) * 60 ** i for i, p in enumerate(reversed(d.split(":"))))) if d else 0.0
+        except ValueError:
+            return 0.0
+    out = {t["pos"]: secs(t["dur"]) for t in tracks if secs(t["dur"])}
+    if len(out) < len(tracks):
+        others = {}
+        if len(rec) > 8 and rec[8]:
+            for x in rpc("", "titles", "0", "300", f"album_id:{rec[8]}", "tags:d", timeout=20).get("titles_loop") or []:
+                others[lms_qobuz.plain(x.get("title") or "")] = float(x.get("duration") or 0)
+        if sum(1 for t in tracks if others.get(lms_qobuz.plain(t["title"]))) < len(tracks):
+            try:
+                q = f'artist:"{rec[2].replace(chr(34), "")}" AND release:"{rec[1].strip().replace(chr(34), "")}"'
+                rs = mb_get("release", query=q, limit=10).get("releases") or []
+                rel = next((x for x in rs if x.get("track-count") == len(tracks)), None)
+                if rel:
+                    for m in mb_get("release/" + rel["id"], inc="recordings").get("media") or []:
+                        for t in m.get("tracks") or []:
+                            others.setdefault(lms_qobuz.plain(t.get("title") or ""), (t.get("length") or 0) / 1000)
+            except Exception as e:
+                note_error(f"song lengths: {e}")
+        for t in tracks:
+            if t["pos"] not in out and others.get(lms_qobuz.plain(t["title"])):
+                out[t["pos"]] = others[lms_qobuz.plain(t["title"])]
+    if out:
+        kv_set(k, out)
+    return out
+
+
+def tt_schedule(spin):
+    """The side playing, by the clock, from the song the house named and when it began: [(track, began)], the songs
+    before it worked back from it, those after forward, each by its length and a two-second gap. It stops where a
+    length isn't known."""
+    tl = spin.get("timeline")
+    if not tl or not EAR:
+        return []
+    tracks = [t for t in discogs_release(spin["id"]).get("tracks") or [] if t["type"] == "track"]
+    side = [t for t in tracks if re.match(r"^([A-Za-z]+)", t["pos"]) and re.match(r"^([A-Za-z]+)", t["pos"]).group(1).upper() == tl["side"]]
+    at = next((i for i, t in enumerate(side) if t["pos"] == tl["pos"]), None)
+    if at is None:
+        return []
+    L, t0 = tt_lengths(spin["record"]), EAR.clock - (time.time() - tl["wall"])  # its start on the stream's clock
+    out, b = [(side[at], t0)], t0
+    for t in side[at + 1:]:  # forward
+        prev = out[-1][0]
+        if not L.get(prev["pos"]):
+            break
+        b += L[prev["pos"]] + 2
+        out.append((t, b))
+    b, back = t0, []
+    for t in reversed(side[:at]):  # and back
+        if not L.get(t["pos"]):
+            break
+        b -= L[t["pos"]] + 2
+        back.insert(0, (t, b))
+    return back + out
+
+
+def tt_follow(spin, at):
+    """A clip while the house's own naming holds: the song by the clock, no Shazam. A side over and sound again is the
+    next side, from its first song."""
+    tl = spin["timeline"]
+    if TT["state"] in ("side over", "record over"):
+        tracks = [t for t in discogs_release(spin["id"]).get("tracks") or [] if t["type"] == "track"]
+        sides = list(dict.fromkeys((re.match(r"^([A-Za-z]+)", t["pos"]) or re.match("", "")).group(0).upper() for t in tracks))
+        nxt = sides[sides.index(tl["side"]) + 1] if tl["side"] in sides and sides.index(tl["side"]) + 1 < len(sides) else None
+        if not nxt:
+            return False
+        first = next(t for t in tracks if t["pos"].upper().startswith(nxt))
+        start = EAR.run_start if EAR.run_start is not None else at
+        spin["timeline"] = tl = {"side": nxt, "pos": first["pos"], "wall": time.time() - (EAR.clock - start)}
+    now = [x for x in tt_schedule(spin) if x[1] <= at]
+    if not now:
+        return False
+    t, began = now[-1]
+    if not TT["song"] or TT["song"].get("pos") != t["pos"]:
+        rec = spin["record"]
+        tt_heard({"title": t["title"], "artist": t["artists"] or rec[2], "album": rec[1].strip(), "how": "you", "at": time.time(), "run": EAR.run, "start": began})
+    return True
+
+
 def tt_clip(x8, wav, run_seconds, run, at=0):
     """A clip to name (from the Ear). Not while the lid is shut: then it is the tuner, a tape or the streamer."""
     if tt_lid() is False or TT_INDEX is None:
         return False
+    spin = TT["spin"]
+    if spin and spin.get("timeline") and spin.get("record"):  # the house named the record and a song: the rest by the clock
+        return tt_follow(spin, at or EAR.clock)  # tt_heard takes the lock itself
     known = TT["runs"].get(run)
     song = None
     m = TT_INDEX.match(x8)
@@ -4263,7 +4357,24 @@ def turntable_name(req):
         tracks = [t for t in discogs_release(rec[0]).get("tracks") or [] if t["type"] == "track"]
         t = next((t for t in tracks if t["pos"] == req.get("pos")), None) or tt_next_in_order(TT["spin"])
     if t:
+        # from here the rest of the record follows by the clock: this song began when this stretch of sound did (at most
+        # its length ago), and the songs before it on the side are worked back from it
+        m = re.match(r"^([A-Za-z]+)", t["pos"])
+        if EAR and m:
+            began = EAR.run_start if EAR.run_start is not None else EAR.clock
+            L = tt_lengths(rec)
+            if L.get(t["pos"]):
+                began = max(began, EAR.clock - L[t["pos"]] + 5)
+            TT["spin"]["timeline"] = {"side": m.group(1).upper(), "pos": t["pos"], "wall": time.time() - (EAR.clock - began)}
+            side_from = EAR.side[2] if EAR.side else began
+            for x, b in tt_schedule(TT["spin"]):  # tt_heard takes the lock itself
+                if x["pos"] == t["pos"]:
+                    break
+                if b >= side_from - 5:
+                    tt_heard({"title": x["title"], "artist": x["artists"] or rec[2], "album": rec[1].strip(), "how": "you", "at": time.time(), "run": run, "start": b})
         song = {"title": t["title"], "artist": t["artists"] or rec[2], "album": rec[1].strip(), "how": "you", "at": time.time(), "run": run}
+        if EAR and TT["spin"].get("timeline"):
+            song["start"] = EAR.clock - (time.time() - TT["spin"]["timeline"]["wall"])
         TT["runs"][run] = song
         tt_heard(song)
     return {"ok": True}
