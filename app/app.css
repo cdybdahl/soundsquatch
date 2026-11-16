@@ -1320,3 +1320,69 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .rec-stats { margin-top: 6px; }
 .rec-shelf { padding: 0 var(--gut); }
 @media (max-width: 640px) { .rec-credits { grid-template-columns: minmax(0, 1fr); gap: 2px; } .rec-credits dd { margin-bottom: 10px; } .tt-vis.mini { display: none; } }
+
+/* Now Playing on one screen (a tablet, the wall): nothing scrolls but a long list inside its tab. The cover with the time,
+   the buttons and the volume under it, on the left; the song and its tabs (up next, the words, credits, the artist) on the
+   right, the tab filling what's left. Upright, the cover sits beside the buttons above the song. The phone keeps its page. */
+@media (min-width: 641px) {
+  #np { overflow: hidden; }
+  .np-main { display: flex; gap: clamp(28px, 4vw, 56px); height: 100%; min-height: 0; box-sizing: border-box; align-items: stretch;
+    padding: calc(env(safe-area-inset-top, 0px) + 68px) var(--gut) calc(env(safe-area-inset-bottom, 0px) + 26px); --art: min(calc(100vh - 330px), 44vw, 640px); }
+  .np-left { flex: none; width: var(--art); display: flex; flex-direction: column; justify-content: center; }
+  .np-art { width: 100%; max-width: none; justify-self: auto; }
+  .np-transport { width: 100%; }
+  .np-prog { margin-top: 22px; }
+  .np-ctl { max-width: none; margin-top: 10px; }
+  .np-vol { margin-top: 8px; }
+  .np-vol .vol { max-width: none; }
+  .np-right { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; }
+  .np-info { max-width: none; flex: none; }
+  .np-info h1 { font-size: clamp(30px, 3.6vw, 54px); margin: 8px 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .np-info .by { font-size: 23px; }
+  .np-q { margin-top: 10px; }
+  .np-extra { margin-top: 14px; flex-wrap: wrap; }
+  .np-tabs { flex: none; margin: 22px 0 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(242, 236, 226, .12); }
+  .np-next { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 24px;
+    -webkit-mask-image: linear-gradient(180deg, #000 88%, transparent); mask-image: linear-gradient(180deg, #000 88%, transparent); }
+  .np-next.lyr { max-height: none; padding-top: 6px; }
+  .np-artist { margin: 10px 0 6px; align-items: center; }
+  .np-artist img { width: 88px; height: 88px; }
+  .np-artist b { font-size: 26px; margin: 0 0 4px; }
+  .np-bio p { font: 17px/1.55 var(--serif); color: rgba(242, 236, 226, .78); margin: 0 0 12px; }
+  .np-bio h4 { display: none; }
+  .np-next .more { display: inline-block; margin-top: 4px; }
+  .np-next .tt-vis, .np-transport .tt-vis { height: 96px; }
+}
+/* upright (a tablet held tall, the wall): the cover with the song beside it, the time and the buttons across, then the
+   tabs filling the rest */
+@media (min-width: 641px) and (max-aspect-ratio: 1/1) {
+  .np-main { display: grid; --art: min(44vw, 34vh, 560px); grid-template-columns: var(--art) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas: "art info" "tr tr" "tabs tabs" "next next"; gap: 0 32px; }
+  .np-left, .np-right { display: contents; }
+  .np-art { grid-area: art; width: var(--art); }
+  .np-info { grid-area: info; align-self: center; }
+  .np-transport { grid-area: tr; }
+  .np-tabs { grid-area: tabs; }
+  .np-next, .np-right > .tt-ask { grid-area: next; }
+  .np-ctl { max-width: 560px; margin-left: auto; margin-right: auto; }
+}
+/* the wall: a large screen across the room, so bigger everything, and the words as the tab it opens on */
+html.wall .np-main { --art: min(52vw, 40vh, 760px); padding-top: 76px; }
+html.wall .np-info h1 { font-size: clamp(44px, 5vw, 72px); }
+html.wall .np-info .by { font-size: 30px; }
+html.wall .np-info .alb { font-size: 20px; }
+html.wall .np-next.lyr p { font-size: 32px; }
+html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
+/* the phone: one page that scrolls as a whole, in reading order: the cover, the song, the buttons, then the tabs */
+@media (max-width: 640px) {
+  .np-main { display: flex; flex-direction: column; gap: 0; }
+  .np-left, .np-right { display: contents; }
+  .np-art { order: 1; align-self: center; width: min(78vw, 52vh); }
+  .np-info { order: 2; margin-top: 22px; }
+  .np-transport { order: 3; align-self: stretch; width: auto; }
+  .np-ctl { max-width: none; }
+  .np-right > .tt-ask { order: 4; }
+  .np-tabs { order: 5; margin-top: 26px; flex-wrap: wrap; row-gap: 8px; }
+  .np-next { order: 6; }
+  .np-extra { flex-wrap: wrap; }
+}

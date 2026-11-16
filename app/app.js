@@ -2651,16 +2651,14 @@ function ttVisual() {
 function drawTtNp() {
   const t = A.tt, np = $("#np"), song = t.song, art = ttArt(t, 800), r = t.record || {};
   np.innerHTML = `<div class="np-bg">${art ? `<img src="${esc(art)}" alt="">` : ""}</div><button class="np-close" data-act="closeNp" aria-label="Close">${icon("down")}</button>
-    <div class="np-main"><div class="np-art sq">${art ? `<img src="${esc(art)}" alt="">` : ""}</div>
-      <div class="np-info"><div class="kicker">${icon("disc")} On the turntable</div><h1>${esc(song ? song.title : t.unnamed ? "Not named yet" : t.state === "side over" ? "The side is over" : "Listening…")}</h1>
+    <div class="np-main"><div class="np-left"><div class="np-art sq">${art ? `<img src="${esc(art)}" alt="">` : ""}</div><div class="np-transport"><canvas class="tt-vis" width="600" height="120"></canvas></div></div>
+      <div class="np-right"><div class="np-info"><div class="kicker">${icon("disc")} On the turntable</div><h1>${esc(song ? song.title : t.unnamed ? "Not named yet" : t.state === "side over" ? "The side is over" : "Listening…")}</h1>
         <div class="byline">${r.artist ? `<a class="by" href="${artistHref(r.artist)}" data-close="1">${esc(r.artist)}</a>` : ""}</div>
         ${r.title ? `<a class="alb" href="${r.href || "#/vinyl"}" data-close="1">${esc(r.title)}${r.year ? " &middot; " + r.year : ""}</a>` : ""}
         <div class="np-q tt-q">Vinyl${song && song.pos ? " &middot; side " + esc(song.side) + ", " + esc(song.pos) : ""}${r.plays ? ` &middot; played ${r.plays} ${r.plays === 1 ? "time" : "times"}` : ""}</div>
-        <canvas class="tt-vis" width="600" height="120"></canvas>
+        <div class="np-extra"><button class="pill" data-act="ttRooms">${icon("speaker")} Hear it in a room</button></div></div>
         ${ttAsk(t)}
-        <div class="np-extra">${(A.rooms || []).map(p => `<button class="pill" data-act="ttPlay" data-v="${esc(p.playerid)}">${icon("speaker")} Hear it in ${esc(roomName(p.playerid))}</button>`).join("")}</div></div>
-      <div class="np-side">${t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : ""}
-        ${ttSuggest(t)}</div></div>`;
+        <div class="np-next">${t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : ""}${ttSuggest(t)}</div></div></div>`;
   const img = $(".np-art img", np); if (img) tint(img, np);
   ttVisual();
 }
@@ -2707,27 +2705,25 @@ function drawNp() {
   const t = curTrack(), np = $("#np");
   if (!t) { np.innerHTML = `<button class="np-close" data-act="closeNp">${icon("down")}</button><div class="empty-state"><h1>Silence</h1><p>Nothing is playing in ${esc(roomName(A.room))}.</p></div>`; return; }
   const art = trackArt(t, 800), artist = splitArtist(t.artist || ""), libAlbum = A.albums.find(a => norm(a[1]) === norm(t.album) && norm(a[2]) === norm(t.artist));
+  // one screen, nothing to scroll: the cover with the time and the buttons under it; beside it the song, then tabs (up
+  // next, the words, who made it, about the artist) filling the rest. The phone keeps its one long page.
   np.innerHTML = `<div class="np-bg">${art ? `<img src="${esc(art)}" alt="">` : ""}</div><button class="np-close" data-act="closeNp" aria-label="Close">${icon("down")}</button>
-    <div class="np-main"><div class="np-art">${art ? `<img src="${esc(art)}" alt="">` : ""}</div>
-      <div class="np-info"><div class="kicker">Now playing in <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
+    <div class="np-main"><div class="np-left"><div class="np-art">${art ? `<img src="${esc(art)}" alt="">` : ""}</div>
+      <div class="np-transport"><div class="np-prog"><div class="track"><i></i></div><div class="times"><span class="at"></span><span class="left"></span></div></div>
+        <div class="np-ctl"><button class="sm shuf" data-act="shuffleMode" aria-label="Shuffle">${icon("shuffle")}</button><button data-act="prev">${icon("prev")}</button><button class="pp big" data-act="toggle"></button><button data-act="next">${icon("next")}</button><button class="sm rep" data-act="repeat" aria-label="Repeat">${icon("repeat")}<i></i></button></div>
+        ${fixedVolume(A.room) ? "" : `<div class="np-vol">${icon("vol")}<input class="vol" type="range" min="0" max="100" aria-label="Volume"></div>`}</div></div>
+      <div class="np-right"><div class="np-info"><div class="kicker">Now playing in <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (libAlbum ? `<a class="alb" href="${albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${quality(t)}</button>
-        <div class="np-prog"><div class="track"><i></i></div><div class="times"><span class="at"></span><span class="left"></span></div></div>
-        <div class="np-ctl"><button class="sm shuf" data-act="shuffleMode" aria-label="Shuffle">${icon("shuffle")}</button><button data-act="prev">${icon("prev")}</button><button class="pp big" data-act="toggle"></button><button data-act="next">${icon("next")}</button><button class="sm rep" data-act="repeat" aria-label="Repeat">${icon("repeat")}<i></i></button></div>
-        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div>
-        ${fixedVolume(A.room) ? "" : `<div class="np-vol">${icon("vol")}<input class="vol" type="range" min="0" max="100" aria-label="Volume"></div>`}</div>
-      <div class="np-side"><div id="np-about"></div><div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button class="np-save" data-act="saveQueue">Save queue</button></div><div class="np-next"></div></div></div>`;
+        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
+      <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
+      <div class="np-next"></div></div></div>`;
   drawNpSide();
   readRadio(A.room).then(paintRadio).catch(() => {});
   if ($(".vol", np)) bindVolume($(".vol", np));
   const img = $(".np-art img", np); if (img) tint(img, np);
   $(".np-prog .track", np).addEventListener("click", e => { const r = e.currentTarget.getBoundingClientRect(), st = A.st || {}; if (st.duration) send(["time", Math.round((e.clientX - r.left) / r.width * st.duration)]); });
-  if (artist) whoIs(t.artist || "").then(found => {
-    const p = found[1], artist = found[0];
-    const box = $("#np-about", np); if (!box || A.curKey.split("|")[2] !== t.artist) return;
-    const text = (p.qobuz && p.qobuz.bio) || (p.wiki && p.wiki.extract) || "";
-    box.innerHTML = `<a class="np-artist" href="${artistHref(artist)}" data-close="1">${p.thumb || p.hero ? `<img src="${esc(pic(p.thumb || p.hero, 320))}" alt="">` : ""}<div><div class="kicker">About the artist</div><b>${esc((p.qobuz && p.qobuz.name) || artist)}</b>${text ? `<p>${esc(standfirst(text, 300))}</p>` : ""}</div></a>`;
-  }).catch(() => {});
+
   paintNp();
 }
 // who a track's artist is: the whole name when anyone knows it ("Good Night & Good Morning"), else the first named
@@ -2794,6 +2790,16 @@ function drawNpSide() {
   if (A.npTab === "next") { paintNp(); return; }
   const t = curTrack(); if (!t) return;
   const k = A.curKey;
+  if (A.npTab === "about") { // the artist: their picture, who they are, the way to their page
+    box.innerHTML = `<p class="dim">Asking after them&hellip;</p>`;
+    whoIs(t.artist || "").then(found => {
+      const p = found[1], who = found[0], text = (p.qobuz && p.qobuz.bio) || (p.wiki && p.wiki.extract) || "";
+      if (A.curKey !== k || A.npTab !== "about") return;
+      box.innerHTML = `<a class="np-artist" href="${artistHref(who)}" data-close="1">${p.thumb || p.hero ? `<img src="${esc(pic(p.thumb || p.hero, 320))}" alt="">` : ""}<div><b>${esc((p.qobuz && p.qobuz.name) || who)}</b><div class="dim">${heroMeta(p)}</div></div></a>
+        ${text ? `<div class="np-bio">${prose(paras(text).slice(0, 4), who)}</div>` : ""}<a class="more" href="${artistHref(who)}" data-close="1">Their page</a>`;
+    }).catch(() => { box.innerHTML = `<p class="dim">Nothing known about them.</p>`; });
+    return;
+  }
   if (A.npTab === "credits") {
     box.innerHTML = `<p class="dim">Looking up who made it&hellip;</p>`;
     npCredits(t).then(html => { if (A.curKey === k && A.npTab === "credits") box.innerHTML = html; });
@@ -2859,6 +2865,7 @@ document.addEventListener("click", e => { const a = e.target.closest && e.target
 // ?lite: a lighter way of drawing for a modest machine (the wall's Pi): no frosted glass, no large blurs, nothing that
 // animates for ever (set by the page that frames it)
 if (/[?&]lite\b/.test(location.search)) document.documentElement.classList.add("lite");
+if (/[?&]wall\b/.test(location.search)) document.documentElement.classList.add("wall"); // the wall panel's screen: Now Playing drawn larger
 function start() {
   document.querySelectorAll("[data-icon]").forEach(i => { i.outerHTML = icon(i.dataset.icon); });
   $("#main").innerHTML = `<div class="loading"><img class="load-logo" src="logo.png" alt=""><div class="mast-name"><span>Sound<em>squatch</em></span></div><p>Taking the records off the shelves&hellip;</p></div>`;
