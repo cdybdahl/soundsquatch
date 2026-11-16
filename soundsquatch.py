@@ -3763,13 +3763,20 @@ def tt_clip(x8, wav, run_seconds, run, at=0):
     if not song:
         if known and known.get("how") == "shazam" and run_seconds < 60:
             return True  # named already this stretch; asked again only on the slow re-checks
-        if time.time() - TT["shazam_at"] < 10:
+        if time.time() - TT["shazam_at"] < TT.get("shazam_wait", 10):
             return False
         TT["shazam_at"] = time.time()
         got = turntable.shazam(wav)
+        try:  # the last clip asked about, to hear (or ask again) when a song goes unnamed
+            with open(os.path.join(DATA, "turntable", "last-clip.wav"), "wb") as f:
+                f.write(wav)
+        except OSError:
+            pass
         if not got:
-            print(f"turntable: nothing named {run_seconds:.0f}s into the stretch", flush=True)
+            TT["shazam_wait"] = min(60, TT.get("shazam_wait", 10) * 1.5)  # misses in a row: ask less often (Shazam throttles)
+            print(f"turntable: nothing named {run_seconds:.0f}s into the stretch (next try in {TT['shazam_wait']:.0f}s at the soonest)", flush=True)
             return False
+        TT["shazam_wait"] = 10
         spin = TT["spin"]
         same = spin and key(spin.get("artist") or "") == key(got["artist"])
         if spin and spin.get("chosen") and not same:

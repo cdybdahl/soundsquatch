@@ -9,6 +9,7 @@ matched against them here, with nothing leaving the house. Only when that finds 
 
 Uses numpy (already here for the face finder) and ffmpeg (to read the music files)."""
 import asyncio
+import collections
 import io
 import os
 import subprocess
@@ -170,7 +171,7 @@ def shazam(data):
         return None
 
     async def ask():
-        return await Shazam().recognize(data)
+        return await asyncio.wait_for(Shazam().recognize(data), 20)  # a slow Shazam must not hold up the next try
 
     try:
         got = asyncio.run(ask())
@@ -226,6 +227,8 @@ class Ear:
         self.streams = []  # the live stream's listeners: each a list of raw blocks the HTTP side drains
         self.connected = False
         self.heard_at = 0.0
+        self.smooth, self.n_blocks, self.quiet_db = None, 0, QUIET_DB
+        self.levels = collections.deque(maxlen=9000)  # the smoothed level every tenth of a second, a quarter hour of it
         self.run_start = None  # when the current stretch of sound began (after a gap), by the stream's clock
         self.quiet_for = 0.0
         self.clock = 0.0  # seconds of stream received
@@ -234,7 +237,7 @@ class Ear:
 
     def start(self):
         threading.Thread(target=self.serve, name="turntable", daemon=True).start()
-        threading.Thread(target=self.namer, name="turntable-namer", daemon=True).start()
+        threading.Thread(target=self.namer_kept, name="turntable-namer", daemon=True).start()
 
     def serve(self):
         import socket
@@ -278,7 +281,16 @@ class Ear:
         rms = float(np.sqrt(np.mean(x * x)) + 1e-9)
         db = 20 * np.log10(rms)
         self.level = db
-        if db < QUIET_DB:
+        # silence by this turntable's own surface noise: a few dB above the quietest of the last quarter hour (never
+        # above QUIET_DB), on the level smoothed over a few blocks, so a quiet record's soft bars aren't taken for gaps
+        self.smooth = db if self.smooth is None else self.smooth * 0.8 + db * 0.2
+        self.n_blocks += 1
+        if self.n_blocks % 3 == 0 and self.smooth > -85:
+            self.levels.append(self.smooth)
+        if self.n_blocks % 300 == 0 and len(self.levels) > 600:
+            self.quiet_db = float(min(QUIET_DB, max(-62.0, np.percentile(self.levels, 3) + 5)))
+        db = self.smooth
+        if db < self.quiet_db:
             self.quiet_for += len(x) / SR
             if self.quiet_for >= GAP and self.run_start is not None:
                 self.run_start, self.asked = None, []
@@ -317,12 +329,25 @@ class Ear:
             x = self.ring[-int(seconds * SR):].copy()
         lo = np.convolve(x, np.ones(5) / 5, "same")  # a gentle low-pass before bringing it down
         x8 = np.interp(np.arange(0, len(lo) - 1, SR / RATE), np.arange(len(lo)), lo).astype(np.float32)
-        x16 = np.interp(np.arange(0, len(lo) - 1, SR / 16000), np.arange(len(lo)), lo)
-        out = io.BytesIO()
-        with wave.open(out, "wb") as w:
-            w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
-            w.writeframes((np.clip(x16, -1, 1) * 32767).astype(np.int16).tobytes())
-        return x8, out.getvalue()
+        # Shazam's clip: brought up to a full level (a quiet record is still a record) and resampled by ffmpeg, which
+        # Shazam takes where a plain interpolation was turned away
+        peak = float(np.abs(x).max()) or 1.0
+        loud = (np.clip(x * (0.7 / peak), -1, 1) * 32767).astype(np.int16).tobytes()
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav") as f:  # a file, not a pipe: a piped WAV has no length in its header
+            subprocess.run(["ffmpeg", "-v", "quiet", "-y", "-f", "s16le", "-ar", str(SR), "-ac", "1", "-i", "-", "-ar", "16000", f.name],
+                           input=loud, capture_output=True, timeout=20)
+            return x8, open(f.name, "rb").read()
+
+    def namer_kept(self):
+        """The namer, started again after anything unforeseen (said in the log), so naming never quietly stops."""
+        import time, traceback
+        while True:
+            try:
+                self.namer()
+            except Exception:
+                traceback.print_exc()
+                time.sleep(1)
 
     def namer(self):
         """When to name what's playing: at 6 s and 11 s into a stretch of sound, every 12 s after while it has no name,
@@ -341,7 +366,10 @@ class Ear:
                     except Exception:
                         pass
                 continue
-            run = self.clock - self.run_start
+            start = self.run_start  # read once: the stream's thread clears it at each gap
+            if start is None:
+                continue
+            run = self.clock - start
             due = next((t for t in (6, 11) if run >= t and t not in self.asked), None)
             if due is None and run >= 11 and run - max(self.asked or [0]) >= (90 if self.run in named else 12):
                 due = run
