@@ -1191,7 +1191,8 @@ function versionRow(x, i, open) {
     : [x[3] || "", x[2] ? esc(x[2]) : ""];
   const art = vinyl && rec && rec[4] ? pic(rec[4], 160) : x[4] ? cover(x[4], 100) : "";
   return `<a class="room ${x[0] === open ? "on" : ""}" href="${albumHref(x[0])}" data-act="closeSheet"><span class="room-go"><span class="ver-thumb">${art ? `<img class="ver-art" src="${esc(art)}" alt="">` : icon("disc")}${vinyl ? `<i class="ver-badge">${icon("disc")}</i>` : ""}</span>
-    <span><b>${esc(x[1])}</b><em><strong>${SOURCE[x[5]] || SOURCE.local}</strong>${bits.filter(Boolean).map(b => " &middot; " + b).join("")}${i === 0 ? " &middot; shown" : ""}</em></span></span></a>`;
+    <span><b>${esc(x[1])}</b><em><strong>${SOURCE[x[5]] || SOURCE.local}</strong>${vinyl ? `<span class="ver-more">${bits.filter(Boolean).join(" &middot; ")}${i === 0 ? " &middot; shown" : ""}</span>` // its pressing and the day, on a line of their own
+      : bits.filter(Boolean).map(b => " &middot; " + b).join("") + (i === 0 ? " &middot; shown" : "")}</em></span></span></a>`;
 }
 function vinylChip(a) {
   const rs = A.vinylOf && A.vinylOf.get(a[0]);
