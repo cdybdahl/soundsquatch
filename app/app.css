@@ -1279,3 +1279,44 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .vpull-text p { margin: 10px 0 0; font: 16px/1.45 var(--serif); }
 .vpull-text .acts { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
 @media (max-width: 640px) { .vpull { grid-template-columns: 120px minmax(0, 1fr); gap: 16px; align-items: start; } .vpull-text h2 { font-size: 26px; margin-top: 6px; } .vpull-by { font-size: 15px; } .vpull-text p { font-size: 14px; } }
+/* the turntable as a source: the bar, Now Playing, the Vinyl page's panel, and asking for a song's name */
+.tt-q { color: var(--accent); }
+.tt-vis { display: block; width: 100%; height: 72px; margin: 14px 0 4px; color: var(--accent); }
+.tt-vis.mini { width: 180px; height: 36px; margin: 0; }
+.tt-panel .tt-vis { height: 48px; }
+.np-art.sq img { object-fit: contain; }
+.tt-heard ol { list-style: none; margin: 8px 0 18px; padding: 0; display: grid; gap: 6px; font: 15px var(--serif); }
+.tt-heard li span { display: inline-block; min-width: 36px; color: var(--dim); font: 600 12px var(--sans); }
+.tt-next { display: grid; gap: 10px; margin-top: 8px; }
+.tt-sug { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; align-items: center; color: inherit; text-decoration: none; }
+.tt-sug img, .tt-sug .noart { width: 64px; height: 64px; object-fit: contain; background: var(--bg3); border-radius: 3px; display: flex; align-items: center; justify-content: center; }
+.tt-sug em { display: block; font: 700 10px var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--accent); font-style: normal; }
+.tt-sug b { display: block; font: 600 16px var(--sans); }
+.tt-sug i { display: block; font: 13px var(--serif); color: var(--dim); }
+.tt-ask { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--accent); border-radius: 6px; font: 15px/1.45 var(--serif); }
+.tt-ask .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.tt-pick { margin-top: 10px; }
+.tt-find { width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(236, 228, 214, .25); background: transparent; color: inherit; font: 16px var(--sans); }
+.tt-recs { display: grid; gap: 6px; max-height: 280px; overflow: auto; margin-top: 8px; }
+.tt-rec { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; align-items: center; text-align: left; background: none; border: 0; color: inherit; padding: 4px 0; cursor: pointer; }
+.tt-rec img { width: 40px; height: 40px; object-fit: contain; }
+.tt-rec b { display: block; font: 600 14px var(--sans); } .tt-rec i { display: block; font: 13px var(--serif); color: var(--dim); }
+.tt-panel .tt-next { margin-top: 18px; }
+/* a record's page: its facts, the tabs, the tracks by side, credits, the pressing, videos, plays */
+.rec-facts { margin: 22px 0; }
+.rec-tabs { margin: 8px var(--gut) 0; }
+.rec-pane { padding: 18px var(--gut) 28px; }
+.rec-tracks .heard { display: inline-flex; align-items: center; gap: 4px; font: 600 12px var(--sans); color: var(--accent); margin-right: 10px; }
+.rec-tracks .heard .ic { width: 14px; height: 14px; }
+.rec-credits { display: grid; grid-template-columns: minmax(120px, auto) minmax(0, 1fr); gap: 8px 22px; font: 16px/1.45 var(--serif); max-width: 900px; }
+.rec-credits dt { font: 700 11px/2 var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.rec-credits dd { margin: 0; }
+.rec-credits a { color: inherit; }
+.rec-videos { display: grid; gap: 8px; max-width: 760px; }
+.rec-videos a { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; color: inherit; text-decoration: none; padding: 8px 0; border-bottom: 1px solid rgba(236, 228, 214, .12); font: 15px var(--sans); }
+.rec-videos i { color: var(--dim); font-style: normal; }
+.rec-plays { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; font: 15px/1.45 var(--serif); }
+.rec-plays b { display: block; font: 600 13px var(--sans); }
+.rec-stats { margin-top: 6px; }
+.rec-shelf { padding: 0 var(--gut); }
+@media (max-width: 640px) { .rec-credits { grid-template-columns: minmax(0, 1fr); gap: 2px; } .rec-credits dd { margin-bottom: 10px; } .tt-vis.mini { display: none; } }

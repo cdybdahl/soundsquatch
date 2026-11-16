@@ -885,20 +885,54 @@ VIEWS.front = function (el) {
     settlingStrip(el);
   }).catch(() => { el.innerHTML = `<div class="mag"><p class="dim">The presses jammed.</p></div>`; });
 };
-// a record the house has only on the shelf: its cover, what it is, and the ways to hear it
+// a record on the shelf, as fully as an album's page: its cover and pressing, then tabs for its tracks (by side, with
+// their credits and those the turntable has heard), its story, the credits, the pressing's particulars (labels, barcodes,
+// the run-out groove), its videos and its plays; more by the artist at the foot. A back arrow to where you came from.
 VIEWS.record = function (el, id) {
   const r = (A.physical || []).find(x => String(x[0]) === String(id));
-  if (!r) { el.innerHTML = `${pageBar("Records", [])}<p class="dim center">That record isn't in the collection any more.</p>`; return; }
-  const theirs = albumsBy(r[2]);
-  el.innerHTML = `<div class="record-page">
-    <div class="record-art">${r[4] ? `<img src="${esc(pic(r[4], 1200))}" alt="">` : `<div class="noart">${esc(r[1].slice(0, 1))}</div>`}</div>
-    <div class="record-text"><div class="kicker">${icon("disc")} On ${esc(formatWord(r).toLowerCase())} only &middot; not among the digital albums</div>
-      <h1>${esc(r[1])}</h1><a class="record-by" href="${artistHref(r[2])}">${esc(r[2])}</a>
-      <dl>${[["Pressed", r[3] || ""], ["Format", r[5]], ["Label", r[6]], ["Added", r[7] ? new Date(r[7] + "T12:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : ""]]
-        .filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join("")}</dl>
-      <div class="acts">${has("qobuz") ? `<button class="btn" data-act="findWork" data-v="${esc(r[2] + " " + r[1])}">${icon("search")} Find it to play</button>` : ""}
-        <a class="btn ghost" href="https://www.discogs.com/release/${r[0]}" target="_blank" rel="noopener">On Discogs</a></div>
-      ${theirs.length ? `<p class="dim">${theirs.length} of their records on the digital shelves: <a href="${artistHref(r[2])}">see them</a>.</p>` : ""}</div></div>`;
+  if (!r) { el.innerHTML = `${pageBar("Records", [], "", true)}<p class="dim center">That record isn't in the collection any more.</p>`; return; }
+  const d = pressDetails(r), title = r[1].trim(), alb = r[8] && A.byId.get(r[8]), tab = store.get("sq-rec-tab", "tracks");
+  const more = A.physical.filter(x => norm(x[2]) === norm(r[2]) && x[0] !== r[0]), digital = albumsBy(r[2]).filter(a => a[0] !== r[8] && !A.physical.some(x => x[8] === a[0]));
+  const pane = (k, html) => `<div class="rec-pane" data-tab="${k}" ${tab === k ? "" : "hidden"}>${html}</div>`;
+  el.innerHTML = `${pageBar(esc(title), [esc(r[2]), esc(shortFormat(r))], `<a class="pill" href="https://www.discogs.com/release/${r[0]}" target="_blank" rel="noopener">Discogs</a>`, true)}
+    <div class="record-page">
+    <div class="record-art">${r[4] ? `<img src="${esc(pic(r[4], 1200))}" alt="">` : `<div class="noart">${esc(title.slice(0, 1))}</div>`}</div>
+    <div class="record-text"><div class="kicker">${icon("disc")} ${alb ? `On ${esc(formatWord(r).toLowerCase())}, and <a href="${albumHref(alb[0])}">among the digital albums</a>` : `On ${esc(formatWord(r).toLowerCase())} only`}</div>
+      <h1>${esc(title)}</h1><a class="record-by" href="${artistHref(r[2])}">${esc(r[2])}</a>
+      <dl class="rec-facts">${[["Year", recordYear(r) && recordYear(r) !== r[3] ? recordYear(r) + " (this pressing " + r[3] + ")" : r[3] || ""], ["Format", r[5] + (d.t ? ", " + Array.from(new Set(d.t.split(/,\s*/))).join(", ") : "")], ["Label", r[6]],
+        ["Genre", (d.s || d.g || []).join(", ")], ["Added", r[7] ? new Date(r[7] + "T12:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : ""]]
+        .filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join("")}<dt class="rec-more-dt" hidden></dt></dl>
+      <div class="acts">${alb ? `<button class="btn" data-act="playAlbum" data-v="${alb[0]}">${icon("play")} Spin the digital one</button>` : has("qobuz") ? `<button class="btn" data-act="findWork" data-v="${esc(r[2] + " " + title)}">${icon("search")} Find it to play</button>` : ""}
+        ${A.tt && A.tt.record && A.tt.record.id === r[0] ? `<button class="btn ghost" data-act="openNp">${icon("disc")} On the turntable now</button>` : ""}</div>
+      <p class="rec-stats dim"></p></div></div>
+    <nav class="mag-tabs rec-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"], ["pressing", "The pressing"], ["videos", "Videos"], ["plays", "Plays"]].map(t =>
+      `<button class="${t[0] === tab ? "on" : ""}" data-act="recTab" data-v="${t[0]}">${t[1]}</button>`).join("")}</nav>
+    ${["tracks", "story", "credits", "pressing", "videos", "plays"].map(k => pane(k, `<p class="dim">Asking Discogs&hellip;</p>`)).join("")}
+    ${more.length || digital.length ? `<section class="sec rec-shelf"><div class="kicker">Also on the shelves</div><h2>More by ${esc(r[2])}</h2>${shelf(more.map(x => vinylCard(x)).concat(digital.map(a => albumCard(a))))}</section>` : ""}`;
+  const img = $(".record-art img", el); if (img) tint(img, el);
+  api("/api/record?id=" + r[0]).then(x => {
+    if (!el.isConnected) return;
+    const heard = {}; (x.spins || []).forEach(sp => sp.songs.forEach(s => { if (s[1]) heard[s[1]] = (heard[s[1]] || 0) + 1; }));
+    const set = (k, html) => { const p = $(`.rec-pane[data-tab="${k}"]`, el); if (p) p.innerHTML = html; };
+    const c = x.community || {}, plays = x.plays || {};
+    $(".rec-stats", el).innerHTML = [plays.n ? `Played ${plays.n} ${plays.n === 1 ? "time" : "times"} on the turntable, last ${esc(plays.last)}` : "", c.have ? `${c.have.toLocaleString()} have it on Discogs, ${c.want.toLocaleString()} want it` : "", c.votes ? `rated ${c.rating.toFixed(1)} by ${c.votes}` : ""].filter(Boolean).join(" &middot; ");
+    let side = null;
+    set("tracks", (x.tracks || []).length ? `<div class="tracks rec-tracks">${x.tracks.map(t => {
+      if (t.type !== "track") return `<div class="disc">${esc(t.title)}</div>`;
+      const s = (/^[A-Za-z]+/.exec(t.pos) || [""])[0].toUpperCase(), head = s && s !== side ? `<div class="disc">Side ${esc(s)}</div>` : ""; side = s || side;
+      return `${head}<div class="trk"><span class="n">${esc(t.pos)}</span><span class="tt">${esc(t.title)}${t.artists ? `<em>${esc(t.artists)}</em>` : ""}${t.credits.length ? `<em>${esc(t.credits.map(c => c[1] + ": " + c[0]).join("; "))}</em>` : ""}</span>
+        ${heard[t.pos] ? `<span class="heard" title="Heard on the turntable">${icon("disc")} ${heard[t.pos]}</span>` : ""}<span class="d">${esc(t.dur || "")}</span>${has("qobuz") ? `<button class="trk-more" data-act="findWork" data-v="${esc(r[2] + " " + t.title)}" aria-label="Find it to play">${icon("search")}</button>` : ""}</div>`;
+    }).join("")}</div>` : `<p class="dim">Discogs has no tracklist for it.</p>`);
+    set("story", x.review || x.notes ? `<div class="mag-body">${x.review ? prose(paras(x.review), r[2]) : ""}${x.notes ? `<h4 class="sub">From Discogs</h4>${prose(paras(x.notes), r[2])}` : ""}</div>` : `<p class="dim">Nothing written about it yet.</p>`);
+    const roles = {}; (x.credits || []).forEach(c => { (roles[c[1]] = roles[c[1]] || []).push(c[0] + (c[2] ? " (" + c[2] + ")" : "")); });
+    set("credits", Object.keys(roles).length ? `<dl class="rec-credits">${Object.keys(roles).map(k => `<dt>${esc(k)}</dt><dd>${roles[k].map(n => `<a href="${artistHref(n.replace(/ \(.*$/, ""))}">${esc(n)}</a>`).join(", ")}</dd>`).join("")}</dl>` : `<p class="dim">No credits on Discogs.</p>`);
+    set("pressing", `<dl class="rec-credits">${[["Released", x.released], ["Country", x.country], ["Labels", (x.labels || []).map(l => l.join(" ")).join("; ")],
+      ["Made by", (x.companies || []).map(c => c[1] + ": " + c[0]).join("; ")], ["Pressing", (d.d || []).join(", ")]].filter(v => v[1]).map(v => `<dt>${v[0]}</dt><dd>${esc(v[1])}</dd>`).join("")}
+      ${(x.ids || []).map(i => `<dt>${esc(i[0])}</dt><dd>${esc(i[1])}${i[2] ? ` <span class="dim">${esc(i[2])}</span>` : ""}</dd>`).join("")}</dl>`);
+    set("videos", (x.videos || []).length ? `<div class="rec-videos">${x.videos.map(v => `<a href="${esc(v[0])}" target="_blank" rel="noopener">${icon("play")}<span>${esc(v[1])}</span>${v[2] ? `<i>${mmss(v[2])}</i>` : ""}</a>`).join("")}</div>` : `<p class="dim">No videos on Discogs.</p>`);
+    set("plays", (x.spins || []).length ? `<ol class="rec-plays">${x.spins.slice().reverse().map(sp => `<li><b>${new Date(sp.start * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</b>
+      <span>${sp.songs.map(s => esc((s[1] ? s[1] + " " : "") + s[0])).join(" &middot; ")}</span></li>`).join("")}</ol>` : `<p class="dim">The turntable hasn't heard it yet.</p>`);
+  }).catch(() => {});
 };
 MAG.album = function (el, id) {
   const a = A.byId.get(+id) || [+id, "", "", 0, "", 0, "", 0, []];
@@ -1084,9 +1118,20 @@ VIEWS.vinyl = function (el) {
     <div class="vfacets">${facets.map(f => `<div class="vfacet"><span class="vf-h">${f[1]}</span><div class="chips">${f[2].map(o =>
       `<button class="${pick[f[0]] === o[0] ? "on" : ""}" data-act="vinylPick" data-v="${esc(f[0] + "|" + o[0])}">${esc(o[1])}</button>`).join("")}</div></div>`).join("")}
       ${picked ? `<button class="vf-clear" data-act="vinylPick" data-v="">Clear the filters</button>` : ""}</div>
-    ${rows.length ? `${vinylPull()}<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}`;
+    ${ttOn() ? ttPanel() : ""}${rows.length ? `${ttOn() ? "" : vinylPull()}<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}`;
 };
 A.vinylShown = [];
+// the record on the turntable now, at the head of the Vinyl page
+function ttPanel() {
+  const t = A.tt, r = t.record || {}, song = t.song;
+  return `<section class="vpull tt-panel"><a class="vpull-art" href="${r.href || "#/vinyl"}">${ttArt(t, 800) ? `<img src="${esc(ttArt(t, 800))}" alt="">` : `<div class="noart">${icon("disc")}</div>`}</a>
+    <div class="vpull-text"><div class="kicker">${icon("disc")} On the turntable${t.state === "side over" ? " &middot; the side is over" : ""}</div><h2>${r.title ? `<a href="${r.href}">${esc(r.title)}</a>` : "Listening&hellip;"}</h2>
+      ${r.artist ? `<a class="vpull-by" href="${artistHref(r.artist)}">${esc(r.artist)}</a>` : ""}
+      <p>${song ? `${song.pos ? esc(song.pos) + " &middot; " : ""}&ldquo;${esc(song.title)}&rdquo;` : ""}${r.plays ? ` <span class="dim">played ${r.plays} ${r.plays === 1 ? "time" : "times"}</span>` : ""}</p>
+      <canvas class="tt-vis" width="600" height="60"></canvas>${ttAsk(t)}
+      <div class="acts"><button class="btn" data-act="openNp">Now playing</button><button class="btn ghost" data-act="ttRooms">${icon("speaker")} Hear it in a room</button></div>
+      ${ttSuggest(t)}</div></section>`;
+}
 // a record pulled from the shelf at random (from those the filters show), larger than the rest; Another pulls again
 function vinylPull() {
   const rs = A.vinylShown.length ? A.vinylShown : A.physical;
@@ -1102,7 +1147,7 @@ function vinylPull() {
 // the line on an album's page when the house has it on the shelf too
 function vinylChip(a) {
   const rs = A.vinylOf && A.vinylOf.get(a[0]);
-  return rs ? `<span class="vinyl-chip" title="${esc(rs.map(r => [r[5], r[6], r[3] || ""].filter(Boolean).join(", ")).join("; "))}">${icon("disc")} Also on ${esc(rs.map(r => r[5] || "vinyl").join(", ").replace(/^Vinyl/, "vinyl"))}</span>` : "";
+  return rs ? `<a class="vinyl-chip" href="#/record/${rs[0][0]}" title="${esc(rs.map(r => [r[5], r[6], r[3] || ""].filter(Boolean).join(", ")).join("; "))}">${icon("disc")} Also on ${esc(rs.map(r => r[5] || "vinyl").join(", ").replace(/^Vinyl/, "vinyl"))}</a>` : "";
 }
 A.shows = {}; // every show a card has been drawn for, by its archive.org identifier: what its page starts from
 function archCard(x, cls) {
@@ -1494,7 +1539,8 @@ const CONN = [["lms_url", "Lyrion", "its address, as the server reaches it", "lm
   ["listening_db", "Listening log", "a recorder of the house's own, if there is one; otherwise Soundsquatch keeps the log itself", "listening_ok"]];
 const FEATS = [["stations", "Stations", "radio seeded from artists you choose"], ["archive", "Internet Archive", "shows from the ArchiveLMA plugin"],
   ["history", "History", "the History tab, from the listening log"], ["credits", "Credits", "who made each album, from MusicBrainz"], ["lyrics", "Lyrics", "synced lyrics in Now Playing (LRCLIB)"],
-  ["write_files", "Change music files", "genres, titles and covers written into the files; Remove from the library moves them to music-removed. Off, genres are Soundsquatch's own and the files are never touched"]];
+  ["write_files", "Change music files", "genres, titles and covers written into the files; Remove from the library moves them to music-removed. Off, genres are Soundsquatch's own and the files are never touched"],
+  ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"]];
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
   ["mai", "Music & Artist Information", "album reviews, artists' longer stories and more of their photographs"],
   ["archive", "ArchiveLMA", "live shows from the Internet Archive: your favourites, each artist's shows, and On this night"],
@@ -1513,10 +1559,18 @@ VIEWS.settings = function (el) {
   Promise.all([api("/api/settings"), lms("", ["players", 0, 50]).then(r => { A.rooms = (r.players_loop || []).filter(p => p.connected); }).catch(() => {})]).then(r => { A.cfg = r[0]; drawSettings(el); }).catch(() => { $(".settings", el).innerHTML = `<p class="dim">The server isn't answering.</p>`; });
 };
 // the house's Discogs collection: connected (whose, how many, when read) or how to connect it
+// the turntable's listener: whether it's sending, the lid's sensor, the house's files fingerprinted, where songs are kept
+function ttRow(c) {
+  const t = c.turntable || {}, ago = t.heard_at ? Math.round(Date.now() / 1000 - t.heard_at) : 0;
+  const now = t.listener ? `<span class="check good">listening</span>` : t.heard_at ? `<span class="check">last heard ${ago < 7200 ? Math.round(ago / 60) + " min" : Math.round(ago / 3600) + " h"} ago</span>` : `<span class="check">no listener yet</span>`;
+  return `<div class="set-field" data-k="turntable"><span><b>The turntable</b><em>a listener on the amplifier's record-out (a Pi sending to port ${t.port}) names what the record player plays: ${t.indexing ? `fingerprinting the house's files, ${t.indexing[0]} of ${t.indexing[1]}` : `${(t.indexed || 0).toLocaleString()} of the house's songs fingerprinted`}, then Shazam. ${t.lid ? `The lid: ${esc(t.lid)}.` : "No lid sensor set: everything heard is taken for a record."}
+    ${c.features.turntable_capture ? `Each song is kept, tagged, in ${esc(t.capture)}.` : ""} ${(t.fields || []).length ? `Plays go to Discogs (${esc(t.fields.join(", "))}).` : "Add Plays and Last played fields to your Discogs collection to have plays written there."}</em></span>
+    <span class="conn-now">${now}</span></div>`;
+}
 function discogsRow(c) {
   const d = c.discogs || {};
   const now = d.set ? (d.error ? `<span class="check bad">${esc(d.error)}</span>` : d.user ? `<span class="check good">${esc(d.user)}'s collection: ${d.records.toLocaleString()} records</span>` : `<span class="check">reading the collection&hellip;</span>`) : `<span class="check bad">not connected</span>`;
-  return `<div class="set-field conn" data-k="discogs"><span><b>Discogs</b><em>your vinyl (and CDs) beside the digital albums: each matched to its album here, the rest listed as records you have only on vinyl. Read once a day; nothing is sent to Discogs but the token</em></span>
+  return `<div class="set-field conn" data-k="discogs"><span><b>Discogs</b><em>your vinyl (and CDs) beside the digital albums: each matched to its album here, the rest listed as records you have only on vinyl. Read once a day. When the turntable plays a record, its Plays and Last played fields are written (add custom fields of those names to your collection on Discogs)</em></span>
     <span class="conn-now">${now}<button class="pill" data-act="connEdit">${d.set ? "Change" : "Connect"}</button></span>
     <input data-discogs type="password" placeholder="${d.set ? "a new token (leave empty to disconnect)" : "your Discogs token"}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     <p class="plan-note">On discogs.com: Settings, Developers, then Generate new token. Copy it here.</p>
@@ -1552,7 +1606,7 @@ function drawSettings(el) {
         </div>`; }).join("")}
       <div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>
       <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`)}
-    ${section("For every screen in the house", "Your records", discogsRow(c))}
+    ${section("For every screen in the house", "Your records", discogsRow(c) + ttRow(c))}
     ${section("What Lyrion adds", "Lyrion's plugins", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
       ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`)}
     ${section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`)}
@@ -2003,6 +2057,7 @@ const ACT = {
   setDisc: v => { const f = {}; f[v] = !A.cfg.discover[v]; saveSettings({ discover: f }, `${DISC.find(x => x[0] === v)[1]} ${f[v] ? "shown" : "hidden"} on Discover`); },
   connEdit: (v, t) => { t.closest(".conn").classList.add("open"); t.closest(".settings").classList.add("editing"); const i = t.closest(".conn").querySelector("[data-conn]"); if (i) i.focus(); },
   vinylSort: v => { store.set("sq-vsort", v); VIEWS.vinyl(current.el); },
+  recTab: v => { store.set("sq-rec-tab", v); document.querySelectorAll(".rec-tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === v)); document.querySelectorAll(".rec-pane").forEach(p => { p.hidden = p.dataset.tab !== v; }); },
   vinylPull: () => { const box = $(".vpull", current.el); if (box) box.outerHTML = vinylPull(); },
   vinylPick: v => { // a facet's choice ("format|lp"), tapped again to let it go; empty clears them all
     const pick = v ? store.get("sq-vf", {}) : {}, i = v.indexOf("|"), k = v.slice(0, i), o = v.slice(i + 1);
@@ -2511,6 +2566,7 @@ function groupLabel(st) {
   return names.length < 3 ? names.join(" + ") : names[0] + " + " + (names.length - 1) + " rooms";
 }
 function paintPlayer() {
+  if (ttLeads()) return paintTt(); // the record player, while the room has nothing on
   const st = A.st || {}, t = curTrack(), bar = $("#bar"), playing = st.mode === "play";
   const k = t ? (t.id || "") + "|" + (t.title || "") + "|" + (t.artist || "") : "";
   if (k !== A.curKey) {
@@ -2541,9 +2597,112 @@ function bindVolume(input) {
   input.addEventListener("input", () => { input.dragging = true; setv(); });
   input.addEventListener("change", () => { input.dragging = false; setv(); });
 }
+/* ───────────────────────── the turntable, as a source of its own ─────────────────────────
+   While the record player plays (the listener on the Pi hears it and the lid is up), Soundsquatch names each song and
+   finds the record among the collection. It leads the bar and Now Playing when the room has nothing on: the cover, the
+   song, the side, the songs heard so far, what to play next, the levels as they come, and a way to hear it in another
+   room. A song nothing could name is asked of the house: the record, then the song. */
+A.tt = null;
+function ttPoll() {
+  clearTimeout(A.ttT);
+  if (document.hidden) { A.ttT = setTimeout(ttPoll, 5000); return; }
+  api("/api/turntable").then(t => {
+    const was = JSON.stringify(A.tt);
+    A.tt = t;
+    if (JSON.stringify(t) !== was) {
+      paintPlayer();
+      if (current && current.kind === "vinyl") { const box = $(".tt-panel", current.el); if (box || ttOn()) VIEWS.vinyl(current.el); }
+    }
+  }).catch(() => {}).then(() => { A.ttT = setTimeout(ttPoll, 3000); });
+}
+const ttOn = () => !!(A.tt && A.tt.state !== "idle" && (A.tt.record || A.tt.unnamed));
+const ttLeads = () => ttOn() && !(A.st && A.st.mode === "play");
+const ttArt = (t, w) => t.record && t.record.image ? pic(t.record.image, w) : "";
+function ttWhere(t) { return [t.record && t.record.title, t.song && t.song.pos ? "Side " + t.song.side + ", " + t.song.pos : t.side ? "Side " + t.side : ""].filter(Boolean).join(" · "); }
+function paintTt() {
+  const t = A.tt, bar = $("#bar"), song = t.song, k = "tt|" + (song ? song.title : "") + "|" + t.state + "|" + !!t.unnamed;
+  if (k === A.curKey) return;
+  A.curKey = k;
+  bar.innerHTML = `<div class="bar-left"><button class="bar-art" data-act="openNp">${ttArt(t, 150) ? `<img src="${esc(ttArt(t, 150))}" alt="">` : icon("disc")}</button>
+    <button class="bar-what" data-act="openNp"><b>${esc(song ? song.title : t.unnamed ? "A song not yet named" : t.state === "side over" ? "The side is over" : "On the turntable")}</b><em>${esc((t.record ? t.record.artist : "") + (ttWhere(t) ? " · " + ttWhere(t) : ""))}</em></button><span class="bar-q tt-q">Vinyl</span></div>
+    <div class="bar-ctl"><canvas class="tt-vis mini" width="180" height="36"></canvas></div><div class="bar-right"><button class="bar-room" data-act="ttRooms">${icon("speaker")}<span>Hear it in a room</span></button></div>`;
+  ttVisual();
+  if (!$("#np").hidden) drawNp();
+}
+// the levels, as the listener hears them: bars on each visualiser canvas while one is showing
+function ttVisual() {
+  const any = () => document.querySelector("canvas.tt-vis");
+  if (!any() || !window.EventSource) return;
+  if (A.ttEs) return;
+  A.ttEs = new EventSource("/api/turntable/live");
+  A.ttEs.onmessage = e => {
+    if (!any() || !ttOn()) { A.ttEs.close(); A.ttEs = null; return; }
+    const f = JSON.parse(e.data);
+    document.querySelectorAll("canvas.tt-vis").forEach(c => {
+      const g = c.getContext("2d"), n = f.b.length, w = c.width / n;
+      g.clearRect(0, 0, c.width, c.height);
+      g.fillStyle = getComputedStyle(c).color;
+      f.b.forEach((v, i) => { const h = Math.max(1, v * c.height); g.fillRect(i * w + 1, c.height - h, w - 2, h); });
+    });
+  };
+  A.ttEs.onerror = () => { if (A.ttEs) A.ttEs.close(); A.ttEs = null; };
+}
+function drawTtNp() {
+  const t = A.tt, np = $("#np"), song = t.song, art = ttArt(t, 800), r = t.record || {};
+  np.innerHTML = `<div class="np-bg">${art ? `<img src="${esc(art)}" alt="">` : ""}</div><button class="np-close" data-act="closeNp" aria-label="Close">${icon("down")}</button>
+    <div class="np-main"><div class="np-art sq">${art ? `<img src="${esc(art)}" alt="">` : ""}</div>
+      <div class="np-info"><div class="kicker">${icon("disc")} On the turntable</div><h1>${esc(song ? song.title : t.unnamed ? "Not named yet" : t.state === "side over" ? "The side is over" : "Listening…")}</h1>
+        <div class="byline">${r.artist ? `<a class="by" href="${artistHref(r.artist)}" data-close="1">${esc(r.artist)}</a>` : ""}</div>
+        ${r.title ? `<a class="alb" href="${r.href || "#/vinyl"}" data-close="1">${esc(r.title)}${r.year ? " &middot; " + r.year : ""}</a>` : ""}
+        <div class="np-q tt-q">Vinyl${song && song.pos ? " &middot; side " + esc(song.side) + ", " + esc(song.pos) : ""}${r.plays ? ` &middot; played ${r.plays} ${r.plays === 1 ? "time" : "times"}` : ""}</div>
+        <canvas class="tt-vis" width="600" height="120"></canvas>
+        ${ttAsk(t)}
+        <div class="np-extra">${(A.rooms || []).map(p => `<button class="pill" data-act="ttPlay" data-v="${esc(p.playerid)}">${icon("speaker")} Hear it in ${esc(roomName(p.playerid))}</button>`).join("")}</div></div>
+      <div class="np-side">${t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : ""}
+        ${ttSuggest(t)}</div></div>`;
+  const img = $(".np-art img", np); if (img) tint(img, np);
+  ttVisual();
+}
+function ttSuggest(t) {
+  return (t.suggest || []).length ? `<div class="tt-next"><div class="kicker">${t.state === "side over" ? "Play next" : "After this"}</div>${t.suggest.map(s =>
+    `<a class="tt-sug" href="${s.href || "#/vinyl"}" data-close="1">${s.image ? `<img src="${esc(s.image.charAt(0) === "/" ? s.image : pic(s.image, 300))}" alt="">` : `<span class="noart">${esc((s.title || "?").slice(0, 1))}</span>`}
+      <span><em>${esc(s.why)}</em><b>${esc(s.title)}</b><i>${esc([s.artist, s.year, s.where].filter(Boolean).join(" · "))}</i></span></a>`).join("")}</div>` : "";
+}
+// a song nothing could name: is it the record's next song? else which record is on, then which song
+function ttAsk(t) {
+  if (!t.unnamed) return "";
+  const g = t.unnamed.guess;
+  return `<div class="tt-ask"><b>Shazam doesn't know this one.</b>${g ? ` Is it ${esc(g.pos)}, &ldquo;${esc(g.title)}&rdquo;?
+    <div class="acts"><button class="btn" data-act="ttName" data-v="${t.record.id}|${esc(g.pos)}">Yes</button><button class="btn ghost" data-act="ttPickSong" data-v="${t.record.id}">Another song</button><button class="btn ghost" data-act="ttPickRecord">Another record</button></div>`
+    : ` Which record is on?<div class="acts">${t.record && t.record.id ? `<button class="btn" data-act="ttPickSong" data-v="${t.record.id}">A song from ${esc(t.record.title)}</button>` : ""}<button class="btn ghost" data-act="ttPickRecord">Choose the record</button></div>`}<div class="tt-pick"></div></div>`;
+}
+function ttRecordList(q) {
+  const n = norm(q || "");
+  const rs = (A.physical || []).filter(r => !n || norm(r[1]).indexOf(n) >= 0 || norm(r[2]).indexOf(n) >= 0).slice(0, 30);
+  return rs.map(r => `<button class="tt-rec" data-act="ttPickSong" data-v="${r[0]}">${r[4] ? `<img src="${esc(pic(r[4], 150))}" alt="">` : ""}<span><b>${esc(r[1].trim())}</b><i>${esc(r[2])}</i></span></button>`).join("");
+}
+Object.assign(ACT, {
+  ttRooms: () => openSheet(`<h2>Hear the turntable in&hellip;</h2><div class="sheet-list">${(A.rooms || []).map(p => `<button data-act="ttPlay" data-v="${esc(p.playerid)}">${icon("speaker")} ${esc(roomName(p.playerid))}</button>`).join("")}</div>`),
+  ttPlay: v => api("/api/turntable/play", { player: v }).then(r => toast(r.ok ? `The turntable is playing in ${roomName(v)}` : r.error)),
+  ttName: v => { const p = v.split("|"); api("/api/turntable/name", { record: +p[0], pos: p[1] || "" }).then(r => { toast(r.ok ? "Thanks" : r.error); ttPoll(); }); },
+  ttPickRecord: (v, el) => {
+    const box = el.closest(".tt-ask").querySelector(".tt-pick");
+    box.innerHTML = `<input class="tt-find" type="search" placeholder="the record or the artist" autocomplete="off"><div class="tt-recs">${ttRecordList("")}</div>`;
+    const i = box.querySelector("input"); i.addEventListener("input", () => { box.querySelector(".tt-recs").innerHTML = ttRecordList(i.value); }); i.focus();
+  },
+  ttPickSong: (v, el) => {
+    const box = el.closest(".tt-ask").querySelector(".tt-pick");
+    box.innerHTML = `<p class="dim">Reading its tracklist&hellip;</p>`;
+    api("/api/record?id=" + v).then(d => {
+      const ts = (d.tracks || []).filter(x => x.type === "track");
+      box.innerHTML = ts.length ? `<div class="chips">${ts.map(x => `<button data-act="ttName" data-v="${v}|${esc(x.pos)}">${esc(x.pos)} ${esc(x.title)}</button>`).join("")}</div>` : `<button class="btn" data-act="ttName" data-v="${v}|">It's this record</button>`;
+    });
+  }
+});
 function openNp() { const np = $("#np"); np.hidden = false; drawNp(); requestAnimationFrame(() => np.classList.add("on")); poll(); }
 function closeNp() { const np = $("#np"); np.classList.remove("on"); setTimeout(() => { np.hidden = true; }, 300); }
 function drawNp() {
+  if (ttLeads()) return drawTtNp();
   const t = curTrack(), np = $("#np");
   if (!t) { np.innerHTML = `<button class="np-close" data-act="closeNp">${icon("down")}</button><div class="empty-state"><h1>Silence</h1><p>Nothing is playing in ${esc(roomName(A.room))}.</p></div>`; return; }
   const art = trackArt(t, 800), artist = splitArtist(t.artist || ""), libAlbum = A.albums.find(a => norm(a[1]) === norm(t.album) && norm(a[2]) === norm(t.artist));
@@ -2612,6 +2771,7 @@ function openSignalPath() {
   }).catch(() => toast("Lyrion didn't answer"));
 }
 function paintNp() {
+  if (ttLeads()) return;
   const np = $("#np"), st = A.st || {}, pos = position();
   const pp = $(".pp", np); if (pp) pp.innerHTML = icon(st.mode === "play" ? "pause" : "play");
   const i = $(".np-prog i", np); if (i) i.style.width = (st.duration ? pos / st.duration * 100 : 0) + "%";
@@ -2712,7 +2872,7 @@ function start() {
     A.rooms = (r[0].players_loop || []).filter(p => p.connected);
     const home = (A.cfg || {}).home_room;
     if (!A.rooms.some(p => p.playerid === A.room) && A.rooms.length) A.room = (A.rooms.find(p => p.playerid === home) || A.rooms.find(p => p.modelname !== "Group") || A.rooms[0]).playerid;
-  }).catch(() => {}).then(poll);
+  }).catch(() => {}).then(() => { poll(); ttPoll(); });
   $("#main").addEventListener("scroll", watchHead, { passive: true });
   Promise.all([loadLibrary(), loadMarks(), loadFocuses(), house, loadArchive(), loadStations().catch(() => null)]).then(() => { applyHouse(); $("#main").innerHTML = ""; route(); window.addEventListener("hashchange", route); })
     .catch(firstRun);

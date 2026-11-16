@@ -62,6 +62,7 @@ import lms_keep_album  # noqa: E402
 import lms_qobuz  # noqa: E402
 from library import copies, quality  # noqa: E402
 import genres as house_genres  # noqa: E402
+import turntable  # noqa: E402
 from PIL import Image  # noqa: E402  (python3-pil, already on the server)
 
 LMS = os.environ.get("LMS_URL", "http://127.0.0.1:9000")  # where it looks first; found on the network when not there (find_lms)
@@ -86,6 +87,8 @@ PICTURE_HOSTS = ("archive.org", "static.qobuz.com", "upload.wikimedia.org", "thu
                  "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net")  # Deezer's
 LRCLIB = "https://lrclib.net/api/"  # lyrics, synced where it has them; free and keyless
 MUSIC_DIRS = ["/share/music"]  # Lyrion's media folders, as Lyrion has them (asked with each look at the library)
+CAPTURE_DIR = os.environ.get("CAPTURE_DIR", "")  # the turntable's songs, one folder a record (default: "From vinyl" in the music folder, so the library has them)
+TURNTABLE_PORT = int(os.environ.get("TURNTABLE_PORT", "8095"))  # where the listener on the Pi sends the record-out
 REMOVED_DIR = os.environ.get("REMOVED_DIR", "/share/music-removed")  # where removed albums' files go: outside the scan, never deleted
 HA_URL = os.environ.get("HA_URL", "")
 DISCOGS_TOKEN = os.path.join(DATA, ".discogs_token")  # the house's Discogs token, for its record collection: never sent back
@@ -101,9 +104,10 @@ DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", 
 DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
-                 "write_files": False},  # changing music files (genres, titles, covers, removing): off until the house says so
+                 "write_files": False,  # changing music files (genres, titles, covers, removing): off until the house says so
+                 "turntable_capture": False},  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
     "discover": {k: True for k in DISCOVER_SECTIONS},
-    "house": {"rooms": {}, "pin": ""},  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
+    "house": {"rooms": {}, "pin": "", "turntable_lid": ""},  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
 }
 settings = json.loads(json.dumps(DEFAULTS))
 NEEDS = {"archive": "archive", "stations": "radio"}  # a feature that needs a Lyrion plugin, by HAVE's name for it
@@ -342,12 +346,14 @@ def discogs_sync():
                 recs.append([b.get("id"), b.get("title") or "", artist, int(b.get("year") or 0), b.get("cover_image") or b.get("thumb") or "",
                              words.strip(), " ".join(x for x in (label.get("name"), label.get("catno")) if x and x != "none"), (r.get("date_added") or "")[:10],
                              {"g": b.get("genres") or [], "s": b.get("styles") or [], "d": descs, "t": ", ".join(f.get("text") or "" for f in b.get("formats") or [] if f.get("text")),
-                              "box": any(f.get("name") == "Box Set" for f in b.get("formats") or []), "r": r.get("rating") or 0}])
+                              "box": any(f.get("name") == "Box Set" for f in b.get("formats") or []), "r": r.get("rating") or 0,
+                              "i": r.get("instance_id"), "f": r.get("folder_id"), "n": {str(n.get("field_id")): n.get("value") for n in r.get("notes") or []}}])
             if page >= (got.get("pagination") or {}).get("pages", 1):
                 break
             page += 1
             time.sleep(1.2)
-        kv_set("discogs", {"user": user, "at": int(time.time()), "records": recs})
+        fields = [{"id": f.get("id"), "name": f.get("name") or ""} for f in discogs_get(f"/users/{urllib.parse.quote(user)}/collection/fields", token).get("fields") or []]
+        kv_set("discogs", {"user": user, "at": int(time.time()), "records": recs, "fields": fields})
         payload["version"] += 1  # the shelves' payload carries them
     except urllib.error.HTTPError as e:
         kv_set("discogs", dict(kv_get("discogs", {}) or {}, error="the token wasn't accepted" if e.code == 401 else f"Discogs answered {e.code}"))
@@ -377,7 +383,7 @@ def settings_for_app():
     conn = dict(settings["connections"], lms_password="")  # the password is never sent back
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
-            "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
+            "turntable": turntable_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
             "have": {k: v for k, v in HAVE.items()}, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
 
 
@@ -410,6 +416,8 @@ def save_settings(req):
                 settings["house"]["rooms"].pop(pid, None)
     if isinstance(req.get("new_pin"), str):
         settings["house"]["pin"] = pin_hash(req["new_pin"].strip()) if req["new_pin"].strip() else ""
+    if isinstance(req.get("turntable_lid"), str) and re.match(r"^(binary_sensor|input_boolean|switch)\.[a-z0-9_]+$|^$", req["turntable_lid"].strip()):
+        settings["house"]["turntable_lid"] = req["turntable_lid"].strip()
     if isinstance(req.get("discogs_token"), str):  # "" disconnects
         t = re.sub(r"\s", "", req["discogs_token"])[:200]
         if t:
@@ -3554,6 +3562,432 @@ def stamped_index():
 STATIC = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".json": "application/manifest+json", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff2": "font/woff2"}
 
 
+# ───────────────────────── the turntable: what the record player plays, heard ─────────────────────────
+# A listener on a Pi sends the amplifier's record-out here (turntable.py's Ear). While the turntable's lid is open
+# (Home Assistant's sensor, settings house.turntable_lid) what it hears is a record: each song is named (the house's own
+# files first, then Shazam), the record found among the Discogs collection, and the spin kept: the songs heard, the
+# sides. A record counts as played once two of its songs (or eight minutes of it) are heard: its plays go up, and on
+# Discogs its "Plays" and "Last played" fields (when the collection has fields of those names). While it plays, and
+# when a side ends, it suggests what to play next: the band's next record, and an artist that followed.
+TT = {"state": "idle", "spin": None, "song": None, "side_over_at": 0, "lid": None, "lid_at": 0, "shazam_at": 0, "runs": {}, "error": ""}
+tt_lock = threading.Lock()
+TT_INDEX = None
+EAR = None
+
+
+def tt_lid():
+    """The lid: True (open: a record is on), False (closed), None (no sensor set, or Home Assistant not answering), asked
+    every ten seconds at most."""
+    entity = settings["house"].get("turntable_lid")
+    if not entity or not HA_URL:
+        return None
+    if time.time() - TT["lid_at"] > 10:
+        TT["lid_at"] = time.time()
+        try:
+            with open(HA_TOKEN) as f:
+                token = f.read().strip()
+            req = urllib.request.Request(f"{HA_URL}/api/states/{entity}", headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                TT["lid"] = json.load(r).get("state") == "on"
+        except Exception:
+            TT["lid"] = None
+    return TT["lid"]
+
+
+def discogs_release(rid):
+    """A release as Discogs has it (its tracklist and sides, credits, notes, identifiers, videos, the community's
+    numbers), kept a month."""
+    k = f"dr:{rid}"
+    got = kv_get(k)
+    if got and time.time() - got.get("_at", 0) < 30 * 86400:
+        return got
+    token = discogs_token()
+    if not token:
+        return got or {}
+    try:
+        d = discogs_get(f"/releases/{int(rid)}", token)
+    except Exception:
+        return got or {}
+    out = {"_at": time.time(), "title": d.get("title") or "", "year": d.get("year") or 0, "released": d.get("released_formatted") or d.get("released") or "",
+           "country": d.get("country") or "", "notes": d.get("notes") or "", "master": d.get("master_id") or 0, "uri": d.get("uri") or "",
+           "tracks": [{"pos": t.get("position") or "", "title": t.get("title") or "", "dur": t.get("duration") or "", "type": t.get("type_") or "track",
+                       "artists": ", ".join(re.sub(r" \(\d+\)$", "", a.get("name") or "") for a in t.get("artists") or []),
+                       "credits": [[re.sub(r" \(\d+\)$", "", a.get("name") or ""), a.get("role") or ""] for a in t.get("extraartists") or []]} for t in d.get("tracklist") or []],
+           "credits": [[re.sub(r" \(\d+\)$", "", a.get("name") or ""), a.get("role") or "", a.get("tracks") or ""] for a in d.get("extraartists") or []],
+           "ids": [[i.get("type") or "", i.get("value") or "", i.get("description") or ""] for i in d.get("identifiers") or []],
+           "videos": [[v.get("uri") or "", v.get("title") or "", v.get("duration") or 0] for v in d.get("videos") or []][:12],
+           "labels": [[l.get("name") or "", l.get("catno") or ""] for l in d.get("labels") or []],
+           "companies": [[c.get("name") or "", c.get("entity_type_name") or ""] for c in d.get("companies") or []],
+           "genres": d.get("genres") or [], "styles": d.get("styles") or [],
+           "community": {"have": (d.get("community") or {}).get("have") or 0, "want": (d.get("community") or {}).get("want") or 0,
+                         "rating": ((d.get("community") or {}).get("rating") or {}).get("average") or 0, "votes": ((d.get("community") or {}).get("rating") or {}).get("count") or 0},
+           "images": [i.get("uri") or "" for i in d.get("images") or []][:8]}
+    kv_set(k, out)
+    return out
+
+
+def record_side(rec_id, title):
+    """Where a song is on a record: (position such as "B2", its side "B"), by its title in Discogs's tracklist."""
+    want = lms_qobuz.plain(title)
+    for t in discogs_release(rec_id).get("tracks") or []:
+        if t["type"] == "track" and want and (lms_qobuz.plain(t["title"]) == want or want in lms_qobuz.plain(t["title"]) or lms_qobuz.plain(t["title"]) in want):
+            m = re.match(r"^([A-Za-z]+)", t["pos"])
+            return t["pos"], (m.group(1).upper() if m else "")
+    return "", ""
+
+
+def physical_now():
+    with lib_lock:
+        albums = list(library["albums"])
+    return albums, physical_records(albums)
+
+
+def find_record(song):
+    """The record in the collection a named song is from: by the album the house's files matched, else by the artist
+    and the album's name, else by the song in each candidate's tracklist."""
+    albums, phys = physical_now()
+    if song.get("album_id"):
+        a = album_row(song["album_id"])
+        ids = {song["album_id"]} | ({a[12]} if a and len(a) > 12 else set())
+        for e in albums:  # the album's other versions count too
+            if e[0] in ids or any(v[0] in ids for v in e[10]):
+                ids.add(e[0])
+        got = [r for r in phys if r[8] in ids]
+        if got:
+            return got[0]
+    by = [r for r in phys if key(r[2]) == key(song["artist"])] or [r for r in phys if song.get("album") and lms_qobuz.plain(r[1]) == lms_qobuz.plain(song["album"])]
+    if len(by) > 1 and song.get("album"):
+        same = [r for r in by if lms_qobuz.plain(r[1]) == lms_qobuz.plain(song["album"]) or lms_qobuz.plain(song["album"]).startswith(lms_qobuz.plain(r[1]))]
+        by = same or by
+    if len(by) > 1:
+        by = [r for r in by if record_side(r[0], song["title"])[0]] or by
+    return by[0] if by else None
+
+
+def tt_clip(x8, wav, run_seconds, run):
+    """A clip to name (from the Ear). Not while the lid is shut: then it is the tuner, a tape or the streamer."""
+    if tt_lid() is False or TT_INDEX is None:
+        return False
+    known = TT["runs"].get(run)
+    song = None
+    m = TT_INDEX.match(x8)
+    if m:
+        meta = (kv_get("tt_meta") or {}).get(str(m[0]))
+        if meta:
+            song = {"title": meta[0], "artist": meta[1], "album": meta[2], "album_id": meta[3], "duration": meta[4], "offset": m[1], "how": "house"}
+    if not song:
+        if known and known.get("how") == "shazam" and run_seconds < 60:
+            return True  # named already this stretch; asked again only on the slow re-checks
+        if time.time() - TT["shazam_at"] < 10:
+            return False
+        TT["shazam_at"] = time.time()
+        got = turntable.shazam(wav)
+        if not got:
+            return False
+        song = dict(got, how="shazam")
+    song["at"], song["run"] = time.time(), run
+    TT["runs"][run] = song
+    for k in [k for k in TT["runs"] if k < run - 20]:
+        TT["runs"].pop(k, None)
+    tt_heard(song)
+    return True
+
+
+def tt_heard(song):
+    """A song named: into the spin (a new spin when it is another record)."""
+    rec = find_record(song)
+    with tt_lock:
+        spin = TT["spin"]
+        if spin and rec and spin["id"] and spin["id"] != rec[0]:
+            tt_end_spin()
+            spin = None
+        if not spin:
+            spin = TT["spin"] = {"id": rec[0] if rec else 0, "record": rec, "start": time.time(), "songs": [], "counted": False, "suggest": [],
+                                 "artist": rec[2] if rec else song["artist"], "title": rec[1].strip() if rec else song.get("album") or ""}
+            threading.Thread(target=tt_suggest, args=(spin,), daemon=True).start()
+        pos, side = record_side(rec[0], song["title"]) if rec else ("", "")
+        song.update(pos=pos, side=side)
+        last = spin["songs"][-1] if spin["songs"] else None
+        if not last or lms_qobuz.plain(last["title"]) != lms_qobuz.plain(song["title"]):
+            spin["songs"].append({k: song.get(k) for k in ("title", "artist", "pos", "side", "how", "at", "run")})
+        TT.update(state="playing", song=song, side_over_at=0)
+        heard = len({lms_qobuz.plain(x["title"]) for x in spin["songs"]})
+        if rec and not spin["counted"] and (heard >= 2 or time.time() - spin["start"] > 480):
+            spin["counted"] = True
+            threading.Thread(target=tt_count, args=(rec,), daemon=True).start()
+
+
+def tt_quiet(seconds):
+    """From the Ear while it is quiet: a side is over after half a minute; the spin, after a quarter of an hour (or
+    the lid shut)."""
+    with tt_lock:
+        if not TT["spin"]:
+            return
+        if tt_lid() is False or seconds > 900:
+            tt_end_spin()
+        elif seconds > 30 and TT["state"] == "playing":
+            TT.update(state="side over", side_over_at=time.time())
+
+
+def tt_end_spin():
+    """The spin over: kept in the turntable's history (the newest 500)."""
+    spin, TT["spin"] = TT["spin"], None
+    TT.update(state="idle", song=None, side_over_at=0)
+    if not spin or not spin["songs"]:
+        return
+    hist = kv_get("tt_spins", []) or []
+    hist.append({"id": spin["id"], "title": spin["title"], "artist": spin["artist"], "start": int(spin["start"]), "end": int(time.time()),
+                 "songs": [[x["title"], x["pos"], x["how"]] for x in spin["songs"]], "counted": spin["counted"]})
+    kv_set("tt_spins", hist[-500:])
+    if TT.pop("captured", False):
+        try:
+            rpc("", "rescan")  # the songs the spin left, into the library
+        except Exception:
+            pass
+
+
+def tt_count(rec):
+    """A record played: its count here, and on Discogs ("Plays", "Last played") when the collection has those fields."""
+    plays = kv_get("tt_plays", {}) or {}
+    d = kv_get("discogs", {}) or {}
+    fields = {f["name"].strip().lower(): f["id"] for f in d.get("fields") or []}
+    details = rec[9] if len(rec) > 9 else {}
+    theirs = details.get("n") or {}
+    p = plays.get(str(rec[0]), {"n": 0})
+    try:
+        on_discogs = int(re.sub(r"\D", "", str(theirs.get(str(fields.get("plays")), "")) or "0") or 0)
+    except ValueError:
+        on_discogs = 0
+    p = {"n": max(p["n"], on_discogs) + 1, "last": time.strftime("%Y-%m-%d")}
+    plays[str(rec[0])] = p
+    kv_set("tt_plays", plays)
+    token, user = discogs_token(), d.get("user")
+    if not (token and user and details.get("i")):
+        return
+    for name, value in (("plays", str(p["n"])), ("last played", p["last"])):
+        if name not in fields:
+            continue
+        try:
+            req = urllib.request.Request(f"{DISCOGS}/users/{urllib.parse.quote(user)}/collection/folders/{details.get('f') or 1}/releases/{rec[0]}/instances/{details['i']}/fields/{fields[name]}",
+                                         json.dumps({"value": value}).encode(), dict(AGENT, Authorization="Discogs token=" + token, **{"Content-Type": "application/json"}), method="POST")
+            urllib.request.urlopen(req, timeout=20).read()
+            theirs[str(fields[name])] = value
+        except Exception as e:
+            note_error(f"discogs plays: {e}")
+    with tt_lock:  # Discogs's own count as it now stands, so the next play counts on from it before the daily sync
+        recs = (kv_get("discogs", {}) or {}).get("records", [])
+        for r in recs:
+            if r[0] == rec[0] and len(r) > 8:
+                r[8]["n"] = theirs
+        d["records"] = recs
+        kv_set("discogs", d)
+
+
+def tt_suggest(spin):
+    """What to play next, for a spin: the band's next record (on the shelf, then among the digital albums, then one the
+    house hasn't got), and an artist that followed (one of theirs on the shelf first)."""
+    artist, rec = spin["artist"], spin["record"]
+    albums, phys = physical_now()
+    by_id = {a[0]: a for a in albums}
+    year = (by_id[rec[8]][3] if rec and rec[8] in by_id else 0) or (rec[3] if rec else 0)
+    here = lms_qobuz.plain(spin["title"])
+    out = []
+    theirs = [("vinyl", (by_id[r[8]][3] if r[8] in by_id else 0) or r[3], r) for r in phys if key(r[2]) == key(artist) and lms_qobuz.plain(r[1]) != here]
+    theirs += [("digital", a[3], a) for a in albums if key(a[2]) == key(artist) and lms_qobuz.plain(a[1]) != here and not any(r[8] == a[0] for r in phys)]
+    d = get_profile(artist)[0] or {}
+    owned = {lms_qobuz.plain(x[2][1]) for x in theirs} | {here}
+    theirs += [("new", int(g["date"][:4]), g) for g in d.get("rgs") or [] if g.get("type") == "Album" and not g.get("extra") and len(g.get("date") or "") >= 4
+               and lms_qobuz.plain(g["title"]) not in owned]
+    later = sorted((x for x in theirs if x[1] and year and x[1] > year), key=lambda x: (x[1], {"vinyl": 0, "digital": 1, "new": 2}[x[0]]))
+    if later:
+        out.append(suggestion(f"{artist}'s next record", *later[0]))
+    kin = [x["name"] for x in (d.get("qobuz") or {}).get("similar", [])] + [r.get("name") or "" for r in (d.get("mb") or {}).get("rels") or []]
+    kin = [k for k in dict.fromkeys(kin) if k and key(k) != key(artist)]
+    begun = int(((d.get("mb") or {}).get("begin") or "0")[:4] or 0)
+
+    def after(name):  # began later, as far as the house knows
+        b = int((((get_profile(name)[0] or {}).get("mb") or {}).get("begin") or "0")[:4] or 0)
+        return bool(begun and b and b > begun)
+    for want in ("vinyl", "digital"):
+        pool = [k for k in kin if (any(key(r[2]) == key(k) for r in phys) if want == "vinyl" else any(key(a[2]) == key(k) for a in albums))]
+        pool.sort(key=lambda k: not after(k))
+        if pool:
+            k = pool[0]
+            pick = random.choice([r for r in phys if key(r[2]) == key(k)]) if want == "vinyl" else max((a for a in albums if key(a[2]) == key(k)), key=lambda a: -a[5])
+            out.append(suggestion(f"Came after {artist}" if after(k) else f"If you like {artist}", want, pick[3], pick))
+            break
+    spin["suggest"] = out
+
+
+def suggestion(why, where, year, x):
+    """One suggestion, as the app, the phones and the wall show it."""
+    if where == "vinyl":
+        return {"why": why, "where": "On the shelf", "title": x[1].strip(), "artist": x[2], "year": year, "href": f"#/album/{x[8]}" if x[8] else f"#/record/{x[0]}", "image": x[4]}
+    if where == "digital":
+        return {"why": why, "where": "In the library", "title": x[1], "artist": x[2], "year": year, "href": f"#/album/{x[0]}", "image": f"/cover/{x[4]}/300.jpg" if x[4] else ""}
+    return {"why": why, "where": "Not in the house yet", "title": x["title"], "artist": "", "year": year, "href": "", "image": ""}
+
+
+def tt_song(path, seconds, run):
+    """A song the Ear wrote: named and tagged by what was heard during it, and put in its record's folder (CAPTURE_DIR,
+    Artist - Record). A scrap under twenty seconds (a needle set down, a cough) is not a song and is not kept."""
+    if seconds < 20 or tt_lid() is False:
+        os.remove(path) if os.path.exists(path) else None
+        return
+    song = TT["runs"].get(run)
+    spin = TT["spin"]
+    if not song and spin and spin["id"]:  # never named: the record's next song, by its tracklist
+        t = tt_next_in_order(spin)
+        if t:
+            song = TT["runs"][run] = {"title": t["title"], "artist": t["artists"] or spin["artist"], "album": spin["title"], "how": "order", "at": time.time(), "run": run}
+            tt_heard(song)
+    artist = (spin and spin["artist"]) or (song and song["artist"]) or "Unknown"
+    album = (spin and spin["title"]) or (song and song.get("album")) or time.strftime("Heard %Y-%m-%d")
+    title = (song and song["title"]) or time.strftime("Unnamed %H.%M")
+    pos = (song and song.get("pos")) or ""
+    safe = lambda t: re.sub(r'[\\/:*?"<>|]+', "-", t).strip(" .")[:120] or "-"
+    folder = os.path.join(capture_dir(), safe(f"{artist} - {album}"))
+    os.makedirs(folder, exist_ok=True)
+    dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title}") + ".flac")
+    n = 2
+    while os.path.exists(dest):  # the side played again: the next take beside the first
+        dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title} (take {n})") + ".flac")
+        n += 1
+    try:
+        from mutagen.flac import FLAC
+        f = FLAC(path)
+        f.update({"title": title, "artist": (song and song["artist"]) or artist, "albumartist": artist, "album": album, "comment": "From the turntable, " + time.strftime("%Y-%m-%d")})
+        if pos:
+            f["tracknumber"] = pos
+        if spin and spin["record"]:
+            f["discogs_release_id"] = str(spin["record"][0])
+        f.save()
+    except Exception as e:
+        note_error(f"turntable tags: {e}")
+    import shutil
+    shutil.move(path, dest)  # whole, and only then where Lyrion looks
+    TT["captured"] = True
+
+
+def capture_dir():
+    read_music_dirs()
+    return CAPTURE_DIR or os.path.join(MUSIC_DIRS[0], "From vinyl")
+
+
+def tt_index_loop():
+    """The house's own files for the records on the shelf, fingerprinted (new ones each night)."""
+    global TT_INDEX
+    TT_INDEX = turntable.Index(os.path.join(DATA, "turntable"))
+    while True:
+        try:
+            albums, phys = physical_now()
+            want = {r[8] for r in phys if r[8]}
+            if not want:  # the shelves not read yet (just started), or no collection: look again in a minute
+                time.sleep(60)
+                continue
+            ids = set()
+            for a in albums:
+                if a[0] in want:
+                    ids |= {a[0]} | {v[0] for v in a[10] if v[5] == "local"}
+            tracks, meta = {}, {}
+            for i in ids:
+                for t in rpc("", "titles", "0", "300", f"album_id:{i}", "tags:uadle", timeout=20).get("titles_loop") or []:
+                    f = file_path(t.get("url") or "")
+                    if f and os.path.exists(f):
+                        tracks[int(t["id"])] = f
+                        meta[str(t["id"])] = [t.get("title") or "", t.get("artist") or "", t.get("album") or "", int(t.get("album_id") or i), float(t.get("duration") or 0)]
+            kv_set("tt_meta", meta)
+            TT["indexing"] = [0, len(tracks)]
+            TT_INDEX.build(tracks, progress=lambda n, of: TT.__setitem__("indexing", [n, of]))
+            TT.pop("indexing", None)
+        except Exception as e:
+            note_error(f"turntable index: {e}")
+        time.sleep(86400)
+
+
+def start_turntable():
+    global EAR
+    EAR = turntable.Ear(TURNTABLE_PORT, tt_clip, tt_quiet, os.path.join(DATA, "turntable", "songs"), tt_song, lambda: settings["features"].get("turntable_capture") and tt_lid() is not False)
+    EAR.start()
+    threading.Thread(target=tt_index_loop, name="turntable-index", daemon=True).start()
+
+
+def turntable_state():
+    """What the turntable is doing, for the app, Home Assistant's sensor and the wall: idle, playing or "side over"; the
+    record, the song, the songs heard, the suggestions, and its plays."""
+    spin, song = TT["spin"], TT["song"]
+    tt_lid()
+    rec = spin and spin["record"]
+    un = tt_unnamed()
+    plays = (kv_get("tt_plays", {}) or {}).get(str(rec[0]), {}) if rec else {}
+    return {"state": TT["state"], "listener": bool(EAR and EAR.connected), "lid": TT["lid"], "level": round(EAR.level, 1) if EAR else None,
+            "record": {"id": rec[0], "title": rec[1].strip(), "artist": rec[2], "year": rec[3], "image": rec[4], "album_id": rec[8],
+                       "href": f"#/album/{rec[8]}" if rec[8] else f"#/record/{rec[0]}", "plays": plays.get("n", 0), "last": plays.get("last", "")} if rec else
+                      ({"id": 0, "title": spin["title"], "artist": spin["artist"]} if spin else None),
+            "song": {k: song.get(k) for k in ("title", "artist", "pos", "side", "how")} if song and spin else None,
+            "songs": [[x["title"], x["pos"]] for x in spin["songs"]] if spin else [],
+            "side": song.get("side", "") if song and spin else "", "suggest": spin["suggest"] if spin else [], "side_over_at": TT["side_over_at"],
+            "unnamed": {"guess": un[1] and {"pos": un[1]["pos"], "title": un[1]["title"]}} if un else None}
+
+
+def tt_next_in_order(spin):
+    """The record's next song after the last one heard, by its tracklist: what an unnamed song most likely is."""
+    tracks = [t for t in discogs_release(spin["id"]).get("tracks") or [] if t["type"] == "track"] if spin and spin["id"] else []
+    if not tracks:
+        return None
+    last = spin["songs"][-1]["pos"] if spin["songs"] else ""
+    at = next((i for i, t in enumerate(tracks) if t["pos"] == last), -1)
+    return tracks[at + 1] if at + 1 < len(tracks) else None
+
+
+def tt_unnamed():
+    """The stretch of sound playing now when nothing has named it for 25 s: (run, the likely song by the tracklist)."""
+    if not EAR or EAR.run_start is None or EAR.run in TT["runs"] or EAR.clock - EAR.run_start < 25 or tt_lid() is False:
+        return None
+    return EAR.run, tt_next_in_order(TT["spin"])
+
+
+def turntable_name(req):
+    """The house naming what the turntable plays when nothing else could: the record (from the collection) and, if
+    given, the song by its position; else the next in its tracklist."""
+    albums, phys = physical_now()
+    rec = next((r for r in phys if r[0] == int(req.get("record") or 0)), None)
+    if not rec:
+        return {"error": "no such record"}
+    run = EAR.run if EAR else 0
+    with tt_lock:
+        if TT["spin"] and TT["spin"]["id"] != rec[0]:
+            tt_end_spin()
+        if not TT["spin"]:
+            TT["spin"] = {"id": rec[0], "record": rec, "start": time.time(), "songs": [], "counted": False, "suggest": [], "artist": rec[2], "title": rec[1].strip()}
+            threading.Thread(target=tt_suggest, args=(TT["spin"],), daemon=True).start()
+        else:
+            TT["spin"].update(id=rec[0], record=rec, artist=rec[2], title=rec[1].strip())
+        tracks = [t for t in discogs_release(rec[0]).get("tracks") or [] if t["type"] == "track"]
+        t = next((t for t in tracks if t["pos"] == req.get("pos")), None) or tt_next_in_order(TT["spin"])
+    if t:
+        song = {"title": t["title"], "artist": t["artists"] or rec[2], "album": rec[1].strip(), "how": "you", "at": time.time(), "run": run}
+        TT["runs"][run] = song
+        tt_heard(song)
+    return {"ok": True}
+
+
+def turntable_play(req):
+    """The turntable, live, in a room (any Lyrion player), as a stream from here."""
+    player = req.get("player") or ""
+    if not lms_qobuz.PLAYER.match(player):
+        return {"error": "no such room"}
+    host = BIND if BIND not in ("0.0.0.0", "") else socket.gethostbyname(socket.gethostname())
+    rpc(player, "playlist", "play", f"http://{host}:{PORT}/turntable.flac", "The turntable")
+    return {"ok": True}
+
+
+def turntable_for_settings():
+    return {"lid": settings["house"].get("turntable_lid", ""), "listener": bool(EAR and EAR.connected), "heard_at": int(EAR.heard_at) if EAR else 0,
+            "indexing": TT.get("indexing"), "indexed": len(TT_INDEX.tracks) if TT_INDEX else 0, "port": TURNTABLE_PORT, "capture": capture_dir(),
+            "fields": [f["name"] for f in (kv_get("discogs", {}) or {}).get("fields") or [] if f["name"].strip().lower() in ("plays", "last played")]}
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -3616,6 +4050,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(stamped_index(), "text/html; charset=utf-8")
             if url.path.startswith("/music/") or url.path.startswith("/imageproxy/"):
                 return self.pass_to_lms("GET")
+            if url.path == "/api/turntable":
+                return self.reply(turntable_state())
+            if url.path == "/api/turntable/live":
+                return self.turntable_live()
+            if url.path in ("/turntable.flac", "/turntable.mp3"):
+                return self.turntable_stream(url.path.endswith(".mp3"))
+            if url.path == "/api/record":
+                rid = int(qs.get("id") or 0)
+                rec = next((r for r in (kv_get("discogs", {}) or {}).get("records", []) if r[0] == rid), None)
+                return self.reply(dict(discogs_release(rid), plays=(kv_get("tt_plays", {}) or {}).get(str(rid), {}), review=review_of(rec[2], rec[1].strip()) if rec else "",
+                                       spins=[x for x in kv_get("tt_spins", []) or [] if x["id"] == rid][-10:]))
             name = url.path.lstrip("/")
             if "/" not in name and os.path.splitext(name)[1] in STATIC and os.path.exists(os.path.join(APP, name)):
                 with open(os.path.join(APP, name), "rb") as f:
@@ -3742,7 +4187,7 @@ class Handler(BaseHTTPRequestHandler):
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
-                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses,
+                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}
         if self.path in routes:
@@ -3752,6 +4197,67 @@ class Handler(BaseHTTPRequestHandler):
                 out = {"error": f"{type(e).__name__}: {e}"[:200]}
             return self.reply(out)
         self.reply(b"", "text/plain", "no-store", 404)
+
+    def turntable_live(self):
+        """The turntable's levels for visualisers, about thirty frames a second, as server-sent events (a band's level
+        0-1, low to high, and the loudness in dB), until the page goes away."""
+        self.send_response(200)
+        for h, v in (("Content-Type", "text/event-stream"), ("Cache-Control", "no-store"), ("Connection", "close")):
+            self.send_header(h, v)
+        self.end_headers()
+        self.close_connection = True
+        q = []
+        EAR.watchers.append(q)
+        try:
+            while True:
+                if q:
+                    frame, q[:] = q[-1], []
+                    self.wfile.write(b"data: " + json.dumps(frame, separators=(",", ":")).encode() + b"\n\n")
+                    self.wfile.flush()
+                time.sleep(1 / 60)
+        except Exception:
+            pass
+        finally:
+            EAR.watchers.remove(q)
+
+    def turntable_stream(self, mp3=False):
+        """The turntable, live, for any player in the house: lossless FLAC (or MP3 for a player that wants it), from
+        the moment it's asked for until the player hangs up."""
+        import subprocess
+        self.send_response(200)
+        for h, v in (("Content-Type", "audio/mpeg" if mp3 else "audio/flac"), ("Cache-Control", "no-store"), ("Connection", "close"), ("icy-name", "The turntable")):
+            self.send_header(h, v)
+        self.end_headers()
+        self.close_connection = True
+        enc = subprocess.Popen(["ffmpeg", "-v", "quiet", "-f", "s16le", "-ar", str(turntable.SR), "-ac", str(turntable.CH), "-i", "-"]
+                               + (["-c:a", "libmp3lame", "-b:a", "320k", "-f", "mp3"] if mp3 else ["-c:a", "flac", "-f", "flac"]) + ["-"],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        q, stop = [], threading.Event()
+        EAR.streams.append(q)
+
+        def feed():
+            silence = bytes(turntable.BLOCK * turntable.CH * 2)
+            while not stop.is_set():
+                blocks, q[:] = q[:], []
+                try:
+                    enc.stdin.write(b"".join(blocks) if blocks else (silence if not EAR.connected else b""))
+                    enc.stdin.flush()
+                except Exception:
+                    break
+                time.sleep(1 / 30)
+        threading.Thread(target=feed, daemon=True).start()
+        try:
+            while True:
+                got = enc.stdout.read1(16384) if hasattr(enc.stdout, "read1") else enc.stdout.read(4096)
+                if not got:
+                    break
+                self.wfile.write(got)
+        except Exception:
+            pass
+        finally:
+            stop.set()
+            EAR.streams.remove(q)
+            enc.kill()
 
     def log_message(self, *a):
         pass
@@ -3767,6 +4273,7 @@ if __name__ == "__main__":
     detect()
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
+    start_turntable()
     for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
