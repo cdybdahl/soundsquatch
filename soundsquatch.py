@@ -3618,6 +3618,7 @@ STATIC = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=ut
 # when a side ends, it suggests what to play next: the band's next record, and an artist that followed.
 TT = {"state": "idle", "spin": None, "song": None, "side_over_at": 0, "lid": None, "lid_at": 0, "shazam_at": 0, "runs": {}, "error": ""}
 tt_lock = threading.Lock()
+SHAZAM_MAX, SHAZAM_WINDOW = 3, 1800  # at most three asks of Shazam in half an hour (it throttles a house that asks more)
 TT_INDEX = None
 EAR = None
 
@@ -3859,7 +3860,12 @@ def tt_clip(x8, wav, run_seconds, run, at=0):
             return True  # named already this stretch; asked again only on the slow re-checks
         if time.time() - TT["shazam_at"] < TT.get("shazam_wait", 10):
             return False
+        asks = [t for t in TT.get("shazam_asks", []) if time.time() - t < SHAZAM_WINDOW]
+        if len(asks) >= SHAZAM_MAX:  # Shazam asked enough lately: the house is asked instead (tt_unnamed)
+            TT["shazam_asks"] = asks
+            return False
         TT["shazam_at"] = time.time()
+        TT["shazam_asks"] = asks + [time.time()]
         got = turntable.shazam(wav)
         try:  # the last clip asked about, to hear (or ask again) when a song goes unnamed
             with open(os.path.join(DATA, "turntable", "last-clip.wav"), "wb") as f:
@@ -3888,6 +3894,12 @@ def tt_clip(x8, wav, run_seconds, run, at=0):
     for k in [k for k in TT["runs"] if k < run - 20]:
         TT["runs"].pop(k, None)
     tt_heard(song)
+    spin = TT["spin"]
+    m = re.match(r"^([A-Za-z]+)", song.get("pos") or "")
+    if spin and spin.get("record") and m and song.get("start") and EAR and tt_lengths(spin["record"]):
+        spin["timeline"] = {"side": m.group(1).upper(), "pos": song["pos"], "wall": time.time() - (EAR.clock - song["start"])}  # the rest by the clock
+        tt_save()
+    return True
     return True
 
 
@@ -4330,8 +4342,8 @@ def tt_unnamed():
     """The stretch of sound playing now when nothing has named it for 25 s: (run, the likely song by the tracklist)."""
     if not EAR or EAR.run_start is None or EAR.run in TT["runs"] or EAR.clock - EAR.run_start < 25 or tt_lid() is False:
         return None
-    if TT["spin"] and TT["spin"].get("chosen") and TT["spin"]["songs"]:
-        return None  # the house said which record; a quiet bar on it isn't a new question
+    if TT["spin"] and (TT["spin"].get("chosen") or TT["spin"].get("timeline")) and TT["spin"]["songs"]:
+        return None  # the record is known and followed by the clock; a quiet bar on it isn't a new question
     return EAR.run, tt_next_in_order(TT["spin"])
 
 
