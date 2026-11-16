@@ -154,7 +154,7 @@ This is *Pink Moon*, side A to side B, as Soundsquatch had it, with nothing done
    | Speed, against the house's own copy | 0.4% slow | 0.4% slow |
 
    One side says little; the same thing side after side, record after record, is the turntable rather than the
-   pressing, and then it's said plainly, with what to try: *"The right channel is 1.4 dB quieter, on 9 of the last
+   pressing, and then it's said plainly, with what to try. For example: *"The right channel is 1.4 dB quieter, on 9 of the last
    10 sides… swap the turntable's left and right leads at the amplifier: if the quiet side moves, it's before the
    swap."* The same goes for hum (the ground wire), speed (the belt), overload (the interface's input) and a channel
    wired backwards; and a record much noisier than the rest of the collection is told it wants a clean.
