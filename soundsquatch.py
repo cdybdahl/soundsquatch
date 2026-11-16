@@ -3744,6 +3744,7 @@ def tt_heard(song):
             tt_end_spin()
             spin = None
         if not spin:
+            TT["done"] = None
             spin = TT["spin"] = {"id": rec[0] if rec else 0, "record": rec, "start": time.time(), "songs": [], "counted": False, "suggest": [],
                                  "artist": rec[2] if rec else song["artist"], "title": rec[1].strip() if rec else song.get("album") or ""}
             threading.Thread(target=tt_suggest, args=(spin,), daemon=True).start()
@@ -3763,15 +3764,29 @@ def tt_heard(song):
 
 
 def tt_quiet(seconds):
-    """From the Ear while it is quiet: a side is over after half a minute; the spin, after a quarter of an hour (or
-    the lid shut)."""
+    """From the Ear while it is quiet. Half a minute after a song, a side is over; it's the record that's over (what to
+    play next is wanted) when that side ended on the record's last song, or nothing follows for five minutes (it wasn't
+    flipped), or the lid is shut. The spin ends with the lid shut or a quarter of an hour of quiet; "record over" is kept
+    ten minutes, then the turntable is idle."""
     with tt_lock:
-        if not TT["spin"]:
+        spin = TT["spin"]
+        if not spin:
+            if TT["state"] == "record over" and time.time() - TT.get("over_at", 0) > 600:
+                TT.update(state="idle", done=None)
             return
         if tt_lid() is False or seconds > 900:
             tt_end_spin()
         elif seconds > 30 and TT["state"] == "playing":
-            TT.update(state="side over", side_over_at=time.time())
+            last = tt_last_song(spin)
+            TT.update(state="record over" if last else "side over", side_over_at=time.time(), over_at=time.time())
+        elif seconds > 300 and TT["state"] == "side over":
+            TT.update(state="record over", over_at=time.time())
+
+
+def tt_last_song(spin):
+    """Whether the song heard last is the record's last (by Discogs's tracklist): the side just ended was the final one."""
+    tracks = [t for t in discogs_release(spin["id"]).get("tracks") or [] if t["type"] == "track"] if spin["id"] else []
+    return bool(tracks and spin["songs"] and spin["songs"][-1]["pos"] == tracks[-1]["pos"])
 
 
 def tt_end_spin():
@@ -3780,6 +3795,7 @@ def tt_end_spin():
     TT.update(state="idle", song=None, side_over_at=0)
     if not spin or not spin["songs"]:
         return
+    TT.update(state="record over", done=spin, over_at=time.time())  # what to play next, for ten minutes
     hist = kv_get("tt_spins", []) or []
     hist.append({"id": spin["id"], "title": spin["title"], "artist": spin["artist"], "start": int(spin["start"]), "end": int(time.time()),
                  "songs": [[x["title"], x["pos"], x["how"]] for x in spin["songs"]], "counted": spin["counted"]})
@@ -3998,9 +4014,10 @@ def start_turntable():
 
 
 def turntable_state():
-    """What the turntable is doing, for the app, Home Assistant's sensor and the wall: idle, playing or "side over"; the
-    record, the song, the songs heard, the suggestions, and its plays."""
-    spin, song = TT["spin"], TT["song"]
+    """What the turntable is doing, for the app, Home Assistant's sensor and the wall: idle, playing, "side over" (a
+    flip likely) or "record over" (what to play next wanted); the record, the song, the songs heard, the suggestions,
+    and its plays."""
+    spin, song = TT["spin"] or (TT.get("done") if TT["state"] == "record over" else None), TT["song"]
     tt_lid()
     rec = spin and spin["record"]
     un = tt_unnamed()

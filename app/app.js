@@ -1137,7 +1137,7 @@ A.vinylShown = [];
 function ttPanel() {
   const t = A.tt, r = t.record || {}, song = t.song;
   return `<section class="vpull tt-panel"><a class="vpull-art" href="${r.href || "#/vinyl"}">${ttArt(t, 800) ? `<img src="${esc(ttArt(t, 800))}" alt="">` : `<div class="noart">${icon("disc")}</div>`}</a>
-    <div class="vpull-text"><div class="kicker">${icon("disc")} On the turntable${t.state === "side over" ? " &middot; the side is over" : ""}</div><h2>${r.title ? `<a href="${r.href}">${esc(r.title)}</a>` : "Listening&hellip;"}</h2>
+    <div class="vpull-text"><div class="kicker">${icon("disc")} On the turntable${t.state === "side over" ? " &middot; the side is over" : t.state === "record over" ? " &middot; that's the record" : ""}</div><h2>${r.title ? `<a href="${r.href}">${esc(r.title)}</a>` : "Listening&hellip;"}</h2>
       ${r.artist ? `<a class="vpull-by" href="${artistHref(r.artist)}">${esc(r.artist)}</a>` : ""}
       <p>${song ? `${song.pos ? esc(song.pos) + " &middot; " : ""}&ldquo;${esc(song.title)}&rdquo;` : ""}${r.plays ? ` <span class="dim">played ${r.plays} ${r.plays === 1 ? "time" : "times"}</span>` : ""}</p>
       <canvas class="tt-vis" width="600" height="60"></canvas>${ttAsk(t)}
@@ -2643,7 +2643,7 @@ function paintTt() {
   if (k === A.curKey) return;
   A.curKey = k;
   bar.innerHTML = `<div class="bar-left"><button class="bar-art" data-act="openNp">${ttArt(t, 150) ? `<img src="${esc(ttArt(t, 150))}" alt="">` : icon("disc")}</button>
-    <button class="bar-what" data-act="openNp"><b>${esc(song ? song.title : t.unnamed ? "A song not yet named" : t.state === "side over" ? "The side is over" : "On the turntable")}</b><em>${esc((t.record ? t.record.artist : "") + (ttWhere(t) ? " · " + ttWhere(t) : ""))}</em></button><span class="bar-q tt-q">Vinyl</span></div>
+    <button class="bar-what" data-act="openNp"><b>${esc(song ? song.title : t.unnamed ? "A song not yet named" : t.state === "side over" ? "The side is over" : t.state === "record over" ? "That's the record" : "On the turntable")}</b><em>${esc((t.record ? t.record.artist : "") + (ttWhere(t) ? " · " + ttWhere(t) : ""))}</em></button><span class="bar-q tt-q">Vinyl</span></div>
     <div class="bar-ctl"><canvas class="tt-vis mini" width="180" height="36"></canvas></div><div class="bar-right"><button class="bar-room" data-act="ttRooms">${icon("speaker")}<span>Hear it in a room</span></button></div>`;
   ttVisual();
   if (!$("#np").hidden) drawNp();
@@ -2670,7 +2670,7 @@ function drawTtNp() {
   const t = A.tt, np = $("#np"), song = t.song, art = ttArt(t, 800), r = t.record || {};
   np.innerHTML = `<div class="np-bg">${art ? `<img src="${esc(art)}" alt="">` : ""}</div><button class="np-close" data-act="closeNp" aria-label="Close">${icon("down")}</button>
     <div class="np-main"><div class="np-left"><div class="np-art sq">${art ? `<img src="${esc(art)}" alt="">` : ""}</div><div class="np-transport"><canvas class="tt-vis" width="600" height="120"></canvas></div></div>
-      <div class="np-right"><div class="np-info"><div class="kicker">${icon("disc")} On the turntable</div><h1>${esc(song ? song.title : t.unnamed ? "Not named yet" : t.state === "side over" ? "The side is over" : "Listening…")}</h1>
+      <div class="np-right"><div class="np-info"><div class="kicker">${icon("disc")} On the turntable</div><h1>${esc(song ? song.title : t.unnamed ? "Not named yet" : t.state === "side over" ? "The side is over" : t.state === "record over" ? "That's the record" : "Listening…")}</h1>
         <div class="byline">${r.artist ? `<a class="by" href="${artistHref(r.artist)}" data-close="1">${esc(r.artist)}</a>` : ""}</div>
         ${r.title ? `<a class="alb" href="${r.href || "#/vinyl"}" data-close="1">${esc(r.title)}${r.year ? " &middot; " + r.year : ""}</a>` : ""}
         <div class="np-q tt-q">Vinyl${song && song.pos ? " &middot; side " + esc(song.side) + ", " + esc(song.pos) : ""}${r.plays ? ` &middot; played ${r.plays} ${r.plays === 1 ? "time" : "times"}` : ""}</div>
@@ -2681,7 +2681,7 @@ function drawTtNp() {
   ttVisual();
 }
 function ttSuggest(t) {
-  return (t.suggest || []).length ? `<div class="tt-next"><div class="kicker">${t.state === "side over" ? "Play next" : "After this"}</div>${t.suggest.map(s =>
+  return (t.suggest || []).length ? `<div class="tt-next"><div class="kicker">${t.state === "record over" ? "Play next" : "After this"}</div>${t.suggest.map(s =>
     `<a class="tt-sug" href="${s.href || "#/vinyl"}" data-close="1">${s.image ? `<img src="${esc(s.image.charAt(0) === "/" ? s.image : pic(s.image, 300))}" alt="">` : `<span class="noart">${esc((s.title || "?").slice(0, 1))}</span>`}
       <span><em>${esc(s.why)}</em><b>${esc(s.title)}</b><i>${esc([s.artist, s.year, s.where].filter(Boolean).join(" · "))}</i></span></a>`).join("")}</div>` : "";
 }
