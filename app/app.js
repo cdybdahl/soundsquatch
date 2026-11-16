@@ -1178,6 +1178,11 @@ function vinylPull() {
 // where a version plays from, in words: the turntable's own recording of the record marked as such
 const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? "Vinyl, captured by Soundsquatch" : "on the shelves";
 const SOURCE = { qobuz: "Qobuz", vinyl: "Vinyl, captured by Soundsquatch", local: "Your files" };
+// where the song playing comes from, by its address: Qobuz, the house's files, or the turntable's own recording
+function trackSource(t) {
+  const u = t.url || "", s = /^qobuz:/.test(u) ? "qobuz" : /^file:/.test(u) ? (/\/From%20vinyl\//.test(u) ? "vinyl" : "local") : "";
+  return s ? `<span class="np-src">${s === "vinyl" ? icon("disc") + " " : ""}${SOURCE[s]}</span>` : "";
+}
 // the pressings button names the one open (the one Spin it plays), then how many there are
 const versionWords = (a, n) => `${a[9] === "vinyl" ? icon("disc") + " " : ""}${SOURCE[a[9]] || SOURCE.local} &middot; ${n} pressings`;
 /* one pressing in the pressings sheet, each line led by where it plays from, then what tells it apart: the year and the
@@ -2806,7 +2811,7 @@ function drawNp() {
         ${fixedVolume(A.room) ? "" : `<div class="np-vol">${icon("vol")}<input class="vol" type="range" min="0" max="100" aria-label="Volume"></div>`}</div></div>
       <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
-        <button class="np-q" data-act="signalPath" aria-label="Playing through">${quality(t)}</button>
+        <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>
         <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
       <div class="np-next"></div></div></div>`;

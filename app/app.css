@@ -1459,3 +1459,5 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .room-go em strong { font-style: normal; font-weight: 600; color: rgba(242, 236, 226, .9); }
 .ver-more { display: block; }
 .ver-chip .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.np-src { display: inline-flex; align-items: center; gap: 5px; margin-right: 10px; font: 600 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 236, 226, .75); vertical-align: middle; }
+.np-src .ic { width: 15px; height: 15px; color: var(--accent); }
