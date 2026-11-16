@@ -2777,7 +2777,8 @@ function ttSuggest(t) {
 // a song nothing could name: a short card wherever the turntable shows (the guess, if there is one, a tap away); the
 // rest is asked in a sheet as wide as the phone: the record's songs as rows, or another record found by name
 function ttAsk(t) {
-  if (!t.unnamed) return "";
+  const r0 = t.record || {};
+  if (!t.unnamed) return t.song ? `<div class="tt-wrong">${r0.new ? `<span>Not in your Discogs collection yet; added once it has played.</span>` : ""}<button class="pill" data-act="ttAskSheet" data-v="${r0.id || ""}">Not this song?</button></div>` : "";
   const g = t.unnamed.guess, r = t.record || {};
   return `<div class="tt-ask"><div class="kicker">What's this song?</div><p>Nothing could name it${g ? `. Is it ${esc(g.pos)}, &ldquo;${esc(g.title)}&rdquo;?` : r.title ? ` &mdash; which song from ${esc(r.title)} is it?` : ` &mdash; which record is on?`}</p>
     <div class="acts">${g ? `<button class="btn" data-act="ttName" data-v="${r.id}|${esc(g.pos)}">Yes, ${esc(g.title)}</button><button class="btn ghost" data-act="ttAskSheet" data-v="${r.id}">Something else</button>`
@@ -2923,6 +2924,7 @@ function drawNpSide() {
   np.querySelector(".np-save").hidden = A.npTab !== "next";
   if (A.npTab === "next") { paintNp(); return; }
   const t = curTrack(); if (!t) return;
+  if (t.turntable && !(A.tt && A.tt.song)) { box.innerHTML = `<p class="dim">Nothing on the turntable is named yet.</p>`; return; } // not a song called "The turntable"
   const k = A.curKey;
   if (A.npTab === "about") { // the artist: their picture, who they are, the way to their page
     box.innerHTML = `<p class="dim">Asking after them&hellip;</p>`;

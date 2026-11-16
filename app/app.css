@@ -1294,6 +1294,7 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .tt-sug b { display: block; font: 600 16px var(--sans); }
 .tt-sug i { display: block; font: 13px var(--serif); color: var(--dim); }
 .tt-ask { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--accent); border-radius: 8px; }
+.tt-wrong { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 14px 0; font: italic 14px var(--serif); color: var(--dim); }
 .tt-ask p { margin: 6px 0 0; font: 16px/1.45 var(--serif); }
 .tt-ask .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 @media (max-width: 640px) { .tt-ask .acts .btn { flex: 1 1 100%; justify-content: center; } }

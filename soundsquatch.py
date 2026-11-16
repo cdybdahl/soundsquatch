@@ -3717,7 +3717,36 @@ def find_record(song):
         by = same or by
     if len(by) > 1:
         by = [r for r in by if record_side(r[0], song["title"])[0]] or by
-    return by[0] if by else None
+    return by[0] if by else discogs_lookup(song)
+
+
+def discogs_lookup(song):
+    """A record not in the collection: the vinyl pressing on Discogs most people own, by the artist and the album (else
+    the song) Shazam named, shaped as a collection row and marked new, so it is added to the collection once played."""
+    token, album = discogs_token(), re.sub(r"\s*(- (EP|Single)|\((Deluxe|Remaster|Expanded)[^)]*\))\s*$", "", song.get("album") or "", flags=re.I).strip()
+    if not token or not song.get("artist"):
+        return None
+    k = "dl:" + key(song["artist"]) + "|" + lms_qobuz.plain(album or song["title"])
+    hit = kv_get(k)
+    if hit is None:
+        hit = {}
+        for q in ([("release_title", album)] if album else []) + [("track", song["title"])]:
+            try:
+                got = discogs_get("/database/search?" + urllib.parse.urlencode({"type": "release", "format": "Vinyl", "artist": song["artist"], q[0]: q[1], "per_page": 25}), token).get("results") or []
+            except Exception as e:
+                note_error(f"discogs search: {e}")
+                return None
+            if got:
+                hit = max(got, key=lambda r: (r.get("community") or {}).get("have") or 0)
+                break
+        kv_set(k, hit)
+    if not hit.get("id"):
+        return None
+    artist, _, title = (hit.get("title") or "").partition(" - ")
+    fmts = hit.get("format") or []
+    return [hit["id"], title or album, re.sub(r" \(\d+\)$", "", artist) or song["artist"], int(hit.get("year") or 0), hit.get("cover_image") or hit.get("thumb") or "",
+            " ".join(f for f in fmts if f in ("Vinyl", "LP", "EP", '7"', '10"', '12"', "Album")), " ".join(x for x in ((hit.get("label") or [""])[0], hit.get("catno")) if x and x != "none"), "", 0,
+            {"g": hit.get("genre") or [], "s": hit.get("style") or [], "d": fmts, "t": "", "box": False, "r": 0, "i": None, "f": None, "ln": (hit.get("label") or [""])[0], "n": {}, "new": True}]
 
 
 def tt_clip(x8, wav, run_seconds, run, at=0):
@@ -3739,6 +3768,16 @@ def tt_clip(x8, wav, run_seconds, run, at=0):
         TT["shazam_at"] = time.time()
         got = turntable.shazam(wav)
         if not got:
+            print(f"turntable: nothing named {run_seconds:.0f}s into the stretch", flush=True)
+            return False
+        spin = TT["spin"]
+        same = spin and key(spin.get("artist") or "") == key(got["artist"])
+        if spin and spin.get("chosen") and not same:
+            print(f"turntable: Shazam's {got['artist']} - {got['title']} set aside: the house chose {spin.get('title')}", flush=True)
+            return False
+        maybe, TT["maybe"] = TT.get("maybe"), (key(got["artist"]), time.time())
+        if not same and not (maybe and maybe[0] == key(got["artist"]) and time.time() - maybe[1] < 90):
+            print(f"turntable: Shazam says {got['artist']} - {got['title']}; asking again to be sure", flush=True)
             return False
         song = dict(got, how="shazam")
     song["at"], song["run"] = time.time(), run
@@ -3843,6 +3882,15 @@ def tt_count(rec):
     plays[str(rec[0])] = p
     kv_set("tt_plays", plays)
     token, user = discogs_token(), d.get("user")
+    if token and user and details.get("new") and not details.get("i"):
+        try:
+            req = urllib.request.Request(f"{DISCOGS}/users/{urllib.parse.quote(user)}/collection/folders/1/releases/{rec[0]}", b"",
+                                         dict(AGENT, Authorization="Discogs token=" + token), method="POST")
+            got = json.load(urllib.request.urlopen(req, timeout=20))
+            details.update(i=got.get("instance_id"), f=got.get("folder_id") or 1, new=False)
+            threading.Timer(30, discogs_now.set).start()  # the collection read again, the record on the shelves
+        except Exception as e:
+            note_error(f"discogs add: {e}")
     if not (token and user and details.get("i")):
         return
     for name, value in (("plays", str(p["n"])), ("last played", p["last"])):
@@ -4144,7 +4192,8 @@ def turntable_state():
     plays = (kv_get("tt_plays", {}) or {}).get(str(rec[0]), {}) if rec else {}
     return {"state": TT["state"], "listener": bool(EAR and EAR.connected), "lid": TT["lid"], "level": round(EAR.level, 1) if EAR else None,
             "record": {"id": rec[0], "title": rec[1].strip(), "artist": rec[2], "year": tt_year(rec), "image": rec[4], "album_id": rec[8],
-                       "href": f"#/album/{rec[8]}" if rec[8] else f"#/record/{rec[0]}", "plays": plays.get("n", 0), "last": plays.get("last", "")} if rec else
+                       "href": f"#/album/{rec[8]}" if rec[8] else f"#/record/{rec[0]}", "plays": plays.get("n", 0), "last": plays.get("last", ""),
+                       "new": bool(len(rec) > 9 and (rec[9] or {}).get("new"))} if rec else
                       ({"id": 0, "title": spin["title"], "artist": spin["artist"]} if spin else None),
             "song": {k: song.get(k) for k in ("title", "artist", "pos", "side", "how")} if song and spin else None,
             "songs": [[x["title"], x["pos"]] for x in spin["songs"]] if spin else [],
@@ -4175,6 +4224,8 @@ def turntable_name(req):
     given, the song by its position; else the next in its tracklist."""
     albums, phys = physical_now()
     rec = next((r for r in phys if r[0] == int(req.get("record") or 0)), None)
+    if not rec and TT["spin"] and TT["spin"]["id"] == int(req.get("record") or 0):
+        rec = TT["spin"]["record"]  # a record found on Discogs, not yet in the collection
     if not rec:
         return {"error": "no such record"}
     run = EAR.run if EAR else 0
@@ -4186,6 +4237,7 @@ def turntable_name(req):
             threading.Thread(target=tt_suggest, args=(TT["spin"],), daemon=True).start()
         else:
             TT["spin"].update(id=rec[0], record=rec, artist=rec[2], title=rec[1].strip())
+        TT["spin"]["chosen"] = True  # Shazam no longer overrules it this spin
         tracks = [t for t in discogs_release(rec[0]).get("tracks") or [] if t["type"] == "track"]
         t = next((t for t in tracks if t["pos"] == req.get("pos")), None) or tt_next_in_order(TT["spin"])
     if t:

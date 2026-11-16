@@ -174,7 +174,8 @@ def shazam(data):
 
     try:
         got = asyncio.run(ask())
-    except Exception:
+    except Exception as e:
+        print(f"turntable: Shazam failed: {type(e).__name__}: {e}", flush=True)
         return None
     t = got.get("track") or {}
     if not t.get("title"):
@@ -352,7 +353,8 @@ class Ear:
                 if self.on_clip(x8, wav, run, self.run, self.clock):
                     named.add(self.run)
             except Exception:
-                pass
+                import traceback
+                traceback.print_exc()  # a song unnamed for a reason should say so in the log
 
     def begin_side(self):
         if not self.capture_dir or not self.capturing():
