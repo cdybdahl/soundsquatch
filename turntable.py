@@ -126,14 +126,14 @@ class Index:
         os.replace(os.path.join(self.folder, "index.tmp.npz"), os.path.join(self.folder, "index.npz"))
 
     def match(self, x):
-        """(track id, seconds into it where the clip starts, votes) for the best match, or None. A turntable runs a little
+        """(track id, seconds into it where the clip starts, votes, the turntable's speed) for the best match, or None. A turntable runs a little
         fast or slow (half a percent moves the peaks enough to lose them), so the clip is tried at speeds around its own."""
         best = None
         for speed in SPEEDS:
             y = x if speed == 1 else np.interp(np.arange(0, len(x) - 1, speed), np.arange(len(x)), x).astype(np.float32)
             m = self.match_one(y)
             if m and (not best or m[2] > best[2]):
-                best = (m[0], m[1] * speed, m[2])
+                best = (m[0], m[1] * speed, m[2], 1 / speed)  # the last: how fast the turntable ran (the clip matched sped up by speed)
                 if m[2] >= 40:
                     break  # certain enough
         return best
@@ -378,3 +378,58 @@ class Ear:
             p.kill()
         if self.on_side:
             threading.Thread(target=self.on_side, args=(path, started, self.clock - self.quiet_for, list(self.gaps)), daemon=True).start()
+
+
+# ───────────────────────── the signal chain, judged from a side ─────────────────────────
+def analyse_side(path):
+    """What a side's recording says of the chain that made it (the cartridge and stylus, the tonearm, the amplifier, the
+    interface), second by second, read through ffmpeg so a whole side never sits in memory:
+
+      balance   left over right in dB while music plays (the median); persistently off on every record: the chain
+      corr      how alike the channels are while music plays (1 same, 0 unrelated, below 0 one channel's wires reversed)
+      noise     the floor in the quiet (the lead-in, the gaps): surface noise, in dBFS
+      hum       60, 120 and 180 Hz above their neighbours in the quiet, in dB: a ground loop
+      rumble    energy below 20 Hz against the music's, in dB: the motor or the bearing
+      clicks    sharp spikes a minute of the quiet (the lead-in, the gaps, the run-out): dust, static, damage
+      clipped   samples at full scale: the interface's input driven too hard
+      peak      the loudest moment, in dBFS
+    """
+    cmd = ["ffmpeg", "-v", "quiet", "-i", path, "-f", "s16le", "-ac", "2", "-ar", str(SR), "-"]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    bal, corr, quiet_db, hum, rumble = [], [], [], [], []
+    clicks = clipped = 0
+    peak, seconds = 0.0, 0
+    freqs = np.fft.rfftfreq(SR, 1 / SR)
+    lowband, humbins = freqs < 20, [int(f) for f in (60, 120, 180)]
+    while True:
+        raw = p.stdout.read(SR * 4)
+        if len(raw) < SR * 4:
+            break
+        seconds += 1
+        x = np.frombuffer(raw, np.int16).reshape(-1, 2).astype(np.float32) / 32768
+        L, R = x[:, 0], x[:, 1]
+        clipped += int(np.sum(np.abs(x) > 0.999))
+        peak = max(peak, float(np.abs(x).max()))
+        m = (L + R) / 2
+        rl, rr, rm = float(np.sqrt(np.mean(L * L))) + 1e-9, float(np.sqrt(np.mean(R * R))) + 1e-9, float(np.sqrt(np.mean(m * m))) + 1e-9
+        db = 20 * np.log10(rm)
+        if db > -35:
+            bal.append(20 * np.log10(rl / rr))
+            corr.append(float(np.mean(L * R) / (rl * rr)))
+            spec = np.abs(np.fft.rfft(m))
+            rumble.append(20 * np.log10((spec[lowband].mean() + 1e-9) / (spec[20:2000].mean() + 1e-9)))
+        elif -80 < db < -47:  # true quiet: the lead-in, the gaps, the run-out (not a song fading out)
+            quiet_db.append(db)
+            # clicks, where they stand out and are heard: in the quiet (under music a cymbal looks like one). A sample far
+            # from the median of its neighbours, counted once however many samples it spans
+            r = np.abs(m[4:-4] - np.median(np.lib.stride_tricks.sliding_window_view(m, 9), axis=1))
+            hit = np.flatnonzero(r > max(0.004, 20 * float(np.median(r))))
+            clicks += int(np.sum(np.diff(hit) > 88)) + (1 if len(hit) else 0)
+            spec = np.abs(np.fft.rfft(m * np.hanning(len(m))))
+            near = lambda f: np.median(np.r_[spec[f - 12:f - 3], spec[f + 4:f + 13]]) + 1e-12
+            hum.append(max(20 * np.log10(spec[f - 1:f + 2].max() / near(f)) for f in humbins))
+    p.wait()
+    med = lambda v: round(float(np.median(v)), 2) if len(v) else None
+    return {"seconds": seconds, "balance": med(bal), "corr": med(corr), "noise": med(quiet_db) if len(quiet_db) >= 5 else None,
+            "hum": med(hum) if len(hum) >= 5 else None, "rumble": med(rumble), "clicks": round(clicks / (len(quiet_db) / 60), 1) if len(quiet_db) >= 5 else None,
+            "clipped": clipped, "peak": round(float(20 * np.log10(peak + 1e-9)), 1), "music": len(bal), "quiet": len(quiet_db)}

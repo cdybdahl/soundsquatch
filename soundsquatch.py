@@ -107,7 +107,7 @@ DEFAULTS = {
                  "write_files": False,  # changing music files (genres, titles, covers, removing): off until the house says so
                  "turntable_capture": False},  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
     "discover": {k: True for k in DISCOVER_SECTIONS},
-    "house": {"rooms": {}, "pin": "", "turntable_lid": ""},  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
+    "house": {"rooms": {}, "pin": "", "turntable_lid": "", "turntable_room": ""},  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
 }
 settings = json.loads(json.dumps(DEFAULTS))
 NEEDS = {"archive": "archive", "stations": "radio"}  # a feature that needs a Lyrion plugin, by HAVE's name for it
@@ -416,6 +416,8 @@ def save_settings(req):
                 settings["house"]["rooms"].pop(pid, None)
     if isinstance(req.get("new_pin"), str):
         settings["house"]["pin"] = pin_hash(req["new_pin"].strip()) if req["new_pin"].strip() else ""
+    if isinstance(req.get("turntable_room"), str) and (lms_qobuz.PLAYER.match(req["turntable_room"]) or not req["turntable_room"]):
+        settings["house"]["turntable_room"] = req["turntable_room"]
     if isinstance(req.get("turntable_lid"), str) and re.match(r"^(binary_sensor|input_boolean|switch)\.[a-z0-9_]+$|^$", req["turntable_lid"].strip()):
         settings["house"]["turntable_lid"] = req["turntable_lid"].strip()
     if isinstance(req.get("discogs_token"), str):  # "" disconnects
@@ -3714,7 +3716,7 @@ def tt_clip(x8, wav, run_seconds, run, at=0):
     if m:
         meta = (kv_get("tt_meta") or {}).get(str(m[0]))
         if meta:
-            song = {"title": meta[0], "artist": meta[1], "album": meta[2], "album_id": meta[3], "duration": meta[4], "offset": m[1], "how": "house"}
+            song = {"title": meta[0], "artist": meta[1], "album": meta[2], "album_id": meta[3], "duration": meta[4], "offset": m[1], "how": "house", "speed": m[3]}
     if not song:
         if known and known.get("how") == "shazam" and run_seconds < 60:
             return True  # named already this stretch; asked again only on the slow re-checks
@@ -3912,6 +3914,10 @@ def tt_side(path, s0, s1, gaps):
         if s1 - s0 < 20:
             return
         marks = [m for m in TT.get("marks", []) if s0 - 900 < m["start"] < s1 - 5]
+        try:
+            tt_signal(path, [m for m in marks if m["start"] > s0 - 30])
+        except Exception as e:
+            note_error(f"turntable signal: {type(e).__name__}: {e}"[:200])
         by = {}
         for m in marks:
             by.setdefault(lms_qobuz.plain(m["title"]), []).append(m)
@@ -3968,6 +3974,60 @@ def tt_side(path, s0, s1, gaps):
             rpc("", "rescan")
         except Exception:
             pass
+
+
+def tt_signal(path, marks):
+    """A side's signal judged (turntable.analyse_side, with the turntable's speed from the songs matched on it) and kept
+    (the newest 300 sides); then the chain judged across the sides, and anything worth looking into raised once."""
+    got = turntable.analyse_side(path)
+    speeds = [m["speed"] for m in marks if m.get("speed")]
+    got["speed"] = round(float(sorted(speeds)[len(speeds) // 2]), 4) if speeds else None
+    rec = next((m["rec"] for m in marks if m.get("rec")), None)
+    side = next((m.get("side") for m in marks if m.get("side")), "")
+    got.update(at=int(time.time()), id=rec[0] if rec else 0, title=rec[1] if rec else "", artist=rec[2] if rec else "", side=side)
+    hist = (kv_get("tt_signal", []) or []) + [got]
+    kv_set("tt_signal", hist[-300:])
+    for a in tt_judge(hist, got):
+        alerts = kv_get("tt_alerts", []) or []
+        if any(x["key"] == a["key"] and time.time() - x["at"] < 14 * 86400 for x in alerts):
+            continue  # said once a fortnight at most
+        a.update(at=int(time.time()), id=f"{a['key']}-{int(time.time())}")
+        kv_set("tt_alerts", (alerts + [a])[-50:])
+
+
+def tt_judge(hist, now):
+    """What the sides say, in plain words with what to try. The chain (balance, hum, speed) only from a pattern across
+    many sides, so one odd pressing doesn't raise it; a record's own noise against the collection's usual."""
+    out = []
+    recent = hist[-10:]
+    bal = [h["balance"] for h in recent if h.get("balance") is not None]
+    for sign, quieter in ((1, "right"), (-1, "left")):
+        off = [b for b in bal if b * sign > 1.0]
+        if len(bal) >= 8 and len(off) >= 8:
+            db = round(sum(off) / len(off) * sign, 1)
+            out.append({"key": "balance", "title": f"The {quieter} channel is {db} dB quieter",
+                        "text": f"On {len(off)} of the last {len(bal)} sides, every record, so it's the chain, not the pressings. Check the cartridge's tracking force and azimuth (its tilt) and the stylus; then swap the turntable's left and right leads at the amplifier: if the quiet side moves, it's before the swap (cartridge, tonearm wiring, leads); if it stays, it's the amplifier or the interface."})
+    if now.get("corr") is not None and now["corr"] < -0.2:
+        out.append({"key": "polarity", "title": "One channel looks wired backwards",
+                    "text": "The two channels are moving in opposite directions. Check the cartridge's four pin connections (one channel's + and − swapped) and the leads."})
+    if now.get("clipped", 0) > 50:
+        out.append({"key": "clip", "title": "The recording is overloading",
+                    "text": f"{now['clipped']} samples hit full scale on {now['title'] or 'the last side'}. The amplifier's record-out is too hot for the Behringer's input: turn down the interface's input, if it has one, or lower the source level."})
+    hum = [h["hum"] for h in hist[-5:] if h.get("hum") is not None]
+    if len(hum) >= 4 and sum(1 for x in hum if x > 15) >= 4:
+        out.append({"key": "hum", "title": "There's hum in the quiet",
+                    "text": "60 Hz hum and its multiples stand well above the surface noise between songs, side after side. Check the turntable's ground wire to the amplifier's GND post, and keep the turntable's leads away from power cables."})
+    sp = [h["speed"] for h in recent if h.get("speed")]
+    if len(sp) >= 6:
+        m = sorted(sp)[len(sp) // 2]
+        if abs(m - 1) > 0.005:
+            out.append({"key": "speed", "title": f"The turntable runs {abs(m - 1) * 100:.1f}% {'fast' if m > 1 else 'slow'}",
+                        "text": "Measured against the house's own copies of the songs, across the last sides. Check the speed setting and pitch control, and the belt (stretched or slipping) if it has one."})
+    noise = sorted(h["noise"] for h in hist if h.get("noise") is not None)
+    if len(noise) >= 10 and now.get("noise") is not None and now["noise"] > noise[len(noise) // 2] + 8:
+        out.append({"key": f"noise-{now['id']}", "title": f"{now['title'] or 'That side'} is noisy",
+                    "text": f"Its surface noise is {round(now['noise'] - noise[len(noise) // 2])} dB above the collection's usual. The record wants a clean (and if it stays noisy once clean, it may be worn)."})
+    return out
 
 
 def capture_dir():
@@ -4029,7 +4089,8 @@ def turntable_state():
             "song": {k: song.get(k) for k in ("title", "artist", "pos", "side", "how")} if song and spin else None,
             "songs": [[x["title"], x["pos"]] for x in spin["songs"]] if spin else [],
             "side": song.get("side", "") if song and spin else "", "suggest": spin["suggest"] if spin else [], "side_over_at": TT["side_over_at"],
-            "unnamed": {"guess": un[1] and {"pos": un[1]["pos"], "title": un[1]["title"]}} if un else None}
+            "unnamed": {"guess": un[1] and {"pos": un[1]["pos"], "title": un[1]["title"]}} if un else None,
+            "room": settings["house"].get("turntable_room", ""), "alert": (kv_get("tt_alerts", []) or [None])[-1]}
 
 
 def tt_next_in_order(spin):
@@ -4165,6 +4226,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.turntable_live()
             if url.path in ("/turntable.flac", "/turntable.mp3"):
                 return self.turntable_stream(url.path.endswith(".mp3"))
+            if url.path == "/api/turntable/signal":
+                return self.reply({"sides": (kv_get("tt_signal", []) or [])[-60:], "alerts": kv_get("tt_alerts", []) or []})
             if url.path == "/api/record":
                 rid = int(qs.get("id") or 0)
                 rec = next((r for r in (kv_get("discogs", {}) or {}).get("records", []) if r[0] == rid), None)

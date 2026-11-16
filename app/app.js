@@ -1130,9 +1130,26 @@ VIEWS.vinyl = function (el) {
     <div class="vfacets">${facets.map(f => `<div class="vfacet"><span class="vf-h">${f[1]}</span><div class="chips">${f[2].map(o =>
       `<button class="${pick[f[0]] === o[0] ? "on" : ""}" data-act="vinylPick" data-v="${esc(f[0] + "|" + o[0])}">${esc(o[1])}</button>`).join("")}</div></div>`).join("")}
       ${picked ? `<button class="vf-clear" data-act="vinylPick" data-v="">Clear the filters</button>` : ""}</div>
-    ${ttOn() ? ttPanel() : ""}${rows.length ? `${ttOn() ? "" : vinylPull()}<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}`;
+    ${ttOn() ? ttPanel() : ""}${rows.length ? `${ttOn() ? "" : vinylPull()}<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}
+    <section class="sec tt-signal" id="tt-signal"></section>`;
+  signalCheck(el);
 };
 A.vinylShown = [];
+/* the signal check: what each side recorded says of the chain (the cartridge and stylus, the tonearm, the amplifier, the
+   interface), with anything worth looking into said plainly first */
+function signalCheck(el) {
+  api("/api/turntable/signal").then(d => {
+    const box = $("#tt-signal", el); if (!box || !(d.sides || []).length) return;
+    const fresh = (d.alerts || []).filter(a => Date.now() / 1000 - a.at < 30 * 86400).reverse();
+    const v = (x, unit, dp) => x == null ? "&mdash;" : (x > 0 && unit === " dB" && dp == null ? "+" : "") + (+x).toFixed(dp == null ? 1 : dp) + unit;
+    const when = t => new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    box.innerHTML = `<div class="kicker">${icon("disc")} The signal check</div><h2>How the turntable sounds</h2>
+      ${fresh.length ? fresh.map(a => `<div class="tt-alert"><b>${esc(a.title)}</b><p>${esc(a.text)}</p><i>${when(a.at)}</i></div>`).join("") : `<p class="dim">Nothing to look into: balance, hum, speed and levels are where they should be.</p>`}
+      <div class="tt-sides"><div class="tt-row h"><span>Side</span><span>Balance</span><span>Surface</span><span>Hum</span><span>Clicks</span><span>Speed</span><span>Peak</span></div>${d.sides.slice().reverse().slice(0, 12).map(x =>
+        `<div class="tt-row"><span><b>${esc(x.title || "A side")}</b>${x.side ? " &middot; " + esc(x.side) : ""}<i>${when(x.at)}</i></span><span>${v(x.balance, " dB")}</span><span>${v(x.noise, " dB", 0)}</span><span>${v(x.hum, " dB", 0)}</span><span>${x.clicks == null ? "&mdash;" : Math.round(x.clicks) + "/min"}</span><span>${x.speed ? ((x.speed - 1) * 100 >= 0 ? "+" : "") + ((x.speed - 1) * 100).toFixed(2) + "%" : "&mdash;"}</span><span class="${x.clipped > 50 ? "bad" : ""}">${v(x.peak, " dB", 1)}</span></div>`).join("")}</div>
+      <p class="plan-note">Balance is left over right (+ means the right is quieter); surface is the noise between songs; hum is 60 Hz above that noise; speed is against the house's own copies of the songs. One odd side is the pressing; the same thing side after side is the chain.</p>`;
+  }).catch(() => {});
+}
 // the record on the turntable now, at the head of the Vinyl page
 function ttPanel() {
   const t = A.tt, r = t.record || {}, song = t.song;
@@ -2500,10 +2517,11 @@ function openRooms() {
     openSheet(`<div class="kicker">Play in</div><h3>Rooms</h3><div class="rooms">${here.concat(others).map(p => {
       const me = p.playerid === A.room, joined = group.indexOf(p.playerid) >= 0, s2 = states[p.playerid] || {};
       const t = (s2.playlist_loop || [])[0] || s2.remoteMeta || {}, on = +s2.power !== 0 && p.power;
-      const mode = s2.mode === "play" ? "playing" : s2.mode === "pause" && +s2.playlist_tracks ? "paused" : !on ? "off" : +s2.playlist_tracks ? "stopped" : "idle";
-      const what = (mode === "playing" || mode === "paused") && t.title ? ` &middot; ${esc(t.title)}${t.artist ? " &mdash; " + esc(t.artist) : ""}` : "";
+      const vinylHere = ttOn() && A.tt.room === p.playerid && s2.mode !== "play"; // the record player in this room, the room's own player quiet
+      const mode = vinylHere ? "the turntable" : s2.mode === "play" ? "playing" : s2.mode === "pause" && +s2.playlist_tracks ? "paused" : !on ? "off" : +s2.playlist_tracks ? "stopped" : "idle";
+      const what = vinylHere ? (A.tt.record ? ` &middot; ${esc(A.tt.record.title)} &mdash; ${esc(A.tt.record.artist)}` : "") : (mode === "playing" || mode === "paused") && t.title ? ` &middot; ${esc(t.title)}${t.artist ? " &mdash; " + esc(t.artist) : ""}` : "";
       const label = (me ? "this room, " : joined ? "with this room, " : "") + mode;
-      return `<div class="room ${me ? "on" : ""} st-${mode}"><button class="room-go" data-act="room" data-v="${p.playerid}">${mode === "playing" ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em><span class="state">${label}</span>${what}</em></span></button>
+      return `<div class="room ${me ? "on" : ""} st-${vinylHere ? "playing" : mode}"><button class="room-go" data-act="room" data-v="${p.playerid}">${mode === "playing" || vinylHere ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em><span class="state">${label}</span>${what}</em></span></button>
         ${me ? "" : `<span class="room-acts">${joined ? `<button data-act="syncLeave" data-v="${p.playerid}" aria-label="Leave">${icon("close")}<span class="lb">Leave</span></button>` : inStep(p) && inStep(here[0]) ? `<button data-act="syncJoin" data-v="${p.playerid}" aria-label="Join">${icon("link")}<span class="lb">Join</span></button>` : ""}
           ${playing && !joined ? `<button data-act="moveTo" data-v="${p.playerid}" aria-label="Move music here">${icon("move")}<span class="lb">Move music here</span></button>` : ""}</span>`}</div>`;
     }).join("")}</div>
@@ -2706,10 +2724,10 @@ Object.assign(ACT, {
     return Promise.all(listed.map(p => lms(p.playerid, ["status", "-", 1, "tags:a"]).catch(() => ({})))).then(sts => [listed, sts]);
   }).then(r => openSheet(`<div class="kicker">${icon("disc")} The turntable</div><h3>Hear it in</h3><div class="rooms">${r[0].map((p, i) => {
     const s2 = r[1][i] || {}, t = (s2.playlist_loop || [])[0] || s2.remoteMeta || {}, on = +s2.power !== 0 && p.power;
-    const vinyl = /turntable\.(flac|mp3)/.test(t.url || "") || t.title === "The turntable";
-    const mode = vinyl && s2.mode === "play" ? "playing the turntable" : s2.mode === "play" ? "playing" : s2.mode === "pause" && +s2.playlist_tracks ? "paused" : !on ? "off" : "idle";
+    const vinyl = /turntable\.(flac|mp3)/.test(t.url || "") || t.title === "The turntable", home = A.tt && A.tt.room === p.playerid;
+    const mode = home && s2.mode !== "play" ? "the turntable is here" : vinyl && s2.mode === "play" ? "playing the turntable" : s2.mode === "play" ? "playing" : s2.mode === "pause" && +s2.playlist_tracks ? "paused" : !on ? "off" : "idle";
     const what = mode === "playing" || mode === "paused" ? (t.title ? ` &middot; ${esc(t.title)}${t.artist ? " &mdash; " + esc(t.artist) : ""}` : "") : "";
-    return `<div class="room st-${mode === "playing the turntable" ? "playing" : mode} ${vinyl ? "on" : ""}"><button class="room-go" data-act="ttPlay" data-v="${esc(p.playerid)}">${mode.indexOf("playing") === 0 ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em><span class="state">${mode}</span>${what}</em></span></button></div>`;
+    return `<div class="room st-${/turntable/.test(mode) ? "playing" : mode} ${vinyl || (home && s2.mode !== "play") ? "on" : ""}"><button class="room-go" data-act="ttPlay" data-v="${esc(p.playerid)}">${mode.indexOf("playing") === 0 || /is here/.test(mode) ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em><span class="state">${mode}</span>${what}</em></span></button></div>`;
   }).join("")}</div><p class="plan-note">The record plays on in the room it's in; a room chosen here hears it a few seconds behind, so pick one out of earshot of the turntable.</p>`)),
   ttPlay: v => api("/api/turntable/play", { player: v }).then(r => { closeSheet(); toast(r.ok ? `The turntable is playing in ${roomName(v)}` : r.error); }),
   ttName: v => { const p = v.split("|"); api("/api/turntable/name", { record: +p[0], pos: p[1] || "" }).then(r => { toast(r.ok ? "Thanks" : r.error); ttPoll(); }); },
