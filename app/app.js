@@ -950,7 +950,7 @@ MAG.album = function (el, id) {
       <div class="al-head"><div class="mag-dept mag-kind">The record</div>
         <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
-        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", a[9] === "vinyl" ? `${icon("disc")} Your vinyl, recorded here` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
+        <div class="mag-by">${[a[6] ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${vers.length} pressings</button>` : "", cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Spin it next">${icon("next_up")}<span>Next</span></button>
           <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>
           ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}" aria-label="Add ${esc(artist)} to a station">${icon("radio_plus")}<span>Station</span></button>` : ""}
@@ -1176,7 +1176,7 @@ function vinylPull() {
 }
 // the line on an album's page when the house has it on the shelf too
 // where a version plays from, in words: the turntable's own recording of the record marked as such
-const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? `${icon("disc")} your vinyl, recorded here` : "on the shelves";
+const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? `${icon("disc")} Vinyl, captured by Soundsquatch` : "on the shelves";
 function vinylChip(a) {
   const rs = A.vinylOf && A.vinylOf.get(a[0]);
   return rs ? `<a class="vinyl-chip" href="#/record/${rs[0][0]}" title="${esc(rs.map(r => [r[5], r[6], r[3] || ""].filter(Boolean).join(", ")).join("; "))}">${icon("disc")} Also on ${esc(rs.map(r => r[5] || "vinyl").join(", ").replace(/^Vinyl/, "vinyl"))}</a>` : "";
