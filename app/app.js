@@ -812,6 +812,33 @@ VIEWS.mag = function (el, name) {
   load();
 };
 
+/* the lead story as long as the column beside it: when its own words run short, it goes on about the artist (the band,
+   for a member) a paragraph at a time, once the pictures beside it have loaded and their height is known */
+function fillLead(el, lead) {
+  const l = $(".fp-story.lead", el), also = $(".fp-also", el);
+  const who = lead.kind === "born" || lead.kind === "died" ? (lead.member ? lead.artist : lead.name) : lead.kind === "pickArtist" ? lead.name : lead.artist;
+  if (!l || !also || !who) return;
+  const bottom = e => Math.max.apply(null, Array.from(e.children).map(c => c.getBoundingClientRect().bottom).concat([e.getBoundingClientRect().top]));
+  const loaded = Array.from(also.querySelectorAll("img")).map(i => i.complete ? 1 : new Promise(r => { i.onload = i.onerror = r; }));
+  Promise.all([whoIs(who), Promise.all(loaded)]).then(r => {
+    const found = r[0][1], name = r[0][0], text = (found.qobuz && found.qobuz.bio) || (found.wiki && found.wiki.extract) || "";
+    if (!text || !l.isConnected || bottom(l) >= bottom(also) - 120) return;
+    const box = document.createElement("div");
+    box.className = "fp-about";
+    box.innerHTML = `<div class="mag-dept">About ${esc(lead.member ? lead.artist : name)}</div>`;
+    l.insertBefore(box, $(".fp-theirs", l));
+    for (const para of paras(text).filter(x => x.charAt(0) !== "\u00a7")) { // not the section headings tidy() marks
+      if (bottom(l) >= bottom(also) - 120) break;
+      const p = document.createElement("p");
+      p.textContent = para;
+      box.appendChild(p);
+      if (box.querySelectorAll("p").length > 1 && bottom(l) > bottom(also) + 120) { p.remove(); break; } // not far past it either
+    }
+    if (!box.querySelector("p")) box.remove();
+    else box.insertAdjacentHTML("beforeend", `<a class="more" href="${artistHref(lead.member ? lead.artist : name)}">Their page</a>`);
+  }).catch(() => {});
+}
+
 MAG.artist = (el, name) => VIEWS.mag(el, name);
 MAG.discover = el => { A.homeAt = Date.now(); VIEWS.front(el); };
 /* the front page as a magazine sets it (a mock-up, at #/front): the nameplate, the day's lead story with its picture and
@@ -884,6 +911,7 @@ VIEWS.front = function (el) {
       ${(h.decade_albums || []).length ? sec("A decade, drawn at random", `The ${h.decade}s`, shelf(cards(h.decade_albums).map(a => albumCard(a)))) : ""}
       ${h.genre ? sec("Genre of the day", `<a href="#/genre/${encodeURIComponent(h.genre)}">${esc(h.genre)}</a>`, shelf(shuffled(A.albums.filter(a => a[4] && (a[8] || []).indexOf(h.genre) >= 0), seeded(h.date || "")).slice(0, 16).map(a => albumCard(a)))) : ""}
     </article>`;
+    if (lead) fillLead(el, lead);
     if (lead && lead.kind === "pickArtist") profile(lead.name).then(p => { // the artist picked: their picture over the lead
       const a = $(".fp-story.lead > a", el), img = p.hero || p.thumb; if (a && img && !a.querySelector("img")) a.innerHTML = `<figure><img src="${esc(pic(img, 1600))}" alt=""></figure>`;
     }).catch(() => {});
