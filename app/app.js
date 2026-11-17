@@ -1728,7 +1728,8 @@ function drawSettings(el) {
       ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`)}
     ${section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`)}
     ${section("When something's wrong", "Diagnostics", `<div class="set-row"><span><b>A report to paste where you tell us</b><em>versions, what was found, the last errors; no names, addresses or listening</em></span><button class="pill" data-act="diagnostics">Show it</button></div>`)}
-    <p class="dim center set-foot">Soundsquatch ${esc(c.version || "")} &middot; settings for the house are saved on the server; this device's are saved in this browser.</p>`;
+    <p class="dim center set-foot">Soundsquatch ${esc(c.version || "")} &middot; settings for the house are saved on the server; this device's are saved in this browser.</p>
+    <p class="dim center set-foot"><a href="https://www.buymeacoffee.com/mryeti" target="_blank" rel="noopener">Buy the sasquatch a beer</a></p>`;
   $(".settings", el).classList.toggle("editing", !!el.querySelector(".conn.open"));
   api("/api/backups").then(b => { const e = $("#bk-last", el); if (e) e.textContent = b.last ? new Date(b.last * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + ` · ${b.files.length} kept` : "none yet (the first is made tonight)"; }).catch(() => {});
   const file = $(".bk-restore input", el);

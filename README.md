@@ -273,6 +273,11 @@ a check beside each connection. Features (stations, the Archive, history, credit
 lyrics) and Discover's sections can be switched off for the house; text size,
 lighter drawing, reduced motion and the starting room are set per device.
 
+## Buy the sasquatch a beer
+
+Soundsquatch is made in spare evenings. If it earns a place in your house, you can
+[buy the sasquatch a beer](https://www.buymeacoffee.com/mryeti).
+
 ## Licence
 
 Soundsquatch is free for personal and other noncommercial use under the

@@ -784,6 +784,8 @@ html.lite .hero h1, html.lite .slide h1 { text-shadow: none; }
 .set-field .check.good { color: var(--live); }
 .set-field .check.bad { color: var(--held); }
 .set-foot { margin-top: 30px; }
+.set-foot + .set-foot { margin-top: 6px; }
+.set-foot a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .gear { width: 34px; padding: 0; justify-content: center; }
 @media (min-width: 761px) { .v-discover .gear { display: none; } } /* the rail has Settings on wider screens */
 @media (max-width: 760px) { .rail-settings { display: none !important; } .set-field { grid-template-columns: 1fr; } .set-field .check { grid-column: 1; } }
