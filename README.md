@@ -61,6 +61,12 @@ docker compose up -d
 That fetches the ready-built image (for 64-bit Intel/AMD and ARM machines). Set your time zone in `compose.yaml`
 first.
 
+**The first start takes a while.** The shelves and covers are there in minutes, but Soundsquatch then gathers what it
+knows about every artist and album: stories, photographs, genres and credits, mostly from MusicBrainz, which answers
+one question a second. Expect three or four hours for about 1,500 albums, and the best part of a day near 10,000.
+Everything works meanwhile, and pages fill in as it goes (Discover says how far it has got); it only happens once,
+and after that only new albums are looked up.
+
 On **Docker Desktop** (a Mac or Windows PC), follow the note in `compose.yaml` first: Docker Desktop doesn't share the
 host's network by default, so Soundsquatch publishes its port and is told Lyrion's address instead of finding it.
 
