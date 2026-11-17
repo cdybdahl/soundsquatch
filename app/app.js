@@ -1650,7 +1650,8 @@ const CONN = [["lms_url", "Lyrion", "its address, as the server reaches it", "lm
 const FEATS = [["stations", "Stations", "radio seeded from artists you choose"], ["archive", "Internet Archive", "shows from the ArchiveLMA plugin"],
   ["history", "History", "the History tab, from the listening log"], ["credits", "Credits", "who made each album, from MusicBrainz"], ["lyrics", "Lyrics", "synced lyrics in Now Playing (LRCLIB)"],
   ["write_files", "Change music files", "genres, titles and covers written into the files; Remove from the library moves them to music-removed. Off, genres are Soundsquatch's own and the files are never touched"],
-  ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"]];
+  ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"],
+  ["prefer_captured", "Your vinyl first", "an album with a take captured from the turntable opens and spins that take; off, the best-sounding copy does"]];
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
   ["mai", "Music & Artist Information", "album reviews, artists' longer stories and more of their photographs"],
   ["archive", "ArchiveLMA", "live shows from the Internet Archive: your favourites, each artist's shows, and On this night"],
@@ -2176,7 +2177,8 @@ const ACT = {
   banLift: (v, t) => { api("/api/ban", { kind: t.dataset.kind, lift: v }).then(() => { t.closest(".ban").remove(); toast("Lifted"); }); },
   setFeat: v => { const f = {}; f[v] = !A.cfg.features[v];
     if (v === "write_files" && f[v] && !confirm("Let Soundsquatch change your music files? Genres, titles and covers are written into them (what they had before is kept, to put back), and Remove from the library moves an album's files to music-removed. Nothing is ever deleted.")) return; saveSettings({ features: f }, `${v === "home_assistant" ? "Home Assistant" : FEATS.find(x => x[0] === v)[1]} ${f[v] ? "on" : "off"} for the house`)
-    .then(() => { if (v === "home_assistant" || v === "stations") loadStations().catch(() => {}); if (v === "home_assistant") setTimeout(() => loadLibrary().catch(() => {}), 4000); }); },
+    .then(() => { if (v === "home_assistant" || v === "stations") loadStations().catch(() => {}); if (v === "home_assistant") setTimeout(() => loadLibrary().catch(() => {}), 4000);
+      if (v === "prefer_captured") [5, 15].forEach(t => setTimeout(() => loadLibrary().catch(() => {}), t * 1000)); }); }, // the shelves sorted again, each album under its other copy
   setDisc: v => { const f = {}; f[v] = !A.cfg.discover[v]; saveSettings({ discover: f }, `${DISC.find(x => x[0] === v)[1]} ${f[v] ? "shown" : "hidden"} on Discover`); },
   connEdit: (v, t) => { t.closest(".conn").classList.add("open"); t.closest(".settings").classList.add("editing"); const i = t.closest(".conn").querySelector("[data-conn]"); if (i) i.focus(); },
   vinylSort: v => { store.set("sq-vsort", v); VIEWS.vinyl(current.el); },

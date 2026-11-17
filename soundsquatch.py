@@ -105,7 +105,8 @@ DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
                  "write_files": False,  # changing music files (genres, titles, covers, removing): off until the house says so
-                 "turntable_capture": False},  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
+                 "turntable_capture": False,  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
+                 "prefer_captured": True},  # an album with a take from the turntable shows and spins that take first
     "discover": {k: True for k in DISCOVER_SECTIONS},
     "house": {"rooms": {}, "pin": "", "turntable_lid": "", "turntable_room": ""},  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
 }
@@ -1058,7 +1059,9 @@ def load_library(force=False):
     for rank, qkey, entry in rows:
         k = keys[entry[0]]  # every version of it under one name: the best copy shows, the others are its versions
         versions.setdefault(k, []).append((qkey, entry))
-        qkey = (qkey, str(entry[0]) not in captured)  # a recording of the house's own record never displaces the master on a tie
+        ours = str(entry[0]) in captured
+        # the house's own record first when the house says so; otherwise its recording never displaces the master on a tie
+        qkey = (ours, qkey) if settings["features"].get("prefer_captured") else (qkey, not ours)
         if k not in best or qkey > best[k][0]:
             if k in best:
                 entry[5] = min(rank, best[k][1][5])
