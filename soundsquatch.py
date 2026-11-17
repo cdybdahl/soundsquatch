@@ -3361,6 +3361,25 @@ def archive_artist(name):
     return out
 
 
+def archive_search(term):
+    """The plugin's search of the house's Archive collections (artists and venues), for Search: shows by anyone, not
+    only the shelves' artists. It finds nothing for "Spoon 2003", so a year at the end is kept out and matched here."""
+    term = " ".join(term.split())[:120]
+    if not feature("archive") or len(term) < 3:
+        return {"shows": []}
+    k = "search:" + term.lower()
+    hit = archive_cache.get(k)
+    if hit and time.time() - hit[0] < 3600:
+        return hit[1]
+    m = re.fullmatch(r"(.+?)\s+((?:19|20)\d\d)", term)
+    ask, year = (m.group(1), m.group(2)) if m else (term, "")
+    items = [it for it in archive_items(PLAYER, "0", term=ask) if it.get("type") == "link"]
+    rows = [archive_show_row(it, {"item": it.get("id"), "term": ask}) for it in items]
+    out = {"shows": sorted([r for r in rows if r["date"].startswith(year)], key=lambda r: r["date"], reverse=True)}
+    archive_cache[k] = (time.time(), out)
+    return out
+
+
 def archive_show(ctx, player):
     """A show's menu: its setlist and the plugin's own actions on it (kept ten minutes: archive.org is slow to answer)."""
     k = "show:" + json.dumps(ctx, sort_keys=True)
@@ -4729,6 +4748,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(archive_details(qs.get("id", "")))
             if url.path == "/api/archive/artist":
                 return self.reply(archive_artist(qs.get("name", "")[:200]))
+            if url.path == "/api/archive/search":
+                return self.reply(archive_search(qs.get("q", "")))
             if url.path == "/api/history":
                 return self.reply(history(min(90, int(qs.get("days") or 14))))
             if url.path == "/api/diagnostics":

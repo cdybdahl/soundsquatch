@@ -1819,7 +1819,7 @@ function dayLabel(d) {
 }
 
 /* ───────────────────────── search ───────────────────────── */
-let searchT, qobuzT, lastQ = "";
+let searchT, qobuzT, archT, lastQ = "";
 VIEWS.search = function (el) {
   el.innerHTML = `${pageBar("Search", [], `<input id="q" type="search" placeholder="An artist, an album, a song, a show" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(lastQ)}"><button class="pill" data-act="searchClear" aria-label="Clear, then close">${icon("close")}</button>`, false, "grow search-bar")}<div id="results"></div>`;
   const q = $("#q", el);
@@ -1852,16 +1852,16 @@ function nearNames(n) {
   return picks.length ? `<p class="none-line">Did you mean</p><div class="gpicks none-picks">${picks.map(x => `<a class="gpick" href="${x[2]}">${esc(x[1])}</a>`).join("")}</div>` : "";
 }
 // a search that found nothing anywhere: the nearest names, and what search looks at
-function noResults(q, n, askedQobuz) {
+function noResults(q, n, askedQobuz, askedArchive) {
   const quips = ["Just crickets here.", "Dead air.", "Not even a B-side.", "The crate's empty.", "Four minutes, thirty-three seconds of nothing.",
     "The needle's in the run-out groove.", "Nobody here but the tape hiss.", "This bin's been picked clean."];
   const quip = quips[Array.from(n).reduce((s, c) => s + c.charCodeAt(0), 0) % quips.length]; // the same line for the same search
   return `<div class="no-results"><div class="kicker">Nothing for &ldquo;${esc(q)}&rdquo;</div><h2>${quip}</h2>${nearNames(n)}
-    <p class="dim">Search looks at artists, albums, songs, genres and playlists on your shelves${askedQobuz ? ", and at Qobuz" : has("qobuz") ? "; Qobuz is asked from three letters on" : ""}. Check the spelling, or try fewer words.</p></div>`;
+    <p class="dim">Search looks at artists, albums, songs, genres and playlists on your shelves${askedQobuz ? ", and at Qobuz" : has("qobuz") ? "; Qobuz is asked from three letters on" : ""}${askedArchive ? ", and the shows in your Archive collections" : ""}. Check the spelling, or try fewer words.</p></div>`;
 }
 function runSearch(el, q) {
   lastQ = q; const n = norm(q), box = $("#results", el);
-  clearTimeout(qobuzT);
+  clearTimeout(qobuzT); clearTimeout(archT);
   if (n.length < 2) { // nothing typed yet: what is playing, and the last searches, a tap away
     const t = curTrack(), recent = store.get("sq-recent", []);
     const now = t && t.artist ? [t.artist, t.album].filter(Boolean) : [];
@@ -1881,7 +1881,7 @@ function runSearch(el, q) {
     artists: artists.length ? section("On your shelves", "Artists", shelf(artists.map(a => face(a[0], a[3], a[2] + (a[2] === 1 ? " album" : " albums"))))) : "",
     albums: albums.length ? section("On your shelves", "Albums", `<div class="grid">${albums.map(a => albumCard(a)).join("")}</div>`) : "",
     songs: `<div id="s-tracks"></div>`,
-    shows: shows.length ? section("From the Internet Archive", "Live shows", shelf(shows.map(x => archCard(x)))) : "",
+    shows: (shows.length ? section("From the Internet Archive", "Live shows", shelf(shows.map(x => archCard(x)))) : "") + `<div id="s-archive"></div>`,
     genres: genres.length ? section("The bins", "Genres", `<div class="gpicks">${genres.map(g => `<a class="gpick" href="#/genre/${encodeURIComponent(g[0])}">${esc(g[0])} <span class="dim">${g[1]}</span></a>`).join("")}</div>`) : "",
     lists: lists.length ? section("Yours", "Playlists", `<div class="gpicks">${lists.map(p => `<a class="gpick" href="#/playlist/${p.id}">${esc(p.name)}</a>`).join("")}</div>`) : ""
   };
@@ -1892,16 +1892,17 @@ function runSearch(el, q) {
   // nothing on the shelves by that name: say so while the songs (and Qobuz) are asked, and if they find nothing either,
   // offer the nearest names on the shelves instead of a blank page
   const local = artists.length + albums.length + shows.length + genres.length + lists.length, asksQobuz = n.length >= 3 && has("qobuz");
-  const tally = { found: local, waiting: asksQobuz ? 2 : 1, qobuz: 0 };
+  const asksArchive = n.length >= 3 && on("features", "archive");
+  const tally = { found: local, waiting: 1 + asksQobuz + asksArchive, qobuz: 0 };
   const settle = (found, fromQobuz) => {
     if (lastQ !== q) return;
     tally.found += found; tally.waiting--; if (fromQobuz) tally.qobuz += found;
     const b = $("#s-none", el); if (!b) return;
     if (tally.found > tally.qobuz) return b.remove(); // songs on the shelves after all
     if (tally.qobuz) b.innerHTML = `<p class="none-line">Nothing on your shelves for &ldquo;${esc(q)}&rdquo;.</p>${nearNames(n)}`;
-    else if (!tally.waiting) b.innerHTML = noResults(q, n, asksQobuz);
+    else if (!tally.waiting) b.innerHTML = noResults(q, n, asksQobuz, asksArchive);
   };
-  box.innerHTML = (local ? "" : `<div id="s-none"><p class="none-line">Nothing on your shelves by that name. Looking among the songs${asksQobuz ? " and on Qobuz" : ""}&hellip;</p></div>`)
+  box.innerHTML = (local ? "" : `<div id="s-none"><p class="none-line">Nothing on your shelves by that name. Looking among the songs${asksQobuz ? ", on Qobuz" : ""}${asksArchive ? " and in the Archive" : ""}&hellip;</p></div>`)
     + order.map(k => parts[k]).join("") + `<div id="s-qobuz"></div>`;
   lms("", ["titles", 0, 30, "search:" + q, "tags:alJ"]).then(r => {
     const t = (r.titles_loop || []); const b = $("#s-tracks", el);
@@ -1920,6 +1921,16 @@ function runSearch(el, q) {
       b.innerHTML = (people.length ? section("Beyond the shelves", "Artists on Qobuz", shelf(people.map(x => face(x.name, x.image, "on Qobuz")))) : "")
         + (rel.length ? section(people.length ? "" : "Beyond the shelves", "Records on Qobuz", shelf(rel.map(x => qCard({ artist: x.artist, album: x.album, cover: x.cover, i: x.i, term: q })))) : "");
     }).catch(() => { b.innerHTML = ""; settle(0, true); });
+  }, 700);
+  // the Archive collections' shows by anyone (the plugin's search: artists and venues; "Spoon 2003" narrows to a year)
+  if (asksArchive) archT = setTimeout(() => {
+    const b = $("#s-archive", el); if (!b) return;
+    api("/api/archive/search?q=" + encodeURIComponent(q)).then(r => {
+      if (lastQ !== q) return;
+      const mine = new Set(shows.map(x => x.id)), more = (r.shows || []).filter(x => !mine.has(x.id)).slice(0, 40);
+      settle(more.length, true);
+      b.innerHTML = more.length ? section(shows.length ? "" : "From the Internet Archive", `Live on the Archive <span class="count-inline">${more.length}</span>`, shelf(more.map(x => archCard(x)))) : "";
+    }).catch(() => settle(0, true));
   }, 700);
 }
 
