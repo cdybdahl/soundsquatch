@@ -4469,6 +4469,81 @@ def turntable_for_settings():
             "fields": [f["name"] for f in (kv_get("discogs", {}) or {}).get("fields") or [] if f["name"].strip().lower() in ("plays", "last played")]}
 
 
+# ───────────────────────── screens: a small square screen in a room, showing the nearest music ─────────────────────────
+SCREEN_ART = {}  # a cover's key → where it comes from (a cover id or a picture's address), for /api/screen/art
+
+
+def screen(rooms):
+    """What a room's screen shows: the first of its rooms (its own first, then the nearest) that's playing, or its own
+    room paused; {"on": False} when none is. Flat, for a screen that parses it in a few lines."""
+    rooms = [p for p in rooms.split(",") if lms_qobuz.PLAYER.match(p)][:8]
+    for i, pid in enumerate(rooms):
+        try:
+            st = rpc(pid, "status", "-", 1, "tags:aAlcKNdj", timeout=4)
+        except Exception:
+            continue
+        if st.get("mode") != "play" and not (i == 0 and st.get("mode") == "pause"):
+            continue
+        t = (st.get("playlist_loop") or [st.get("remoteMeta") or {}])[0]
+        title, artist, album, art = t.get("title") or t.get("remote_title") or "", t.get("artist") or "", t.get("album") or "", ""
+        if "/turntable." in (t.get("url") or "") or title == "The turntable":  # the record on the turntable, as the app shows it
+            tt = turntable_state()
+            r, song = tt.get("record") or {}, tt.get("song") or {}
+            title, artist, album, art = song.get("title") or (r.get("title") and "On the turntable") or "The turntable", r.get("artist") or song.get("artist") or "", r.get("title") or "", r.get("image") or ""
+        elif str(t.get("coverid") or "-")[0] != "-":
+            art = str(t["coverid"])
+        elif t.get("artwork_url"):
+            art = t["artwork_url"]
+        k = hashlib.sha1(art.encode()).hexdigest()[:12] if art else ""
+        if k:
+            SCREEN_ART[k] = art
+        room = settings["house"]["rooms"].get(pid, {})
+        return {"on": True, "player": pid, "room": room.get("name") or st.get("player_name") or "", "here": i == 0, "playing": st.get("mode") == "play",
+                "title": title, "artist": artist, "album": album, "art": f"/api/screen/art?k={k}" if k else "",
+                "pos": int(float(st.get("time") or 0)), "dur": int(float(t.get("duration") or 0)), "vol": int(st.get("mixer volume") or 0), "fixed": bool(room.get("fixed"))}
+    return {"on": False}
+
+
+def screen_art(k):
+    """A cover at 480 square, as a plain (baseline) JPEG: what a screen's decoder can read."""
+    from PIL import ImageOps
+    src = SCREEN_ART.get(k) or ""
+    m = re.match(r"^/cover/([0-9a-f-]{1,40})/\d+\.jpg$", src)
+    if re.match(r"^[0-9a-f-]{1,40}$", src) or m:
+        with open(cover_file(m.group(1) if m else src, 600), "rb") as f:
+            data = f.read()
+    elif src.startswith("https://"):
+        got = picture(src)
+        if not got:
+            return None
+        data = got[0]
+    elif src:
+        with urllib.request.urlopen(LMS + "/" + src.lstrip("/"), timeout=15) as r:
+            data = r.read()
+    else:
+        return None
+    im = ImageOps.fit(Image.open(io.BytesIO(data)).convert("RGB"), (480, 480), Image.LANCZOS)
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=85)
+    return out.getvalue()
+
+
+def screen_do(req):
+    """A screen's tap: play/pause, next, back, or the volume up or down a step (not in a room whose volume is set on the device)."""
+    pid, do = req.get("player") or "", req.get("do") or ""
+    if not lms_qobuz.PLAYER.match(pid):
+        return {"error": "not a player"}
+    if do == "toggle":
+        rpc(pid, "pause")
+    elif do in ("next", "prev"):
+        rpc(pid, "playlist", "index", "+1" if do == "next" else "-1")
+    elif do in ("up", "down") and not settings["house"]["rooms"].get(pid, {}).get("fixed"):
+        rpc(pid, "mixer", "volume", "+5" if do == "up" else "-5")
+    else:
+        return {"error": "not something a screen does"}
+    return {"ok": True}
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -4533,6 +4608,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.pass_to_lms("GET")
             if url.path == "/api/turntable":
                 return self.reply(turntable_state())
+            if url.path == "/api/screen":
+                return self.reply(screen(qs.get("rooms", "")))
+            if url.path == "/api/screen/art":
+                art = screen_art(qs.get("k", ""))
+                return self.reply(art, "image/jpeg", "max-age=86400") if art else self.reply(b"", "text/plain", "no-store", 404)
             if url.path == "/api/turntable/live":
                 return self.turntable_live()
             if url.path in ("/turntable.flac", "/turntable.mp3"):
@@ -4673,7 +4753,7 @@ class Handler(BaseHTTPRequestHandler):
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
-                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses,
+                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}
         if self.path in routes:
