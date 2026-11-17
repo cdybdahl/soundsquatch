@@ -36,6 +36,7 @@ Standard library only (Python 3.10 on the server).
 """
 import gzip
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -179,7 +180,7 @@ def find_lms():
 
 def reach_lms():
     """At the start: Lyrion where the settings say, else where it is found; a found address is kept in the settings. An
-    address the house set itself is kept even when Lyrion isn't answering there (it may only be restarting)."""
+    address the house set itself (in Settings, or LMS_URL) is kept even when Lyrion isn't answering there (it may only be starting)."""
     try:
         rpc("", "serverstatus", "0", "0", timeout=5)
         return
@@ -187,8 +188,8 @@ def reach_lms():
         return  # it's there (asking for a password, say): the first screen asks for what it wants
     except Exception:
         pass
-    if settings.get("found_by_hand"):
-        return
+    if settings.get("found_by_hand") or os.environ.get("LMS_URL"):
+        return  # an address the house gave (here or in compose's LMS_URL): Lyrion may only be starting, as it is after a reboot
     found = find_lms()
     if found and found != LMS:
         save_settings({"connections": {"lms_url": found}, "found": True})
@@ -392,9 +393,19 @@ def pin_hash(pin):
     return hashlib.sha256(("soundsquatch|" + str(pin)).encode()).hexdigest()
 
 
+PIN_MISSES = deque(maxlen=5)  # when the last wrong PINs were given: five in a minute and the next waits out the minute
+
+
 def pin_ok(given):
     """No PIN set, or the one given (the app sends it with each request that changes the house's settings or files)."""
-    return not settings["house"]["pin"] or pin_hash(given or "") == settings["house"]["pin"]
+    if not settings["house"]["pin"]:
+        return True
+    if len(PIN_MISSES) == PIN_MISSES.maxlen and time.time() - PIN_MISSES[0] < 60:
+        return False  # guessing: none is tried until the minute is out
+    if hmac.compare_digest(pin_hash(given or ""), settings["house"]["pin"]):
+        return True
+    PIN_MISSES.append(time.time())
+    return False
 
 
 def save_settings(req):
@@ -2764,7 +2775,9 @@ def export():
                "genres": [list(r) for r in c.execute("select k, genres, source, fetched from album_genres")],
                "tag_edits": [list(r) for r in c.execute("select path, field, original, at from tag_edits")],
                "kv": [list(r) for r in c.execute("select k, v from kv")]}
-    out["settings"] = {g: settings[g] for g in DEFAULTS}
+    out["settings"] = json.loads(json.dumps({g: settings[g] for g in DEFAULTS}))
+    out["settings"]["connections"]["lms_password"] = ""  # a backup is a file anyone may download: no password, no PIN in it
+    out["settings"]["house"]["pin"] = ""
     return out
 
 
@@ -3621,7 +3634,7 @@ STATIC = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=ut
 # when a side ends, it suggests what to play next: the band's next record, and an artist that followed.
 TT = {"state": "idle", "spin": None, "song": None, "side_over_at": 0, "lid": None, "lid_at": 0, "shazam_at": 0, "runs": {}, "error": ""}
 tt_lock = threading.Lock()
-SHAZAM_MAX, SHAZAM_WINDOW = 3, 1800  # at most three asks of Shazam in half an hour (it throttles a house that asks more)
+SHAZAM_MAX, SHAZAM_WINDOW = 6, 1800  # at most six asks of Shazam in half an hour (two must agree; it throttled the house at hundreds an hour)
 TT_INDEX = None
 EAR = None
 
@@ -4648,6 +4661,9 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return self.reply({"error": "too large: 25 MB at most"}, status=413)
         body = self.rfile.read(size)
+        origin = self.headers.get("Origin")
+        if origin and urllib.parse.urlparse(origin).netloc not in (self.headers.get("Host"), self.headers.get("X-Forwarded-Host")):
+            return self.reply({"error": "another site"}, status=403)  # a page elsewhere on the web posting to the house's Soundsquatch
         if self.path == "/jsonrpc.js":
             return self.pass_to_lms("POST", body)
         guarded = {"/api/settings", "/api/import", "/api/album-genres", "/api/track-title", "/api/art", "/api/remove", "/api/restore", "/api/artist-photo",

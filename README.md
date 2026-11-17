@@ -217,8 +217,10 @@ it: pause the room's streaming when the lid opens; tell the phones what to play 
 Anyone on your network can open Soundsquatch. A PIN (**Settings → PIN**) is asked for, once on each device, before the
 things that change the house for everyone: settings, music files, the never-play list, stations and artists' tags.
 Playing music, hearts and playlists never ask. It keeps a housemate or a guest from changing things by accident; it is
-not security. Soundsquatch passes Lyrion's own controls through, and Lyrion itself is open to the network unless you
-give it a password.
+not security. Soundsquatch passes Lyrion's own controls through, logged in when Lyrion has a password, so anyone who
+can open Soundsquatch can work Lyrion too. Keep it inside the house: to reach it from outside, put a login in front of it
+(a VPN, or a reverse proxy that asks for one), never a bare port forward. Backups and exports leave out Lyrion's
+password and the PIN.
 
 ### What leaves the house
 
@@ -226,7 +228,8 @@ Artist names and album titles, sent to MusicBrainz, Wikidata and Wikipedia, LRCL
 Archive, Apple and Deezer (for covers you choose), and to Qobuz and Discogs through Lyrion's own plugins. Nothing about who listens
 or when: the listening log stays in `./data`. Once a day it asks GitHub for the newest release number, which sends
 nothing but the question. If you connect Discogs (Settings, Your records), it reads your collection there once a day
-with your token, and, with a turntable listener, writes each record's plays to its Plays and Last played fields. The
+with your token, and, with a turntable listener, writes each record's plays to its Plays and Last played fields. A
+record you play that isn't in your collection yet is looked up on Discogs and, once it has played, added to the collection. The
 turntable's sound stays in the house, except a ten-second clip sent to Shazam when your own files can't name a song.
 
 ### Telling us
