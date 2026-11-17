@@ -240,7 +240,7 @@ turntable's sound stays in the house, except a ten-second clip sent to Shazam wh
 
 ### Telling us
 
-Post problems and ideas in the Soundsquatch thread on the Lyrion forums. Say what you did and what you expected, and
+Post problems and ideas in the [Soundsquatch thread](https://forums.lyrion.org/forum/user-forums/3rd-party-software/1842759-announce-soundsquatch-beta-a-magazine-style-interface-for-all-your-music) on the Lyrion forums. Say what you did and what you expected, and
 paste the report from **Settings → Diagnostics** (versions, what was found, the last errors; no names, addresses or
 listening). `docker logs soundsquatch` has the rest.
 
