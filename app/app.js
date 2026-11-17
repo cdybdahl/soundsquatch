@@ -840,7 +840,17 @@ VIEWS.front = function (el) {
       const text = x.text ? standfirst(x.text, big ? 300 : 150) : x.kind === "night" && x.others ? `One of ${x.others + 1} shows in your Archive collections recorded on this date.`
         : x.rec ? shelfText(x) : "";
       return `<article class="fp-story ${big ? "lead" : ""}"><a href="${k[4]}">${k[5] ? `<figure${x.album_id || x.rec ? ` class="sq"` : ""}><img src="${esc(k[5])}" alt=""></figure>` : ""}</a>
-        <div class="mag-dept">${k[0]}</div><div class="fp-when">${esc(k[1])}</div><h2><a href="${k[4]}">${esc(k[2])}</a></h2><div class="fp-by">${esc(k[3])}</div>${text ? `<p>${esc(text)}</p>` : ""}${x.album_id ? `<button class="fp-spin" data-act="playAlbum" data-v="${x.album_id}">${icon("play")} Spin it</button>` : ""}</article>`;
+        <div class="mag-dept">${k[0]}</div><div class="fp-when">${esc(k[1])}</div><h2><a href="${k[4]}">${esc(k[2])}</a></h2><div class="fp-by">${esc(k[3])}</div>${text ? `<p>${esc(text)}</p>` : ""}${x.album_id ? `<button class="fp-spin" data-act="playAlbum" data-v="${x.album_id}">${icon("play")} Spin it</button>` : ""}${big ? leadShelf(x, text) : ""}</article>`;
+    };
+    // under the lead story, the artist's records on the shelves (the band's, for a member): the story goes on from the
+    // words to the music, and the column doesn't stop short beside a long one; fewer when the words are long
+    const leadShelf = (x, text) => {
+      const who = x.kind === "born" || x.kind === "died" ? (x.member ? x.artist : x.name) : x.kind === "pickArtist" ? x.name : x.artist;
+      const theirs = who ? albumsBy(who).filter(a => a[0] !== x.album_id && a[4]) : [];
+      const n = Math.min(theirs.length, (text || "").length > 220 ? 3 : 6);
+      if (!n) return "";
+      return `<div class="fp-theirs"><div class="mag-dept">${x.member ? `With ${esc(x.artist)}, on your shelves` : x.kind === "day" || x.kind === "record" || x.kind === "pick" ? `More by ${esc(who)}` : "On your shelves"}</div>
+        <div class="grid">${theirs.slice(-n).reverse().map(a => albumCard(a)).join("")}</div></div>`;
     };
     const picked = A.heroAlbum && A.byId.get(A.heroAlbum);
     const lead = picked ? { kind: "pick", album_id: picked[0], title: picked[1], artist: picked[2], art: picked[4], year: picked[3], text: "" }

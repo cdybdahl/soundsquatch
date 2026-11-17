@@ -1039,6 +1039,8 @@ html.mag .mast-line span { letter-spacing: .24em; }
 .fp-by { font: 700 11px var(--sans); letter-spacing: .2em; text-transform: uppercase; color: rgba(236, 228, 214, .6); }
 .fp-story p { font: 17px/1.55 var(--serif); color: rgba(236, 228, 214, .85); margin: 10px 0 0; }
 .fp-story.lead p { font-size: 20px; }
+.fp-theirs { margin-top: 28px; }
+.fp-theirs .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0; margin-top: 10px; }
 .fp-index { border-top: 3px solid #ece4d6; padding-top: 12px; }
 .fp-index ol { margin: 10px 0 0; padding: 0 0 0 20px; font: 15px/1.5 var(--serif); color: rgba(236, 228, 214, .85); }
 .fp-index li { padding: 5px 0; border-bottom: 1px solid rgba(236, 228, 214, .12); }
