@@ -33,7 +33,7 @@ through, and keeps a profile of every artist on the shelves.
 
 ## The beta
 
-Soundsquatch 0.10 is a soft beta: it runs every day in one house (about 1,500 albums), and it's now being tried in a
+Soundsquatch is in beta: it runs every day in one house (about 1,500 albums), and it's now being tried in a
 few more. Expect rough edges, and please say what you find.
 
 ### What you need
