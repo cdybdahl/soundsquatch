@@ -4415,6 +4415,8 @@ def turntable_new(req):
     with tt_lock:
         tt_end_spin()
         TT["runs"].clear()
+        TT.update(state="idle", done=None)  # not "record over": nothing to suggest, nothing to announce
+        tt_save()
     return {"ok": True}
 
 
