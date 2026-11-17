@@ -3824,6 +3824,13 @@ def tt_follow(spin, at):
     tl = spin["timeline"]
     if TT["state"] in ("side over", "record over"):
         tracks = [t for t in discogs_release(spin["id"]).get("tracks") or [] if t["type"] == "track"]
+        on_side = [t for t in tracks if t["pos"].upper().startswith(tl["side"])]
+        if on_side and (TT["song"] or {}).get("pos") != on_side[-1]["pos"]:
+            # quiet before the side's last song: the needle lifted and set down again, not a flip. Which song it is
+            # now isn't known: the clock lets go and the house is asked (the next in order as the guess)
+            spin.pop("timeline", None)
+            tt_save()
+            return False
         sides = list(dict.fromkeys((re.match(r"^([A-Za-z]+)", t["pos"]) or re.match("", "")).group(0).upper() for t in tracks))
         nxt = sides[sides.index(tl["side"]) + 1] if tl["side"] in sides and sides.index(tl["side"]) + 1 < len(sides) else None
         if not nxt:  # the last side played: what plays now is another record
@@ -4125,6 +4132,9 @@ def tt_side(path, s0, s1, gaps):
             title = m["title"] if m else time.strftime("Unnamed %H.%M")
             pos = (m or {}).get("pos") or ""
             folder = os.path.join(capture_dir(), safe(f"{artist} - {album}"))
+            have = [f for f in os.listdir(folder) if f.endswith(".flac")] if os.path.isdir(folder) else []
+            if rec and (any(f.startswith(pos + " ") for f in have) if pos else have):
+                continue  # this record's song is captured already: the house keeps one take
             os.makedirs(folder, exist_ok=True)
             dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title}") + ".flac")
             k = 2
@@ -4301,6 +4311,12 @@ def tt_save():
 
 def start_turntable():
     global EAR
+    import glob
+    for f in glob.glob(os.path.join(DATA, "turntable", "songs", ".side-*.flac")):
+        try:  # a side cut off by a restart or a crash: never whole, never filed, so not kept
+            os.remove(f)
+        except OSError:
+            pass
     kept = kv_get("tt_spin") or {}
     if kept.get("spin") and time.time() - kept.get("at", 0) < 1200:  # back as it was, if it was playing in the last twenty minutes
         TT.update(spin=kept["spin"], song=kept.get("song"), state=kept.get("state") or "playing")
@@ -4344,7 +4360,7 @@ def tt_unnamed():
     """The stretch of sound playing now when nothing has named it for 25 s: (run, the likely song by the tracklist)."""
     if not EAR or EAR.run_start is None or EAR.run in TT["runs"] or EAR.clock - EAR.run_start < 25 or tt_lid() is False:
         return None
-    if TT["spin"] and (TT["spin"].get("chosen") or TT["spin"].get("timeline")) and TT["spin"]["songs"]:
+    if TT["spin"] and TT["spin"].get("timeline") and TT["spin"]["songs"]:
         return None  # the record is known and followed by the clock; a quiet bar on it isn't a new question
     return EAR.run, tt_next_in_order(TT["spin"])
 
