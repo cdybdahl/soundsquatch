@@ -3826,7 +3826,9 @@ def tt_follow(spin, at):
         tracks = [t for t in discogs_release(spin["id"]).get("tracks") or [] if t["type"] == "track"]
         sides = list(dict.fromkeys((re.match(r"^([A-Za-z]+)", t["pos"]) or re.match("", "")).group(0).upper() for t in tracks))
         nxt = sides[sides.index(tl["side"]) + 1] if tl["side"] in sides and sides.index(tl["side"]) + 1 < len(sides) else None
-        if not nxt:
+        if not nxt:  # the last side played: what plays now is another record
+            with tt_lock:
+                tt_end_spin()
             return False
         first = next(t for t in tracks if t["pos"].upper().startswith(nxt))
         start = EAR.run_start if EAR.run_start is not None else at
@@ -4392,6 +4394,14 @@ def turntable_name(req):
     return {"ok": True}
 
 
+def turntable_new(req):
+    """A new record on: the spin closed (kept as far as it got), the clock let go, the next sound named afresh."""
+    with tt_lock:
+        tt_end_spin()
+        TT["runs"].clear()
+    return {"ok": True}
+
+
 def turntable_play(req):
     """The turntable, live, in a room (any Lyrion player), as a stream from here."""
     player = req.get("player") or ""
@@ -4616,7 +4626,7 @@ class Handler(BaseHTTPRequestHandler):
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
-                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses,
+                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}
         if self.path in routes:

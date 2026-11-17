@@ -1170,7 +1170,7 @@ function ttPanel() {
       <p>${song ? `${song.pos ? esc(song.pos) + " &middot; " : ""}&ldquo;${esc(song.title)}&rdquo;` : ""}${r.plays ? ` <span class="dim">played ${r.plays} ${r.plays === 1 ? "time" : "times"}</span>` : ""}</p>
       </div>
     <div class="tt-more"><canvas class="tt-vis" width="600" height="60"></canvas>${ttAsk(t)}${ttTracklist(t, true)}
-      <div class="acts"><button class="btn" data-act="openNp">Now playing</button><button class="btn ghost" data-act="ttRooms">${icon("speaker")} Hear it in a room</button></div>
+      <div class="acts"><button class="btn" data-act="openNp">Now playing</button><button class="btn ghost" data-act="ttRooms">${icon("speaker")} Hear it in a room</button><button class="btn ghost" data-act="ttNew">${icon("disc")} New record</button></div>
       ${ttSuggest(t)}</div></section>`;
 }
 // a record pulled from the shelf at random (from those the filters show), larger than the rest; Another pulls again
@@ -2740,7 +2740,7 @@ function drawTtNp() {
         <div class="byline">${r.artist ? `<a class="by" href="${artistHref(r.artist)}" data-close="1">${esc(r.artist)}</a>` : ""}</div>
         ${r.title ? `<a class="alb" href="${r.href || "#/vinyl"}" data-close="1">${esc(r.title)}${r.year ? " &middot; " + r.year : ""}</a>` : ""}
         <div class="np-q tt-q">Vinyl${song && song.pos ? " &middot; side " + esc(song.side) + ", " + esc(song.pos) : ""}${r.plays ? ` &middot; played ${r.plays} ${r.plays === 1 ? "time" : "times"}` : ""}</div>
-        <div class="np-extra"><button class="pill" data-act="ttRooms">${icon("speaker")} Hear it in a room</button></div></div>
+        <div class="np-extra"><button class="pill" data-act="ttRooms">${icon("speaker")} Hear it in a room</button><button class="pill" data-act="ttNew">${icon("disc")} New record</button></div></div>
         ${ttAsk(t)}
         <div class="np-next">${ttTracklist(t) || (t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : "")}${ttSuggest(t)}</div></div></div>`;
   const img = $(".np-art img", np); if (img) tint(img, np);
@@ -2778,7 +2778,7 @@ function ttSuggest(t) {
 // rest is asked in a sheet as wide as the phone: the record's songs as rows, or another record found by name
 function ttAsk(t) {
   const r0 = t.record || {};
-  if (!t.unnamed) return t.song ? `<div class="tt-wrong">${r0.new ? `<span>Not in your Discogs collection yet; added once it has played.</span>` : ""}<button class="pill" data-act="ttAskSheet" data-v="${r0.id || ""}">Not this song?</button></div>` : "";
+  if (!t.unnamed) return t.song ? `<div class="tt-wrong">${r0.new ? `<span>Not in your Discogs collection yet; added once it has played.</span>` : ""}<button class="pill" data-act="ttAskSheet" data-v="${r0.id || ""}">Not this song?</button><button class="pill" data-act="ttNew">New record</button></div>` : "";
   const g = t.unnamed.guess, r = t.record || {};
   return `<div class="tt-ask"><div class="kicker">What's this song?</div><p>Nothing could name it${g ? `. Is it ${esc(g.pos)}, &ldquo;${esc(g.title)}&rdquo;?` : r.title ? ` &mdash; which song from ${esc(r.title)} is it?` : ` &mdash; which record is on?`}</p>
     <div class="acts">${g ? `<button class="btn" data-act="ttName" data-v="${r.id}|${esc(g.pos)}">Yes, ${esc(g.title)}</button><button class="btn ghost" data-act="ttAskSheet" data-v="${r.id}">Something else</button>`
@@ -2827,6 +2827,8 @@ Object.assign(ACT, {
         : `<button class="btn wide" data-act="ttName" data-v="${v}|">It's this record</button>`;
     }).catch(() => { const box = $("#sheet .tt-songs"); if (box) box.innerHTML = `<button class="btn wide" data-act="ttName" data-v="${v}|">It's this record</button>`; });
   },
+  // a new record on: the last one closed, then which it is
+  ttNew: () => api("/api/turntable/new", {}).then(() => { A.curKey = "\u0000"; ttPoll(); ACT.ttPickRecord(); }),
   ttPickRecord: () => {
     openSheet(`<div class="tt-sheet"><div class="kicker">${icon("disc")} Which record is on?</div><input class="tt-find" type="search" placeholder="The record or the artist" autocomplete="off"><div class="tt-recs">${ttRecordList("")}</div></div>`);
     const i = $("#sheet .tt-find"); i.addEventListener("input", () => { $("#sheet .tt-recs").innerHTML = ttRecordList(i.value); });
