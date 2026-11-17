@@ -3822,7 +3822,7 @@ def tt_follow(spin, at):
     """A clip while the house's own naming holds: the song by the clock, no Shazam. A side over and sound again is the
     next side, from its first song."""
     tl = spin["timeline"]
-    if TT["state"] in ("side over", "record over"):
+    if TT["state"] in ("side over", "record over") or EAR.lifted_at > tl.get("since", 0):  # quiet, or the needle lifted
         tracks = [t for t in discogs_release(spin["id"]).get("tracks") or [] if t["type"] == "track"]
         on_side = [t for t in tracks if t["pos"].upper().startswith(tl["side"])]
         if on_side and (TT["song"] or {}).get("pos") != on_side[-1]["pos"]:
@@ -3839,7 +3839,7 @@ def tt_follow(spin, at):
             return False
         first = next(t for t in tracks if t["pos"].upper().startswith(nxt))
         start = EAR.run_start if EAR.run_start is not None else at
-        spin["timeline"] = tl = {"side": nxt, "pos": first["pos"], "wall": time.time() - (EAR.clock - start)}
+        spin["timeline"] = tl = {"side": nxt, "pos": first["pos"], "wall": time.time() - (EAR.clock - start), "since": time.time()}
     now = [x for x in tt_schedule(spin) if x[1] <= at]
     if not now:
         return False
@@ -3906,7 +3906,7 @@ def tt_clip(x8, wav, run_seconds, run, at=0):
     spin = TT["spin"]
     m = re.match(r"^([A-Za-z]+)", song.get("pos") or "")
     if spin and spin.get("record") and m and song.get("start") and EAR and tt_lengths(spin["record"]):
-        spin["timeline"] = {"side": m.group(1).upper(), "pos": song["pos"], "wall": time.time() - (EAR.clock - song["start"])}  # the rest by the clock
+        spin["timeline"] = {"side": m.group(1).upper(), "pos": song["pos"], "wall": time.time() - (EAR.clock - song["start"]), "since": time.time()}  # the rest by the clock
         tt_save()
     return True
     return True
@@ -4122,8 +4122,18 @@ def tt_side(path, s0, s1, gaps):
         if songs and songs[0][0] - s0 > 30:  # a stretch nothing named, long enough to be a song
             songs.insert(0, (s0, None))
         safe = lambda t: re.sub(r'[\\/:*?"<>|]+', "-", t).strip(" .")[:120] or "-"
+        lengths = {}
         for n, (start, m) in enumerate(songs):
             end = songs[n + 1][0] if n + 1 < len(songs) else s1
+            rec0 = (m or {}).get("rec")
+            if rec0 and m.get("pos"):  # never past the song's own length: a locked run-out groove plays on until the arm lifts
+                if rec0[0] not in lengths:
+                    try:
+                        lengths[rec0[0]] = tt_lengths(next((r for r in physical_now()[1] if r[0] == rec0[0]), None) or [rec0[0], rec0[1], rec0[2]])
+                    except Exception:
+                        lengths[rec0[0]] = {}
+                if lengths[rec0[0]].get(m["pos"]):
+                    end = min(end, start + lengths[rec0[0]][m["pos"]] + 6)
             if end - start < 20:
                 continue
             rec = (m or {}).get("rec") or (songs[-1][1] or {}).get("rec")
@@ -4395,7 +4405,7 @@ def turntable_name(req):
             L = tt_lengths(rec)
             if L.get(t["pos"]):
                 began = max(began, EAR.clock - L[t["pos"]] + 5)
-            TT["spin"]["timeline"] = {"side": m.group(1).upper(), "pos": t["pos"], "wall": time.time() - (EAR.clock - began)}
+            TT["spin"]["timeline"] = {"side": m.group(1).upper(), "pos": t["pos"], "wall": time.time() - (EAR.clock - began), "since": time.time()}
             side_from = EAR.side[2] if EAR.side else began
             for x, b in tt_schedule(TT["spin"]):  # tt_heard takes the lock itself
                 if x["pos"] == t["pos"]:

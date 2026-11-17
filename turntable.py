@@ -14,6 +14,7 @@ import io
 import os
 import subprocess
 import threading
+import time
 import wave
 
 import numpy as np
@@ -196,6 +197,7 @@ def shazam(data):
 # each song written to a file of its own.
 SR, CH = 44100, 2
 BLOCK = 1470  # 1/30 s: one visualiser frame
+LIFTED_DB = -75  # far below any groove's own noise (about -55): the needle is off the record
 QUIET_DB = -48  # below this a block is the run-out groove, the gap between songs, or nothing at all
 GAP = 1.2  # this long below it is a gap between songs
 SIDE_GAP = 20  # this long, the side is over (the run-out groove, the arm lifted)
@@ -227,7 +229,7 @@ class Ear:
         self.streams = []  # the live stream's listeners: each a list of raw blocks the HTTP side drains
         self.connected = False
         self.heard_at = 0.0
-        self.smooth, self.n_blocks, self.quiet_db = None, 0, QUIET_DB
+        self.smooth, self.n_blocks, self.quiet_db, self.lifted_for, self.lifted_at, self.heard_sound = None, 0, QUIET_DB, 0.0, 0.0, 0.0
         self.levels = collections.deque(maxlen=9000)  # the smoothed level every tenth of a second, a quarter hour of it
         self.run_start = None  # when the current stretch of sound began (after a gap), by the stream's clock
         self.quiet_for = 0.0
@@ -290,6 +292,10 @@ class Ear:
         if self.n_blocks % 300 == 0 and len(self.levels) > 600:
             self.quiet_db = float(min(QUIET_DB, max(-62.0, np.percentile(self.levels, 3) + 5)))
         db = self.smooth
+        self.lifted_for = self.lifted_for + len(x) / SR if self.level < LIFTED_DB else 0.0
+        if self.lifted_for >= 3 and (self.side or self.lifted_at < self.heard_sound):  # the needle up (no groove noise at all): the side is over, however short the pause
+            self.lifted_at = time.time()
+            self.end_side()
         if db < self.quiet_db:
             self.quiet_for += len(x) / SR
             if self.quiet_for >= GAP and self.run_start is not None:
@@ -299,6 +305,7 @@ class Ear:
         else:
             if self.quiet_for >= 0.4 and self.side:
                 self.gaps.append((self.clock - self.quiet_for, self.clock))
+            self.heard_sound = time.time()
             if self.run_start is None:
                 self.run_start, self.run = self.clock, self.run + 1
             if not self.side:
