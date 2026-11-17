@@ -1,6 +1,6 @@
 # Soundsquatch
 
-A music app for the iPad (and phone), magazine-like and discovery-first, with
+A music app in the browser, for a tablet, a phone, a computer or a screen on the wall: magazine-like and discovery-first, with
 [Lyrion Music Server](https://lyrion.org) as its player and library. It runs as one
 small Python service beside Lyrion and serves the app, passes Lyrion's JSON-RPC
 through, and keeps a profile of every artist on the shelves.
