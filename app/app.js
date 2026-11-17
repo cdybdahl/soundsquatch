@@ -312,12 +312,16 @@ function hearted(text, heart, open, close) {
 const markAt = t => { const el = t.closest(".mk"), i = el.dataset.mark.indexOf("|"); return [el.dataset.mark.slice(0, i), el.dataset.mark.slice(i + 1)]; };
 
 /* ───────────────────────── pieces ───────────────────────── */
+// a page still waiting on what it needs: the picture disc turning at 33⅓ in the middle of it
+const gathering = cls => `<div class="gather ${cls || ""}"><img src="disc.png" alt=""><p>Squatch is gathering the details&hellip;</p></div>`;
+// the disc as a hype sticker on a cover's corner: the album has a take captured from the turntable
+const capSticker = a => a[9] === "vinyl" || (a[10] || []).some(v => v[5] === "vinyl") ? `<img class="cap-sticker" src="disc-128.png" alt="Captured from vinyl" title="Captured from your vinyl">` : "";
 function albumCard(a, cls) {
   if (!a) return "";
   if (a.archive) return archCard(a.archive, cls);
   if (a.vinyl) return vinylCard(a.vinyl, cls);
   const art = a[4] ? `<img loading="lazy" decoding="async" src="${cover(a[4], 300)}" alt="">` : `<div class="noart">${esc((a[1] || "?").slice(0, 1))}</div>`;
-  return `<a class="card ${cls || ""}" href="${albumHref(a[0])}"><div class="art">${art}<button class="chip" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}</button></div>
+  return `<a class="card ${cls || ""}" href="${albumHref(a[0])}"><div class="art">${art}${capSticker(a)}<button class="chip" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}</button></div>
     <div class="t">${esc(a[1])}</div><div class="s">${esc(a[2])}${a[3] ? " &middot; " + a[3] : ""}</div></a>`;
 }
 // a big artist photograph cropped around the faces in it (found by the server, once per picture), the faces about 40%
@@ -700,13 +704,14 @@ VIEWS.artist = function (el, name) {
     ap.then(shows => { ap.done = shows; const box = $("#ar-arch", el); if (box && el.isConnected) box.innerHTML = archShelf(shows); });
     const img = $(".hero-img", el); if (img) tint(img, el);
   };
-  // drawn at once from what is already known (the shelves, a profile fetched before), then filled in as the profile comes
+  // drawn at once from a profile fetched before; one never fetched turns the disc until it has something, then fills in as it comes
   const known = A.profiles.get(norm(name)), info = A.artistInfo.get(norm(name));
-  draw(known && known.name ? known : { name: name, partial: true, thumb: info && info[3] });
+  if (known && known.name) draw(known);
+  else el.innerHTML = `${pageBar(esc(name), ["Artist"], "", true)}${gathering()}`;
   let tries = 0;
   const load = () => profile(name).then(p => {
     if (!el.isConnected) return;
-    draw(p);
+    if (drawn || !p.partial || p.qobuz || p.wiki || p.hero || tries > 8) draw(p); // a profile with nothing in it yet keeps the disc turning, a while
     if (p.partial && tries++ < 40) setTimeout(load, tries < 10 ? 1200 : 4000);
   }).catch(() => { if (!drawn) el.innerHTML = `${pageBar(esc(name), ["Artist"], "", true)}<div class="empty-state"><h1>${esc(name)}</h1><p>Couldn't reach the artist desk.</p></div>`; });
   load();
@@ -732,7 +737,7 @@ function magRun(section) {
   return `<header class="mag-run"><button class="backbtn" data-act="back" aria-label="Back">${icon("back")}</button><span>Soundsquatch</span><span>${section}</span><span>No. ${issue} &middot; ${esc(when)}</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></header>`;
 }
 VIEWS.mag = function (el, name) {
-  el.innerHTML = `<div class="mag"><p class="dim">Setting the type&hellip;</p></div>`;
+  el.innerHTML = `<div class="mag">${gathering()}</div>`;
   let tries = 0; // a name never asked of is looked up as it opens: drawn again as its story, pictures and records arrive
   const load = () => profile(name).then(p => {
     if (!el.isConnected) return;
@@ -948,7 +953,7 @@ VIEWS.record = function (el, id) {
       <p class="rec-stats dim"></p></div></div>
     <nav class="mag-tabs rec-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"], ["pressing", "The pressing"], ["videos", "Videos"], ["plays", "Plays"]].map(t =>
       `<button class="${t[0] === tab ? "on" : ""}" data-act="recTab" data-v="${t[0]}">${t[1]}</button>`).join("")}</nav>
-    ${["tracks", "story", "credits", "pressing", "videos", "plays"].map(k => pane(k, `<p class="dim">Asking Discogs&hellip;</p>`)).join("")}
+    ${["tracks", "story", "credits", "pressing", "videos", "plays"].map(k => pane(k, gathering("small"))).join("")}
     ${more.length || digital.length ? `<section class="sec rec-shelf"><div class="kicker">Also on the shelves</div><h2>More by ${esc(r[2])}</h2>${shelf(more.map(x => vinylCard(x)).concat(digital.map(a => albumCard(a))))}</section>` : ""}`;
   const img = $(".record-art img", el); if (img) tint(img, el);
   api("/api/record?id=" + r[0]).then(x => {
@@ -984,7 +989,7 @@ MAG.album = function (el, id) {
   // one row of buttons (Spin it first) and the house's marks
   el.innerHTML = `<article class="mag mag-al">${magRun("The Records")}
     <div class="al-open">
-      <figure class="mag-cover"><div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div></figure>
+      <figure class="mag-cover"><div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title ? capSticker(a) : ""}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div></figure>
       <div class="al-head"><div class="mag-dept mag-kind">The record</div>
         <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
@@ -1050,7 +1055,7 @@ VIEWS.album = function (el, id) {
   const a = A.byId.get(+id) || [+id, "", "", 0, "", 0, "", 0, []];
   const title = a[1], artist = a[2], more = albumsBy(artist).filter(x => x[0] !== a[0]);
   el.innerHTML = `${pageBar(esc(title || "Album"), ["Album", esc(artist)], `<button class="pill" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}<span class="pl">Spin it</span></button>`, true)}<div class="album-bg">${a[4] ? `<img src="${cover(a[4], 150)}" alt="">` : ""}</div><div class="album">
-    <div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div>
+    <div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title ? capSticker(a) : ""}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div>
     <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, versionsOf(a).length)}</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
       <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
       ${title ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}${(a[8] || []).length ? `<button class="g-edit" data-act="genreEdit" data-v="${a[0]}" aria-label="Edit genres">${icon("edit")}</button>` : `<button class="g-edit named" data-act="genreEdit" data-v="${a[0]}">${icon("edit")} Add genres</button>`}</div>` : ""}
@@ -1538,7 +1543,7 @@ function creditsHtml(c) {
 }
 VIEWS.person = function (el, arg) {
   const cut = arg.indexOf("/"), mbid = arg.slice(0, cut), name = arg.slice(cut + 1);
-  el.innerHTML = `${pageBar(esc(name), ["Credits", "&nbsp;"], "", true)}<div class="hist"><div class="trk ph"></div><div class="trk ph"></div></div>`;
+  el.innerHTML = `${pageBar(esc(name), ["Credits", "&nbsp;"], "", true)}<div class="hist">${gathering()}</div>`;
   const ask = local => api(`/api/person?mbid=${encodeURIComponent(mbid)}&name=${encodeURIComponent(name)}${local ? "&local=1" : ""}`);
   // the shelves' part at once from the house's own credits, then the rest from MusicBrainz
   ask(true).then(p => { draw(p); if (p.pending) ask(false).then(draw).catch(() => {}); }).catch(() => { $(".hist", el).innerHTML = `<p class="dim center">MusicBrainz isn't answering.</p>`; });

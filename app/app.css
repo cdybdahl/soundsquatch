@@ -1502,3 +1502,19 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .set-field.conn select { display: none; }
 .set-field.conn.open select { display: block; grid-column: 2; margin-top: 8px; }
 @media (max-width: 760px) { .set-field.conn.open select { grid-column: 1; } }
+
+/* Squatch at work: the picture disc turning in the middle of a page that's still gathering what it shows */
+.gather { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; min-height: 60vh; padding: 40px var(--gut); text-align: center; color: var(--dim); font: italic 19px/1.35 var(--serif); }
+.gather img { width: 168px; height: 168px; border-radius: 50%; box-shadow: 0 16px 44px rgba(0, 0, 0, .55); -webkit-animation: spin33 1.8s linear infinite; animation: spin33 1.8s linear infinite; }
+.gather p { margin: 0; }
+.gather.small { min-height: 0; padding: 48px 0; font-size: 16px; gap: 14px; }
+.gather.small img { width: 96px; height: 96px; }
+@-webkit-keyframes spin33 { to { -webkit-transform: rotate(360deg); transform: rotate(360deg); } }
+@keyframes spin33 { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gather img { -webkit-animation-duration: 8s; animation-duration: 8s; } }
+
+/* the hype sticker: a capture from the turntable is on the shelves for this album */
+.card .art img.cap-sticker, .album-art img.cap-sticker { position: absolute; inset: auto; left: 6px; top: 6px; width: 30%; height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 50%;
+  transform: rotate(-14deg); box-shadow: 0 3px 10px rgba(0, 0, 0, .6); pointer-events: none; z-index: 1; }
+.album-art img.cap-sticker { left: 14px; top: 14px; width: 21%; }
+.card:active .art img.cap-sticker { transform: rotate(-14deg); }
