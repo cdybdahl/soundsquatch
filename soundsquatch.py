@@ -4471,18 +4471,24 @@ def turntable_for_settings():
 
 # ───────────────────────── screens: a small square screen in a room, showing the nearest music ─────────────────────────
 SCREEN_ART = {}  # a cover's key → where it comes from (a cover id or a picture's address), for /api/screen/art
+PAUSED_SINCE = {}  # a room → when a screen first saw it paused
+SCREEN_PAUSE_HOLD = 180  # how long a paused room stays on a screen before the nearest one still playing takes over
 
 
 def screen(rooms):
-    """What a room's screen shows: the first of its rooms (its own first, then the nearest) that's playing, or its own
-    room paused; {"on": False} when none is. Flat, for a screen that parses it in a few lines."""
+    """What a room's screen shows: the first of its rooms (its own first, then the nearest) that's playing, or paused
+    for less than SCREEN_PAUSE_HOLD; {"on": False} when none is. Flat, for a screen that parses it in a few lines."""
     rooms = [p for p in rooms.split(",") if lms_qobuz.PLAYER.match(p)][:8]
     for i, pid in enumerate(rooms):
         try:
             st = rpc(pid, "status", "-", 1, "tags:aAlcKNdj", timeout=4)
         except Exception:
             continue
-        if st.get("mode") != "play" and not (i == 0 and st.get("mode") == "pause"):
+        if st.get("mode") == "pause":
+            paused = time.time() - PAUSED_SINCE.setdefault(pid, time.time())
+        else:
+            PAUSED_SINCE.pop(pid, None)
+        if st.get("mode") != "play" and not (st.get("mode") == "pause" and paused < SCREEN_PAUSE_HOLD):
             continue
         t = (st.get("playlist_loop") or [st.get("remoteMeta") or {}])[0]
         title, artist, album, art = t.get("title") or t.get("remote_title") or "", t.get("artist") or "", t.get("album") or "", ""
