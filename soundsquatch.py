@@ -2235,7 +2235,7 @@ def conn_beyond(pick, artists):
     """Where a connection leads off the shelves: two records the person worked on that the house doesn't have, by the
     artists they worked with most (a long collaboration says more than a one-off), one an artist. Their MusicBrainz
     credits are asked for in the background the first time; until then, nothing."""
-    if not pick.get("mbid"):
+    if not pick.get("mbid") or not artists:  # the shelves not loaded yet (a restart): what they hold can't be told apart
         return []
     p = person(pick["mbid"], pick["name"], local=True)
     if p.get("pending"):
@@ -2244,10 +2244,15 @@ def conn_beyond(pick, artists):
             threading.Thread(target=lambda: person(pick["mbid"], pick["name"]), name="connections", daemon=True).start()
         return []
     work = [w for w in p.get("work") or [] if not w["owned"] and w.get("artist") and key(w["artist"]) not in artists and key(w["artist"]) not in NOT_ARTISTS and key(w["artist"]) not in [key(pick["name"])] + key(pick["name"]).split()  # theirs as "Eno"
-            and not re.search(r"\b(live|demo|session|bootleg|single|remix|ep|tribute)\b", w["title"], re.I)]
+            and w.get("type") not in ("Single", "EP", "Broadcast") and not re.search(r"\b(live|demo|session|bootleg|single|remix|ep|tribute)\b", w["title"], re.I)]
+    for w in work:
+        w["roles"] = [r for r in w["roles"] if not NOT_MUSIC.search(r)]
+    work = [w for w in work if w["roles"]]
+    # their kind of work first: a producer's records produced, a player's played on
+    fits = lambda w: any(bool(STUDIO.search(r)) == (pick["kind"] == "producer") and not re.search(r"additional|assistant", r, re.I) for r in w["roles"])
     often = Counter(key(w["artist"]) for w in work)
     out, had = [], set()
-    for w in sorted(work, key=lambda w: (-often[key(w["artist"])], not w.get("group"), w.get("date") or "9999")):
+    for w in sorted(work, key=lambda w: (not fits(w), -often[key(w["artist"])], not w.get("group"), w.get("date") or "9999")):
         if key(w["artist"]) not in had:
             had.add(key(w["artist"]))
             out.append({k: w.get(k) for k in ("title", "artist", "date", "cover", "roles")})
@@ -2793,7 +2798,7 @@ def person(mbid, name, local=False):
             if a and e:
                 shelves.append({"album_id": a[0], "roles": [r for r, _ in e["roles"]]})
         got = c.execute("select data, fetched from persons where mbid = ?", (mbid,)).fetchone()
-    if got and time.time() - got[1] < STALE and '"photo"' in got[0]:  # kept from before portraits: asked again
+    if got and time.time() - got[1] < STALE and '"v": 2' in got[0]:  # kept from before portraits and records' kinds: asked again
         data = json.loads(got[0])
     elif local:  # what the shelves know, at once; the app asks again for the rest
         return {"name": name, "mbid": mbid, "shelves": shelves, "work": [], "pending": True, "type": "", "area": "", "begin": "", "end": "", "disambiguation": "",
@@ -2828,14 +2833,15 @@ def person(mbid, name, local=False):
                     kind = "release" if field == "reid" else "release-group"
                     found = mb_get(kind, query=" OR ".join(f"{field}:{x}" for x in ids[i:i + 40]), limit=100).get(kind + "s", [])
                     for f in found:
-                        by_id[f["id"]] = "".join(c.get("name", "") + c.get("joinphrase", "") for c in f.get("artist-credit") or [])
+                        by_id[f["id"]] = ("".join(c.get("name", "") + c.get("joinphrase", "") for c in f.get("artist-credit") or []),
+                                          (f.get("release-group") or {}).get("primary-type") or f.get("primary-type") or "")
                 except Exception:
                     pass
         for w in work:
-            w["artist"] = by_id.get(w["release"] or w["group"], "")
+            w["artist"], w["type"] = by_id.get(w["release"] or w["group"], ("", ""))
         data = {"name": p.get("name") or name, "type": p.get("type") or "", "area": (p.get("area") or {}).get("name") or "",
                 "begin": ((p.get("life-span") or {}).get("begin") or "")[:4], "end": ((p.get("life-span") or {}).get("end") or "")[:4],
-                "disambiguation": p.get("disambiguation") or "", "photo": wikidata_photo(p), "work": sorted(work, key=lambda w: w["date"] or "0", reverse=True)[:240]}
+                "disambiguation": p.get("disambiguation") or "", "photo": wikidata_photo(p), "v": 2, "work": sorted(work, key=lambda w: w["date"] or "0", reverse=True)[:240]}
         with db_lock, db() as c:
             c.execute("insert or replace into persons values (?,?,?)", (mbid, json.dumps(data, ensure_ascii=False), time.time()))
     owned = {lms_qobuz.plain(a[1]) for a in by_copy.values()}

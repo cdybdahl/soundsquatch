@@ -662,7 +662,10 @@ const NOT_MUSIC = /copyright|publish|legal|misc|booking|manage|label|liner|photo
 function roleWords(roles) {
   roles = [].concat.apply([], roles.map(r => r.split(", "))).filter((r, i, all) => all.indexOf(r) === i && !NOT_MUSIC.test(r));
   if (!roles.length) return "worked on";
-  const done = roles.filter(r => ROLE_VERB[r]).map(r => ROLE_VERB[r]), played = roles.filter(r => !ROLE_VERB[r]).map(r => r.replace(/ \(.*\)$/, ""));
+  // the role's own verb; else by its kind ("additional producer", "assistant engineer", "additional programming")
+  const verb = r => ROLE_VERB[r] || (/produc/i.test(r) ? (/co-|additional/i.test(r) ? "co-produced" : "produced") : /mix/i.test(r) ? "mixed" : /engineer/i.test(r) ? "engineered"
+    : /recording/i.test(r) ? "recorded" : /programming/i.test(r) ? "programmed" : /arrang/i.test(r) ? "arranged" : "");
+  const done = roles.filter(verb).map(verb), played = roles.filter(r => !verb(r)).map(r => r.replace(/ \(.*\)$/, ""));
   const verbs = done.filter((v, i) => done.indexOf(v) === i).slice(0, 2), plain = verbs.filter(v => !/ on$/.test(v));
   if (verbs.length) return verbs.length === 2 && plain.length === 2 ? verbs.join(" and ") : verbs[0];
   return `played ${played.slice(0, 2).join(" and ")} on`;
@@ -680,10 +683,10 @@ function linkCard(c) {
     return `<div class="link pcon"><div class="pc-head"><a class="pc-ph" href="${href}">${img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 320))}" alt="" onerror="this.remove()">` : ""}<span>${esc(c.name.slice(0, 1))}</span></a>
       <div><div class="kicker">${CONN_KIND[c.kind]}</div><a class="pc-name" href="${href}">${esc(c.name)}</a></div></div>
       <ul>${c.on.map(o => `<li>${line(o)}</li>`).join("")}</ul>
-      ${(c.beyond || []).length ? `<div class="pc-beyond"><div class="kicker">Beyond your shelves</div>${c.beyond.map(w => `<button class="pc-work" data-act="findWork" data-v="${esc(w.artist + " " + w.title)}">
-        <span class="pc-art">${w.cover ? `<img loading="lazy" src="${esc(pic(w.cover, 120))}" alt="" onerror="this.remove()">` : ""}</span><span><i>${esc(w.title)}</i><em>${esc(w.artist)}${w.date ? " &middot; " + w.date.slice(0, 4) : ""}</em></span></button>`).join("")}</div>` : ""}
       <div class="pc-foot"><button class="pill" data-act="playConnection" data-v="${esc(JSON.stringify(songs))}">${icon("play")}<span class="pl">${songs.length > 1 ? `Play these ${songs.length}` : "Play it"}</span></button>
-      ${c.more ? `<a class="pc-more" href="${personHref(c)}">and ${c.more} more of your artists</a>` : ""}</div></div>`;
+      ${c.more ? `<a class="pc-more" href="${personHref(c)}">and ${c.more} more of your artists</a>` : ""}</div>
+      ${(c.beyond || []).length ? `<div class="pc-beyond"><div class="kicker">Beyond your shelves</div>${c.beyond.map(w => `<button class="pc-work" data-act="findWork" data-v="${esc(w.artist + " " + w.title)}">
+        <span class="pc-art">${w.cover ? `<img loading="lazy" src="${esc(pic(w.cover, 120))}" alt="" onerror="this.remove()">` : ""}</span><span><b>${esc(roleWords(w.roles).replace(/ on$/, ""))}</b><i>${esc(w.title)}</i><em>${esc(w.artist)}${w.date ? " &middot; " + w.date.slice(0, 4) : ""}</em></span></button>`).join("")}</div>` : ""}</div>`;
   }
   return `<div class="link">${face(c.a, "", "", "sm")}<div class="rel"><span>${esc(relWords(c.type, c.dir))}</span>${c.attrs && c.attrs.length ? `<em>${esc(c.attrs.join(", "))}</em>` : ""}</div>${face(c.b, "", "", "sm")}</div>`;
 }
