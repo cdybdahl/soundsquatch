@@ -2228,6 +2228,45 @@ def credit_links(albums, artists, profs, links, rng, today):
     return picks
 
 
+beyond_asking = set()
+
+
+def conn_beyond(pick, artists):
+    """Where a connection leads off the shelves: two records the person worked on that the house doesn't have, by the
+    artists they worked with most (a long collaboration says more than a one-off), one an artist. Their MusicBrainz
+    credits are asked for in the background the first time; until then, nothing."""
+    if not pick.get("mbid"):
+        return []
+    p = person(pick["mbid"], pick["name"], local=True)
+    if p.get("pending"):
+        if pick["mbid"] not in beyond_asking:
+            beyond_asking.add(pick["mbid"])
+            threading.Thread(target=lambda: person(pick["mbid"], pick["name"]), name="connections", daemon=True).start()
+        return []
+    work = [w for w in p.get("work") or [] if not w["owned"] and w.get("artist") and key(w["artist"]) not in artists and key(w["artist"]) not in NOT_ARTISTS and key(w["artist"]) not in [key(pick["name"])] + key(pick["name"]).split()  # theirs as "Eno"
+            and not re.search(r"\b(live|demo|session|bootleg|single|remix|ep|tribute)\b", w["title"], re.I)]
+    often = Counter(key(w["artist"]) for w in work)
+    out, had = [], set()
+    for w in sorted(work, key=lambda w: (-often[key(w["artist"])], not w.get("group"), w.get("date") or "9999")):
+        if key(w["artist"]) not in had:
+            had.add(key(w["artist"]))
+            out.append({k: w.get(k) for k in ("title", "artist", "date", "cover", "roles")})
+        if len(out) == 2:
+            break
+    return out
+
+
+def conn_photo(pick, profs):
+    """A connection's picture: one of the shelves' own artists wears their profile's; anyone else, their Wikidata
+    portrait, once their credits have been looked up (conn_beyond asks)."""
+    d = profs.get(key(pick.get("name") or ""))
+    if d and pick.get("kind") == "guest":
+        return pick_photo(d, "thumb") or ""
+    if not pick.get("mbid"):
+        return ""
+    return person(pick["mbid"], pick["name"], local=True).get("photo") or ""
+
+
 def home():
     """The Discover page's makings. Rotation and rediscoveries come from the listening log; the rest from the profiles."""
     now = time.time()
@@ -2316,7 +2355,7 @@ def home():
     decade = rng.choice(decades) if decades else 0
     genres = sorted({g for a in albums for g in a[8]})
     return {"date": today, "rotation": rotation, "back": back, "rediscover": rediscover, "spotlight": spotlight,
-            "connections": credit_links(albums, artists, profs, links, rng, today), "beyond": beyond, "round": round_, "decade": decade,
+            "connections": [dict(c, beyond=conn_beyond(c, artists), photo=conn_photo(c, profs)) for c in credit_links(albums, artists, profs, links, rng, today)], "beyond": beyond, "round": round_, "decade": decade,
             "decade_albums": [a[0] for a in rng.sample([a for a in albums if a[3] // 10 * 10 == decade and a[4]], min(18, sum(1 for a in albums if a[3] // 10 * 10 == decade and a[4])))] if decade else [],
             "genre": rng.choice(genres) if genres else ""}
 
@@ -2709,6 +2748,35 @@ def credits_loop():
             time.sleep(60)
 
 
+def wikidata_photo(mb):
+    """A person's portrait: Wikidata's image (its P18) for the MusicBrainz artist, as a 400px Wikimedia Commons
+    thumbnail; else the first picture on their Discogs page (MusicBrainz's link to it, so theirs for certain), which
+    most session players have when Wikipedia has no free one."""
+    link = lambda t: next(((r.get("url") or {}).get("resource") or "" for r in mb.get("relations") or [] if r.get("type") == t), "")
+    q = link("wikidata").rstrip("/").split("/")[-1]
+    m = re.search(r"/artist/(\d+)", link("discogs"))
+    token = m and discogs_token()
+    if not re.fullmatch(r"Q\d+", q):
+        return discogs_photo(m.group(1), token) if token else ""
+    try:
+        ent = get_json(f"https://www.wikidata.org/w/api.php?action=wbgetentities&ids={q}&props=claims&format=json")
+        f = ent["entities"][q]["claims"]["P18"][0]["mainsnak"]["datavalue"]["value"].replace(" ", "_")
+    except Exception:
+        return discogs_photo(m.group(1), token) if token else ""
+    h = hashlib.md5(f.encode()).hexdigest()
+    name = urllib.parse.quote(f)
+    return f"https://upload.wikimedia.org/wikipedia/commons/thumb/{h[0]}/{h[:2]}/{name}/400px-{name}" + (".png" if f.lower().endswith((".tif", ".tiff", ".svg")) else "")
+
+
+def discogs_photo(artist_id, token):
+    try:
+        imgs = discogs_get(f"/artists/{int(artist_id)}", token).get("images") or []
+    except Exception:
+        return ""
+    best = next((i for i in imgs if i.get("type") == "primary"), imgs[0] if imgs else {})
+    return best.get("uri") or ""
+
+
 def person(mbid, name, local=False):
     """A person's page: what they made that is on the shelves (with their roles there), and from MusicBrainz what else
     they are credited on, newest first, marked where the shelves have it."""
@@ -2725,7 +2793,7 @@ def person(mbid, name, local=False):
             if a and e:
                 shelves.append({"album_id": a[0], "roles": [r for r, _ in e["roles"]]})
         got = c.execute("select data, fetched from persons where mbid = ?", (mbid,)).fetchone()
-    if got and time.time() - got[1] < STALE:
+    if got and time.time() - got[1] < STALE and '"photo"' in got[0]:  # kept from before portraits: asked again
         data = json.loads(got[0])
     elif local:  # what the shelves know, at once; the app asks again for the rest
         return {"name": name, "mbid": mbid, "shelves": shelves, "work": [], "pending": True, "type": "", "area": "", "begin": "", "end": "", "disambiguation": "",
@@ -2733,7 +2801,7 @@ def person(mbid, name, local=False):
     else:
         urgent[0] += 1
         try:
-            p = mb_get(f"artist/{mbid}", inc="release-rels+release-group-rels")
+            p = mb_get(f"artist/{mbid}", inc="release-rels+release-group-rels+url-rels")
         finally:
             urgent[0] -= 1
         seen, work = {}, []
@@ -2767,7 +2835,7 @@ def person(mbid, name, local=False):
             w["artist"] = by_id.get(w["release"] or w["group"], "")
         data = {"name": p.get("name") or name, "type": p.get("type") or "", "area": (p.get("area") or {}).get("name") or "",
                 "begin": ((p.get("life-span") or {}).get("begin") or "")[:4], "end": ((p.get("life-span") or {}).get("end") or "")[:4],
-                "disambiguation": p.get("disambiguation") or "", "work": sorted(work, key=lambda w: w["date"] or "0", reverse=True)[:240]}
+                "disambiguation": p.get("disambiguation") or "", "photo": wikidata_photo(p), "work": sorted(work, key=lambda w: w["date"] or "0", reverse=True)[:240]}
         with db_lock, db() as c:
             c.execute("insert or replace into persons values (?,?,?)", (mbid, json.dumps(data, ensure_ascii=False), time.time()))
     owned = {lms_qobuz.plain(a[1]) for a in by_copy.values()}

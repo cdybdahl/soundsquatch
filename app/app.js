@@ -676,8 +676,12 @@ function linkCard(c) {
     const line = o => o.song ? `${esc(roleWords(o.roles))} &ldquo;${esc(o.song.replace(/^["“]+|["”]+$/g, ""))}&rdquo;, from <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a>`
       : `${esc(roleWords(o.roles))} <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a>`;
     const songs = c.on.map(o => [o.album_id, o.n, o.song]);
-    return `<div class="link pcon"><div class="kicker">${CONN_KIND[c.kind]}</div><a class="pc-name" href="${href}">${esc(c.name)}</a>
+    const info = c.kind === "guest" && A.artistInfo.get(norm(c.name)), img = c.photo || (info && info[3]) || "";
+    return `<div class="link pcon"><div class="pc-head"><a class="pc-ph" href="${href}">${img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 320))}" alt="" onerror="this.remove()">` : ""}<span>${esc(c.name.slice(0, 1))}</span></a>
+      <div><div class="kicker">${CONN_KIND[c.kind]}</div><a class="pc-name" href="${href}">${esc(c.name)}</a></div></div>
       <ul>${c.on.map(o => `<li>${line(o)}</li>`).join("")}</ul>
+      ${(c.beyond || []).length ? `<div class="pc-beyond"><div class="kicker">Beyond your shelves</div>${c.beyond.map(w => `<button class="pc-work" data-act="findWork" data-v="${esc(w.artist + " " + w.title)}">
+        <span class="pc-art">${w.cover ? `<img loading="lazy" src="${esc(pic(w.cover, 120))}" alt="" onerror="this.remove()">` : ""}</span><span><i>${esc(w.title)}</i><em>${esc(w.artist)}${w.date ? " &middot; " + w.date.slice(0, 4) : ""}</em></span></button>`).join("")}</div>` : ""}
       <div class="pc-foot"><button class="pill" data-act="playConnection" data-v="${esc(JSON.stringify(songs))}">${icon("play")}<span class="pl">${songs.length > 1 ? `Play these ${songs.length}` : "Play it"}</span></button>
       ${c.more ? `<a class="pc-more" href="${personHref(c)}">and ${c.more} more of your artists</a>` : ""}</div></div>`;
   }
@@ -1581,6 +1585,7 @@ VIEWS.person = function (el, arg) {
     const rest = p.work.filter(w => !w.owned);
     el.innerHTML = `${pageBar(esc(p.name), [meta || "Credits", `${mine.length} on your shelves &middot; ${p.work.length} credits`],
         p.artist ? `<a class="pill" href="${artistHref(p.artist)}">${icon("person")}<span class="pl">Their own records</span></a>` : "", true)}
+      ${p.photo ? `<div class="person-ph"><img decoding="async" src="${esc(pic(p.photo, 320))}" alt="" onerror="this.parentNode.remove()"></div>` : ""}
       ${p.disambiguation ? `<p class="person-note">${esc(p.disambiguation)}</p>` : ""}
       ${mine.length ? section("In the library", "On your shelves", `<div class="grid">${mine.map(x => albumCard(x[0]).replace('<div class="s">', `<div class="role">${esc(x[1].join(", "))}</div><div class="s">`)).join("")}</div>`) : ""}
       ${rest.length ? section("Beyond the shelves", "Also worked on", `<div class="grid">${rest.map(workCard).join("")}</div>`) : ""}
