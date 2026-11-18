@@ -58,6 +58,9 @@ const ICONS = {
 };
 const icon = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ""}</svg>`;
 
+// where testers tell us: the Soundsquatch thread on the Lyrion forums
+const FORUM = "https://forums.lyrion.org/forum/user-forums/3rd-party-software/1842759-announce-soundsquatch-beta-a-magazine-style-interface-for-all-your-music";
+
 // the house's settings (/api/settings) and this device's own (localStorage, sq-dev-*)
 // what this Lyrion has (the server asks it): a feature whose plugin is missing is off, whatever the setting
 const has = k => !A.cfg || !A.cfg.have || A.cfg.have[k] !== false;
@@ -1772,7 +1775,7 @@ function drawSettings(el) {
     ${section("What Lyrion adds", "Lyrion's plugins", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
       ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`)}
     ${section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`)}
-    ${section("When something's wrong", "Diagnostics", `<div class="set-row"><span><b>A report to paste where you tell us</b><em>versions, what was found, the last errors; no names, addresses or listening</em></span><button class="pill" data-act="diagnostics">Show it</button></div>`)}
+    ${section("When something's wrong", "Diagnostics", `<div class="set-row"><span><b>A report for the forum thread</b><em>versions, what was found, the last errors; no names, addresses or listening</em></span><button class="pill" data-act="diagnostics">Show it</button></div>`)}
     <p class="dim center set-foot">Soundsquatch ${esc(c.version || "")} &middot; settings for the house are saved on the server; this device's are saved in this browser.</p>
     <p class="dim center set-foot"><a href="https://www.buymeacoffee.com/mryeti" target="_blank" rel="noopener">Buy the sasquatch a beer</a></p>`;
   $(".settings", el).classList.toggle("editing", !!el.querySelector(".conn.open"));
@@ -2108,18 +2111,22 @@ const ACT = {
       ${PLUGINS.some(x => !has(x[0])) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !has(x[0])).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !has(x[0])).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
       <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !has(x[0])) ? `<a class="btn ghost" href="#/settings" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
   },
-  // the diagnostics a tester pastes: shown to read, with a button to copy (the clipboard needs https, so a selection otherwise)
+  // the diagnostics a tester pastes: shown to read, copied (the clipboard needs https, so a selection otherwise), and
+  // the forum thread opened beside it in the same tap (a link, so no browser stops the new tab)
   diagnostics: () => {
     api("/api/diagnostics").then(r => {
       const text = r.text + `\nBrowser: ${navigator.userAgent}\nScreen: ${innerWidth}×${innerHeight}, ${magOn() ? "magazine" : "classic"} look`;
-      openSheet(`<div class="kicker">Diagnostics</div><h3>Paste this where you tell us</h3><textarea class="diag" readonly rows="12">${esc(text)}</textarea>
-        <div class="acts col"><button class="btn" id="diag-copy">Copy</button><button class="btn ghost" data-act="closeSheet">Done</button></div>`);
-      $("#diag-copy").addEventListener("click", () => {
-        const box = $("#sheet .diag"), done = () => toast("Copied");
+      openSheet(`<div class="kicker">Diagnostics</div><h3>Paste this in the Soundsquatch thread</h3><textarea class="diag" readonly rows="12">${esc(text)}</textarea>
+        <p class="dim">Say what you did and what you expected, then paste this below it.</p>
+        <div class="acts col"><a class="btn" id="diag-post" href="${FORUM}" target="_blank" rel="noopener">Copy it and open the thread</a><button class="btn ghost" id="diag-copy">Just copy it</button><button class="btn ghost" data-act="closeSheet">Done</button></div>`);
+      const copy = then => {
+        const box = $("#sheet .diag"), done = () => toast(then || "Copied");
         if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(done).catch(() => {});
         box.focus(); box.select(); box.setSelectionRange(0, text.length);
         try { if (document.execCommand("copy")) done(); else toast("Selected: copy it from there"); } catch (e) { toast("Selected: copy it from there"); }
-      });
+      };
+      $("#diag-copy").addEventListener("click", () => copy());
+      $("#diag-post").addEventListener("click", () => copy("Copied: paste it in a reply"));
     }).catch(() => toast("The server didn't answer"));
   },
   roomEdit: v => {
