@@ -667,10 +667,20 @@ function roleWords(roles) {
   if (verbs.length) return verbs.length === 2 && plain.length === 2 ? verbs.join(" and ") : verbs[0];
   return `played ${played.slice(0, 2).join(" and ")} on`;
 }
+// someone the shelves' credits share: one of its own artists sitting in on another's record, a session player, or a
+// producer with a name; a song of each (a record, for a producer), and a button that plays them one after another
+const CONN_KIND = { guest: "One of yours, sitting in", player: "Session player", producer: "Producer" };
 function linkCard(c) {
-  if (c.kind === "person") return `<div class="link pcon"><a class="pc-name" href="${personHref(c)}">${esc(c.name)}</a>
-    <ul>${c.on.map(o => `<li>${esc(roleWords(o.roles))} <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a></li>`).join("")}</ul>
-    ${c.more ? `<a class="pc-more" href="${personHref(c)}">and ${c.more} more of your artists</a>` : ""}</div>`;
+  if (CONN_KIND[c.kind]) {
+    const href = c.kind === "guest" ? artistHref(c.name) : personHref(c);
+    const line = o => o.song ? `${esc(roleWords(o.roles))} &ldquo;${esc(o.song.replace(/^["“]+|["”]+$/g, ""))}&rdquo;, from <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a>`
+      : `${esc(roleWords(o.roles))} <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a>`;
+    const songs = c.on.map(o => [o.album_id, o.n, o.song]);
+    return `<div class="link pcon"><div class="kicker">${CONN_KIND[c.kind]}</div><a class="pc-name" href="${href}">${esc(c.name)}</a>
+      <ul>${c.on.map(o => `<li>${line(o)}</li>`).join("")}</ul>
+      <div class="pc-foot"><button class="pill" data-act="playConnection" data-v="${esc(JSON.stringify(songs))}">${icon("play")}<span class="pl">${songs.length > 1 ? `Play these ${songs.length}` : "Play it"}</span></button>
+      ${c.more ? `<a class="pc-more" href="${personHref(c)}">and ${c.more} more of your artists</a>` : ""}</div></div>`;
+  }
   return `<div class="link">${face(c.a, "", "", "sm")}<div class="rel"><span>${esc(relWords(c.type, c.dir))}</span>${c.attrs && c.attrs.length ? `<em>${esc(c.attrs.join(", "))}</em>` : ""}</div>${face(c.b, "", "", "sm")}</div>`;
 }
 
@@ -1982,6 +1992,13 @@ const ACT = {
   queueAlbum: v => { const a = A.byId.get(+v); send(["playlistcontrol", "cmd:add", "album_id:" + v], `${a ? a[1] : "The album"} is queued`); },
   playTrack: v => { const p = v.split(":"); inOrder().then(() => send(["playlistcontrol", "cmd:load", "album_id:" + p[0], "play_index:" + p[1]])); },
   playSong: v => send(["playlistcontrol", "cmd:load", "track_id:" + v], "Playing"),
+  // a connection's songs, in order: each found on its album by title (by its number when the title differs; a
+  // producer's record from its first song)
+  playConnection: v => Promise.all(JSON.parse(v).map(x => lms("", ["titles", 0, 200, "album_id:" + x[0], "tags:t"]).then(r => {
+    const t = r.titles_loop || [];
+    const hit = t.filter(s => x[2] && norm(s.title) === norm(x[2]))[0] || t.filter(s => +s.tracknum === (x[1] || 1))[0] || t[0];
+    return hit && hit.id;
+  }).catch(() => null))).then(ids => { ids = ids.filter(Boolean); if (ids.length) inOrder().then(() => send(["playlistcontrol", "cmd:load", "track_id:" + ids.join(",")], `Playing ${ids.length > 1 ? "the connection" : "it"} in ${roomName(A.room)}`)); else toast("Those songs aren't on the shelves any more"); }),
   shuffleArtist: v => {
     const info = A.artistInfo.get(norm(v)); if (!info) return;
     send(["playlistcontrol", "cmd:load", "artist_id:" + info[1]]).then(() => send(["playlist", "shuffle", 1], `Shuffling ${info[0]} in ${roomName(A.room)}`));

@@ -1530,3 +1530,6 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .pcon li { padding: 3px 0; }
 .pcon li a { color: var(--ink); }
 .pcon .pc-more { display: inline-block; margin-top: 8px; font-size: 14px; color: var(--accent); }
+.pcon .kicker { margin-bottom: 4px; }
+.pcon .pc-foot { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+.pcon .pc-foot .pc-more { margin-top: 0; }

@@ -2116,15 +2116,17 @@ def cover_stories():
     return out
 
 
-CREDIT_ORDER = ["producer", "co-producer", "mixing", "engineer", "recording", "arranger", "instrument arranger", "vocal arranger", "conductor", "remixer"]
-NOT_MUSIC = re.compile(r"copyright|publish|legal|misc|booking|manage|label|liner|photo|design|art direction|illustrat", re.I)  # credits that aren't the music
+STUDIO = re.compile(r"producer|mixing|engineer|recording|remix|master|programming|edit", re.I)  # the studio's work, not the playing
+NOT_MUSIC = re.compile(r"copyright|publish|legal|misc|booking|manage|label|liner|photo|design|art direction|illustrat|composer|lyricist|writer", re.I)
 credit_index = [0, []]
 
 
 def credit_people(albums, artists, profs):
-    """The people the shelves' credits share: each credited on records by two or more of its artists, not counting their
-    own (Justin Vernon on Bon Iver's) or their band's (Bryce Dessner on The National's), with what they did on each and
-    the album it's best seen on. Kept an hour (it reads every album's credits)."""
+    """The people the shelves' credits share, each with one song (or, for a producer, one record) for each of the
+    shelves' artists they worked with, leaving out their own records and their band's. Three kinds, the most telling
+    first: "guest", an artist on the shelves playing on another's record; "player", a session hand (who played, not who
+    engineered or mixed); "producer", only one with a name of their own (on the shelves, or producing five or more of its
+    artists). Kept an hour (it reads every album's credits)."""
     if time.time() - credit_index[0] < 3600:
         return credit_index[1]
     if not profs:  # who is in which band comes from the profiles: without them, a band's own would count as outside work
@@ -2132,6 +2134,8 @@ def credit_people(albums, artists, profs):
     by_key = {copies(a[2], a[1]): a for a in albums if key(a[2]) not in NOT_ARTISTS}
     members = {k: {key(r.get("name")) for r in (d.get("mb") or {}).get("rels", []) if r.get("type") in ("member of band", "is person")}
                for k, d in profs.items() if k in artists}
+    plain = lambda s: re.sub(r"[^a-z0-9]", "", s)
+    shelved = {plain(k) for k in artists}
     who, names = {}, {}
     with db() as c:
         rows = c.execute("select k, data from credits").fetchall()
@@ -2144,46 +2148,77 @@ def credit_people(albums, artists, profs):
         except ValueError:
             continue
         ak = key(a[2])
-        for p in (d.get("people") or []) + [p for t in d.get("tracks") or [] for p in t.get("people") or []]:
-            if not (isinstance(p, list) and len(p) > 2 and p[1]) or NOT_MUSIC.search(p[2] or ""):
-                continue
-            pk = key(p[0])
-            if pk == ak or pk in members.get(ak, ()) or ak in members.get(pk, ()):
-                continue
-            names[p[1]] = p[0]
-            got = who.setdefault(p[1], {}).setdefault(ak, {"artist": a[2], "albums": {}, "roles": set()})
-            got["roles"].add(p[2])
-            got["albums"][a[0]] = got["albums"].get(a[0], 0) + 1  # tracks they're on: the album that shows them best
+        for t in d.get("tracks") or []:
+            for p in t.get("people") or []:
+                if not (isinstance(p, list) and len(p) > 2 and p[1]) or NOT_MUSIC.search(p[2] or ""):
+                    continue
+                pk = key(p[0])
+                if plain(pk) == plain(ak) or pk in members.get(ak, ()) or ak in members.get(pk, ()):
+                    continue
+                names[p[1]] = p[0]
+                on = who.setdefault(p[1], {}).setdefault(ak, {"artist": a[2], "played": {}, "studio": {}})
+                side = on["studio" if STUDIO.search(p[2]) else "played"]
+                side.setdefault((a[0], a[1], a[3], tuple(a[8] or ()), t.get("n"), t.get("title") or ""), []).append(p[2])
     out = []
     for mbid, on in who.items():
-        if len(on) < 2:
+        guest = plain(key(names[mbid])) in shelved
+        played = {ak: v for ak, v in on.items() if v["played"]}
+        studio = {ak: v for ak, v in on.items() if v["studio"]}
+        if guest and played or len(played) >= 2:  # an artist on the shelves on one other's record is a connection already
+            kind, use = ("guest" if guest else "player"), played
+        elif len(studio) >= 2 and (guest or len(studio) >= 5):
+            kind, use = "producer", studio
+        else:
             continue
         rows = []
-        for ak, v in on.items():
-            best = max(v["albums"], key=v["albums"].get)
-            roles = sorted(v["roles"], key=lambda r: (CREDIT_ORDER.index(r) if r in CREDIT_ORDER else len(CREDIT_ORDER), r))
-            rows.append({"artist": v["artist"], "album_id": best, "album": album_row(best)[1] if album_row(best) else "", "roles": roles[:3]})
-        rows.sort(key=lambda r: -sum(on[key(r["artist"])]["albums"].values()))
-        out.append({"kind": "person", "name": names[mbid], "mbid": mbid, "on": rows})
-    if out:  # none yet (the profiles or credits still loading): asked again next time
-        credit_index[:] = [time.time(), out]
+        for ak, v in use.items():
+            if kind == "producer":  # a record, not a song: the album they worked on most
+                albums_ = Counter((x[0], x[1], x[2], x[3]) for x in v["studio"])
+                (aid, title, year, genres), _ = albums_.most_common(1)[0]
+                roles = sorted({r for x, rs in v["studio"].items() if x[0] == aid for r in rs})
+                rows.append({"artist": v["artist"], "album_id": aid, "album": title, "year": year, "genres": list(genres), "song": "", "n": 0, "roles": roles})
+            else:  # a song: the one they did most on
+                x, roles = max(v["played"].items(), key=lambda kv: len(kv[1]))
+                rows.append({"artist": v["artist"], "album_id": x[0], "album": x[1], "year": x[2], "genres": list(x[3]), "song": x[5], "n": x[4], "roles": sorted(set(roles))})
+        out.append({"kind": kind, "name": names[mbid], "mbid": mbid, "on": rows})
+    credit_index[:] = [time.time(), out]
     return out
 
 
+def leap(rows):
+    """How far a connection reaches: genres that don't overlap, and the years between its records (0 to 2)."""
+    best = 0
+    for i, x in enumerate(rows):
+        for y in rows[i + 1:]:
+            gx, gy = set(x["genres"]), set(y["genres"])
+            apart = 1 - len(gx & gy) / len(gx | gy) if gx and gy else 0.5
+            years = min(abs((x["year"] or 0) - (y["year"] or 0)), 30) / 30 if x["year"] and y["year"] else 0
+            best = max(best, apart + years)
+    return best
+
+
 def credit_links(albums, artists, profs, links, rng, today):
-    """Discover's connections, chosen once a day: people the shelves' credits share (nobody again for ninety days),
-    and one of MusicBrainz's ties between two artists on the shelves (a band and its member, siblings), or six without credits."""
+    """Discover's connections, chosen once a day: four people the shelves' credits share (two of its own artists on
+    each other's records, a session player, a producer with a name; nobody again for ninety days), each reaching as
+    far as it can (genres and decades apart). Without credits, MusicBrainz's ties between artists on the shelves."""
     kept = kv_get("connections_day", {})
     if kept.get("date") == today and kept.get("picks"):
         return kept["picks"]
     seen = {m: d for m, d in (kv_get("connections_seen", {}) or {}).items() if d > time.strftime("%Y-%m-%d", time.localtime(time.time() - 90 * 86400))}
     people = credit_people(albums, artists, profs)
     fresh = [p for p in people if p["mbid"] not in seen] or people  # all shown lately: start round again
-    rng.shuffle(fresh)
-    fresh.sort(key=lambda p: -min(len(p["on"]), 3))  # three or more artists first: the richer the tie, the better
-    picks = [dict(p, on=p["on"][:3], more=max(0, len(p["on"]) - 3)) for p in fresh[:5 if links else 6]]
-    ties = [l for l in links if l["type"] != "member of band"] + [l for l in links if l["type"] == "member of band"]  # the unusual first
-    picks += [dict(l, kind="band") for l in ties[:max(1, 6 - len(picks))]]  # without credits (switched off, not yet gathered): these alone
+    # each with the three records that reach furthest apart; the people whose reach is widest first, in steps, so a
+    # day's choice isn't always the same few
+    cands = [dict(p, on=sorted(p["on"], key=lambda r: -leap([r] + [x for x in p["on"] if x is not r]))[:3], more=max(0, len(p["on"]) - 3)) for p in fresh]
+    rng.shuffle(cands)
+    cands.sort(key=lambda p: -round(leap(p["on"]) * 2) / 2)
+    picks = []
+    for kind, n in (("guest", 2), ("player", 1), ("producer", 1)):
+        picks += [p for p in cands if p["kind"] == kind][:n]
+    picks += [p for p in cands if p not in picks][:4 - len(picks)] if picks else []  # a kind missing: the next widest
+    if not picks:  # no credits (switched off, or not gathered yet): the ties between artists, the unusual first
+        ties = [l for l in links if l["type"] != "member of band"] + [l for l in links if l["type"] == "member of band"]
+        picks = [dict(l, kind="band") for l in ties[:6]]
     for p in picks:
         if p.get("mbid"):
             seen[p["mbid"]] = today
