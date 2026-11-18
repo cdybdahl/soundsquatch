@@ -47,6 +47,7 @@ import sqlite3
 import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -4518,6 +4519,19 @@ PAUSED_SINCE = {}  # a room → when a screen first saw it paused
 SCREEN_PAUSE_HOLD = 180  # how long a paused room stays on a screen before the nearest one still playing takes over
 
 
+def screen_text(s):
+    """Text the wall screens' font can draw: Latin, Greek, Cyrillic and common punctuation.
+    NFKC first (the micro sign becomes Greek mu, full-width letters plain ones), then
+    anything still out of reach loses its accents, or failing that is dropped."""
+    out = []
+    for ch in unicodedata.normalize("NFKC", s or ""):
+        if ord(ch) < 0x530 or 0x2010 <= ord(ch) <= 0x206F or ch in "\u20ac\u2122":
+            out.append(ch)
+        else:
+            out.append("".join(c for c in unicodedata.normalize("NFKD", ch) if ord(c) < 0x530 and not unicodedata.combining(c)))
+    return re.sub(r"\s+", " ", "".join(out)).strip()
+
+
 def screen(rooms):
     """What a room's screen shows: the first of its rooms (its own first, then the nearest) that's playing, or paused
     for less than SCREEN_PAUSE_HOLD; {"on": False} when none is. Flat, for a screen that parses it in a few lines."""
@@ -4548,7 +4562,7 @@ def screen(rooms):
             SCREEN_ART[k] = art
         room = settings["house"]["rooms"].get(pid, {})
         return {"on": True, "player": pid, "room": room.get("name") or st.get("player_name") or "", "here": i == 0, "playing": st.get("mode") == "play",
-                "title": title, "artist": artist, "album": album, "art": f"/api/screen/art?k={k}" if k else "",
+                "title": screen_text(title), "artist": screen_text(artist), "album": screen_text(album), "art": f"/api/screen/art?k={k}" if k else "",
                 "pos": int(float(st.get("time") or 0)), "dur": int(float(t.get("duration") or 0)), "vol": int(st.get("mixer volume") or 0), "fixed": bool(room.get("fixed"))}
     return {"on": False}
 
