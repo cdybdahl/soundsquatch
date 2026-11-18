@@ -3659,8 +3659,9 @@ EAR = None
 
 
 def tt_lid():
-    """The lid: True (open: a record is on), False (closed), None (no sensor set, or Home Assistant not answering), asked
-    every ten seconds at most."""
+    """The lid: True (open: a record is on), False (closed), None (no sensor set), asked every ten seconds at most. When
+    Home Assistant doesn't answer, the last answer stands for five minutes, then the lid counts as shut: a sensor that
+    can't say it's open isn't a record playing (a missed answer once let the streamer be taken for one)."""
     entity = settings["house"].get("turntable_lid")
     if not entity or not HA_URL:
         return None
@@ -3671,10 +3672,33 @@ def tt_lid():
                 token = f.read().strip()
             req = urllib.request.Request(f"{HA_URL}/api/states/{entity}", headers={"Authorization": "Bearer " + token})
             with urllib.request.urlopen(req, timeout=5) as r:
-                TT["lid"] = json.load(r).get("state") == "on"
+                TT["lid"], TT["lid_known_at"] = json.load(r).get("state") == "on", time.time()
         except Exception:
-            TT["lid"] = None
+            if time.time() - TT.get("lid_known_at", 0) > 300:
+                TT["lid"] = False
     return TT["lid"]
+
+
+def tt_room_busy():
+    """The turntable's room playing something from Lyrion (other than the turntable itself): the amplifier is on the
+    streamer, so the record-out carries that, not a record. Asked every ten seconds at most."""
+    room = settings["house"].get("turntable_room")
+    if not room:
+        return False
+    if time.time() - TT.get("room_at", 0) > 10:
+        TT["room_at"] = time.time()
+        try:
+            st = rpc(room, "status", "-", "1", "tags:u", timeout=5)
+            url = (st.get("playlist_loop") or [{}])[0].get("url") or ""
+            TT["room_busy"] = st.get("mode") == "play" and not url.endswith("/turntable.flac")
+        except Exception:
+            TT["room_busy"] = False
+    return TT["room_busy"]
+
+
+def tt_not_record():
+    """What the listener hears isn't a record: the lid is shut, or the turntable's room is playing from Lyrion."""
+    return tt_lid() is False or tt_room_busy()
 
 
 def discogs_release(rid):
@@ -3886,8 +3910,8 @@ def tt_follow(spin, at):
 
 
 def tt_clip(x8, wav, run_seconds, run, at=0):
-    """A clip to name (from the Ear). Not while the lid is shut: then it is the tuner, a tape or the streamer."""
-    if tt_lid() is False or TT_INDEX is None:
+    """A clip to name (from the Ear). Not while the lid is shut or the room streams: then it is the tuner, a tape or the streamer."""
+    if tt_not_record() or TT_INDEX is None:
         return False
     spin = TT["spin"]
     if spin and spin.get("timeline") and spin.get("record"):  # the house named the record and a song: the rest by the clock
@@ -3991,7 +4015,7 @@ def tt_quiet(seconds):
             if TT["state"] == "record over" and time.time() - TT.get("over_at", 0) > 600:
                 TT.update(state="idle", done=None)
             return
-        if tt_lid() is False or seconds > 900:
+        if tt_not_record() or seconds > 900:
             tt_end_spin()
         elif seconds > 30 and TT["state"] == "playing":
             last = tt_last_song(spin)
@@ -4365,7 +4389,7 @@ def start_turntable():
     kept = kv_get("tt_spin") or {}
     if kept.get("spin") and time.time() - kept.get("at", 0) < 1200:  # back as it was, if it was playing in the last twenty minutes
         TT.update(spin=kept["spin"], song=kept.get("song"), state=kept.get("state") or "playing")
-    EAR = turntable.Ear(TURNTABLE_PORT, tt_clip, tt_quiet, os.path.join(DATA, "turntable", "songs"), tt_side, lambda: settings["features"].get("turntable_capture") and tt_lid() is not False)
+    EAR = turntable.Ear(TURNTABLE_PORT, tt_clip, tt_quiet, os.path.join(DATA, "turntable", "songs"), tt_side, lambda: settings["features"].get("turntable_capture") and not tt_not_record())
     EAR.start()
     threading.Thread(target=tt_index_loop, name="turntable-index", daemon=True).start()
 
@@ -4403,7 +4427,7 @@ def tt_next_in_order(spin):
 
 def tt_unnamed():
     """The stretch of sound playing now when nothing has named it for 25 s: (run, the likely song by the tracklist)."""
-    if not EAR or EAR.run_start is None or EAR.run in TT["runs"] or EAR.clock - EAR.run_start < 25 or tt_lid() is False:
+    if not EAR or EAR.run_start is None or EAR.run in TT["runs"] or EAR.clock - EAR.run_start < 25 or tt_not_record():
         return None
     if TT["spin"] and TT["spin"].get("timeline") and TT["spin"]["songs"]:
         return None  # the record is known and followed by the clock; a quiet bar on it isn't a new question
