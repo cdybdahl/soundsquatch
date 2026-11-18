@@ -1693,6 +1693,17 @@ function discogsRow(c) {
     <p class="plan-note">On discogs.com: Settings, Developers, then Generate new token. Copy it here.</p>
     <div class="acts"><button class="btn" data-act="discogsSave">Save and read the collection</button></div></div>`;
 }
+function scrobbleRow(c) {
+  const s = c.scrobble || {};
+  const ago = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+  const now = s.on ? (s.error ? `<span class="check bad">${esc(s.error)}</span>` : `<span class="check good">${s.sent.toLocaleString()} sent${s.last ? ", the last " + ago(s.last) : ""}</span>`) : `<span class="check bad">not connected</span>`;
+  return `<div class="set-field conn" data-k="scrobble"><span><b>Scrobbles</b><em>each play heard to the end (half the track, or four minutes) sent to a scrobble server, for its charts and history: your own (Maloja, Koito) or ListenBrainz. The first time, everything the listening log already holds goes too</em></span>
+    <span class="conn-now">${now}<button class="pill" data-act="connEdit">${s.on ? "Change" : "Connect"}</button></span>
+    <input data-scrobble-url type="url" value="${esc(s.url || "")}" placeholder="the server's ListenBrainz address (empty to disconnect)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <input data-scrobble-token type="password" placeholder="${s.set ? "a new token (leave empty to keep it)" : "its token for Soundsquatch"}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <p class="plan-note">Maloja: its address followed by /apis/listenbrainz, and an API key from its admin page. ListenBrainz: https://api.listenbrainz.org and the token on your settings page there.</p>
+    <div class="acts"><button class="btn" data-act="scrobbleSave">Save and send</button></div></div>`;
+}
 function drawSettings(el) {
   const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
   const rooms = A.rooms.filter(p => p.modelname !== "Group"), start = device.get("room", "");
@@ -1723,7 +1734,7 @@ function drawSettings(el) {
         </div>`; }).join("")}
       <div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>
       <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`)}
-    ${section("For every screen in the house", "Your records", discogsRow(c) + ttRow(c))}
+    ${section("For every screen in the house", "Your records", discogsRow(c) + ttRow(c) + scrobbleRow(c))}
     ${section("What Lyrion adds", "Lyrion's plugins", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
       ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`)}
     ${section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`)}
@@ -2206,6 +2217,13 @@ const ACT = {
     const i = $("[data-discogs]"); if (i && !i.value.trim() && !(A.cfg && A.cfg.discogs && A.cfg.discogs.set)) return toast("Paste the token first");
     toast("Reading the collection…");
     saveSettings({ discogs_token: i ? i.value.trim() : "" }, "Saved").then(() => setTimeout(() => loadLibrary().then(() => { if (current && current.kind === "vinyl") VIEWS.vinyl(current.el); }), 1500));
+  },
+  scrobbleSave: () => {
+    const u = $("[data-scrobble-url]"), t = $("[data-scrobble-token]"), url = u ? u.value.trim() : "";
+    if (url && !/^https?:\/\//.test(url)) return toast("The address starts with http:// or https://");
+    if (url && !(t && t.value.trim()) && !(A.cfg && A.cfg.scrobble && A.cfg.scrobble.set)) return toast("Paste its token too");
+    saveSettings({ scrobble_url: url, scrobble_token: t ? t.value.trim() : "" }, url ? "Saved: sending" : "Disconnected")
+      .then(() => setTimeout(() => api("/api/settings").then(r => { A.cfg = r; if (current && current.kind === "settings") drawSettings(current.el); }).catch(() => {}), 4000));
   },
   saveConn: () => {
     const conn = {}; document.querySelectorAll("[data-conn]").forEach(i => { conn[i.dataset.conn] = i.value.trim(); });

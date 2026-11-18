@@ -110,7 +110,7 @@ DEFAULTS = {
                  "turntable_capture": False,  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
                  "prefer_captured": True},  # an album with a take from the turntable shows and spins that take first
     "discover": {k: True for k in DISCOVER_SECTIONS},
-    "house": {"rooms": {}, "pin": "", "turntable_lid": "", "turntable_room": ""},  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
+    "house": {"rooms": {}, "pin": "", "turntable_lid": "", "turntable_room": "", "scrobble_url": ""},  # scrobble_url: a ListenBrainz-style API the plays go to ("" none)  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
 }
 settings = json.loads(json.dumps(DEFAULTS))
 NEEDS = {"archive": "archive", "stations": "radio"}  # a feature that needs a Lyrion plugin, by HAVE's name for it
@@ -371,6 +371,119 @@ def discogs_loop():
         discogs_now.clear()
 
 
+# ───────────────────────── scrobbles: what the house plays, sent on to a scrobble server of its choosing ─────────────────────────
+# Any server that takes ListenBrainz's API: ListenBrainz itself, or one of the house's own (Maloja, Koito). Each play the
+# listening log writes is sent once it counts as a listen by last.fm's rule (half the track or four minutes, and the
+# track at least 30 seconds long). The first time, everything the log already holds goes too.
+SCROBBLE_TOKEN = os.path.join(DATA, ".scrobble_token")  # the server's token for Soundsquatch: never sent back
+scrobble_now = threading.Event()  # set when the address or token changes: send now, not in a minute
+scrobble_lock = threading.Lock()
+
+
+def scrobble_token():
+    try:
+        with open(SCROBBLE_TOKEN) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def scrobble_base():
+    """The API's address as given ("…/apis/listenbrainz" for Maloja, "https://api.listenbrainz.org"), without a closing /1."""
+    return re.sub(r"/1$", "", (settings["house"].get("scrobble_url") or "").strip().rstrip("/"))
+
+
+def scrobble_call(method, token, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    headers = dict(AGENT, Authorization="token " + token)  # lower case: Maloja wants it so, and ListenBrainz doesn't mind
+    if data:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(scrobble_base() + "/1/" + method, data, headers)
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r)
+
+
+def scrobble_counts(played, duration):
+    if duration:
+        return duration >= 30 and played >= min(240, duration / 2)
+    return played >= 240  # length unknown: four minutes heard
+
+
+def scrobble_pass():
+    """Send what the log has written since the last pass, oldest first. A server that turns one away stops the pass
+    where it is, so nothing is skipped; a play at a second the server already has goes a second later (two rooms)."""
+    token, base = scrobble_token(), scrobble_base()
+    if not token or not base:
+        return
+    with scrobble_lock:
+        st = kv_get("scrobble", {}) or {}
+        if st.get("log") != os.path.abspath(LOG_DB) or st.get("base") != base:
+            st = {"log": os.path.abspath(LOG_DB), "base": base, "cursor": 0, "sent": 0, "since": time.time()}  # a new server (or log): all of it
+        if st["cursor"] == 0 or st.get("error"):  # a new server, or one that failed: is the token good? (ListenBrainz answers 200 either way)
+            try:
+                if not scrobble_call("validate-token", token).get("valid", True):
+                    raise urllib.error.HTTPError(base, 401, "invalid token", None, None)
+            except urllib.error.HTTPError as e:
+                st.update(error="the token isn't accepted" if e.code in (401, 403) else f"the server said HTTP {e.code}", checked=time.time())
+                kv_set("scrobble", st)
+                return
+            except OSError as e:
+                st.update(error=f"not answering ({type(e).__name__})", checked=time.time())
+                kv_set("scrobble", st)
+                return
+            st["error"] = ""
+        c = sqlite3.connect(f"file:{LOG_DB}?mode=ro", uri=True, timeout=5)
+        rows = c.execute("select id, started, played, duration, title, artist, album, url from plays where id > ? order by id limit 200", (st["cursor"],)).fetchall()
+        recent = [tuple(r) for r in c.execute("select url, started from plays where id <= ? order by id desc limit 10", (st["cursor"],))]
+        c.close()
+        try:
+            for pid, started, played, duration, title, artist, album, url in rows:
+                same = any(u == url and abs(s - started) < 10 for u, s in recent)  # rooms playing together: one listen
+                recent = [(url, started)] + recent[:9]
+                if not same and title and (artist or "").strip().lower() not in NOT_ARTISTS and scrobble_counts(played or 0, duration or 0):
+                    meta = {"artist_name": artist, "track_name": title, "additional_info": {"submission_client": "Soundsquatch", "submission_client_version": VERSION.split()[0]}}
+                    if album:
+                        meta["release_name"] = album
+                    if duration:
+                        meta["additional_info"]["duration"] = int(duration)
+                    for nudge in range(5):
+                        try:
+                            scrobble_call("submit-listens", token, {"listen_type": "import", "payload": [{"listened_at": int(started) + nudge, "track_metadata": meta}]})
+                            break
+                        except urllib.error.HTTPError as e:
+                            if e.code != 409 or nudge == 4:
+                                raise
+                    st["sent"] += 1
+                    st["last"] = time.time()
+                st["cursor"] = pid
+            st["error"] = ""
+        except urllib.error.HTTPError as e:
+            st["error"] = "the token isn't accepted" if e.code in (401, 403) else f"the server said HTTP {e.code}"
+        except OSError as e:
+            st["error"] = f"not answering ({type(e).__name__})"
+        st["checked"] = time.time()
+        kv_set("scrobble", st)
+    if len(rows) == 200 and not st["error"]:
+        scrobble_now.set()  # more to send: straight on
+
+
+def scrobble_loop():
+    while True:
+        try:
+            scrobble_pass()
+        except Exception as e:
+            note_error(f"scrobbles: {type(e).__name__}: {e}")
+        scrobble_now.wait(60)
+        scrobble_now.clear()
+
+
+def scrobble_for_settings():
+    st = kv_get("scrobble", {}) or {}
+    on = bool(scrobble_base() and scrobble_token())
+    return {"url": settings["house"].get("scrobble_url") or "", "set": bool(scrobble_token()), "on": on,
+            "sent": st.get("sent", 0) if on else 0, "last": st.get("last") if on else None, "error": st.get("error", "") if on else ""}
+
+
 def physical_records(albums):
     """The collection beside the shelves: each record with the shelves' album it matches (0 for one on vinyl only) and,
     last, what Discogs says of it (genres, styles, the pressing's descriptions and notes, a box set, the house's rating)."""
@@ -386,7 +499,7 @@ def settings_for_app():
     conn = dict(settings["connections"], lms_password="")  # the password is never sent back
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
-            "turntable": turntable_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
+            "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
             "have": {k: v for k, v in HAVE.items()}, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
 
 
@@ -443,6 +556,16 @@ def save_settings(req):
         elif os.path.exists(DISCOGS_TOKEN):
             os.remove(DISCOGS_TOKEN)
         discogs_sync()  # at once, so the page says what it found
+    if isinstance(req.get("scrobble_url"), str) and re.match(r"^(https?://\S{1,300})?$", req["scrobble_url"].strip()):
+        settings["house"]["scrobble_url"] = req["scrobble_url"].strip()
+        if isinstance(req.get("scrobble_token"), str) and req["scrobble_token"].strip():
+            with open(SCROBBLE_TOKEN + ".tmp", "w") as f:
+                f.write(re.sub(r"\s", "", req["scrobble_token"])[:300])
+            os.chmod(SCROBBLE_TOKEN + ".tmp", 0o600)
+            os.replace(SCROBBLE_TOKEN + ".tmp", SCROBBLE_TOKEN)
+        elif not settings["house"]["scrobble_url"] and os.path.exists(SCROBBLE_TOKEN):
+            os.remove(SCROBBLE_TOKEN)  # no address: disconnected
+        scrobble_now.set()
     token = (req.get("ha_token") or "").strip()
     if token:
         with open(HA_TOKEN + ".tmp", "w") as f:
@@ -4905,7 +5028,7 @@ if __name__ == "__main__":
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
     start_turntable()
-    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop):
+    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does
