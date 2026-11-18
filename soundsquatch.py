@@ -2116,6 +2116,83 @@ def cover_stories():
     return out
 
 
+CREDIT_ORDER = ["producer", "co-producer", "mixing", "engineer", "recording", "arranger", "instrument arranger", "vocal arranger", "conductor", "remixer"]
+NOT_MUSIC = re.compile(r"copyright|publish|legal|misc|booking|manage|label|liner|photo|design|art direction|illustrat", re.I)  # credits that aren't the music
+credit_index = [0, []]
+
+
+def credit_people(albums, artists, profs):
+    """The people the shelves' credits share: each credited on records by two or more of its artists, not counting their
+    own (Justin Vernon on Bon Iver's) or their band's (Bryce Dessner on The National's), with what they did on each and
+    the album it's best seen on. Kept an hour (it reads every album's credits)."""
+    if time.time() - credit_index[0] < 3600:
+        return credit_index[1]
+    if not profs:  # who is in which band comes from the profiles: without them, a band's own would count as outside work
+        return []
+    by_key = {copies(a[2], a[1]): a for a in albums if key(a[2]) not in NOT_ARTISTS}
+    members = {k: {key(r.get("name")) for r in (d.get("mb") or {}).get("rels", []) if r.get("type") in ("member of band", "is person")}
+               for k, d in profs.items() if k in artists}
+    who, names = {}, {}
+    with db() as c:
+        rows = c.execute("select k, data from credits").fetchall()
+    for k, data in rows:
+        a = by_key.get(k)
+        if not a:
+            continue
+        try:
+            d = json.loads(data)
+        except ValueError:
+            continue
+        ak = key(a[2])
+        for p in (d.get("people") or []) + [p for t in d.get("tracks") or [] for p in t.get("people") or []]:
+            if not (isinstance(p, list) and len(p) > 2 and p[1]) or NOT_MUSIC.search(p[2] or ""):
+                continue
+            pk = key(p[0])
+            if pk == ak or pk in members.get(ak, ()) or ak in members.get(pk, ()):
+                continue
+            names[p[1]] = p[0]
+            got = who.setdefault(p[1], {}).setdefault(ak, {"artist": a[2], "albums": {}, "roles": set()})
+            got["roles"].add(p[2])
+            got["albums"][a[0]] = got["albums"].get(a[0], 0) + 1  # tracks they're on: the album that shows them best
+    out = []
+    for mbid, on in who.items():
+        if len(on) < 2:
+            continue
+        rows = []
+        for ak, v in on.items():
+            best = max(v["albums"], key=v["albums"].get)
+            roles = sorted(v["roles"], key=lambda r: (CREDIT_ORDER.index(r) if r in CREDIT_ORDER else len(CREDIT_ORDER), r))
+            rows.append({"artist": v["artist"], "album_id": best, "album": album_row(best)[1] if album_row(best) else "", "roles": roles[:3]})
+        rows.sort(key=lambda r: -sum(on[key(r["artist"])]["albums"].values()))
+        out.append({"kind": "person", "name": names[mbid], "mbid": mbid, "on": rows})
+    if out:  # none yet (the profiles or credits still loading): asked again next time
+        credit_index[:] = [time.time(), out]
+    return out
+
+
+def credit_links(albums, artists, profs, links, rng, today):
+    """Discover's connections, chosen once a day: people the shelves' credits share (nobody again for ninety days),
+    and one of MusicBrainz's ties between two artists on the shelves (a band and its member, siblings), or six without credits."""
+    kept = kv_get("connections_day", {})
+    if kept.get("date") == today and kept.get("picks"):
+        return kept["picks"]
+    seen = {m: d for m, d in (kv_get("connections_seen", {}) or {}).items() if d > time.strftime("%Y-%m-%d", time.localtime(time.time() - 90 * 86400))}
+    people = credit_people(albums, artists, profs)
+    fresh = [p for p in people if p["mbid"] not in seen] or people  # all shown lately: start round again
+    rng.shuffle(fresh)
+    fresh.sort(key=lambda p: -min(len(p["on"]), 3))  # three or more artists first: the richer the tie, the better
+    picks = [dict(p, on=p["on"][:3], more=max(0, len(p["on"]) - 3)) for p in fresh[:5 if links else 6]]
+    ties = [l for l in links if l["type"] != "member of band"] + [l for l in links if l["type"] == "member of band"]  # the unusual first
+    picks += [dict(l, kind="band") for l in ties[:max(1, 6 - len(picks))]]  # without credits (switched off, not yet gathered): these alone
+    for p in picks:
+        if p.get("mbid"):
+            seen[p["mbid"]] = today
+    if picks:  # nothing to choose from yet (the shelves still loading): chosen again next time
+        kv_set("connections_seen", seen)
+        kv_set("connections_day", {"date": today, "picks": picks})
+    return picks
+
+
 def home():
     """The Discover page's makings. Rotation and rediscoveries come from the listening log; the rest from the profiles."""
     now = time.time()
@@ -2204,7 +2281,7 @@ def home():
     decade = rng.choice(decades) if decades else 0
     genres = sorted({g for a in albums for g in a[8]})
     return {"date": today, "rotation": rotation, "back": back, "rediscover": rediscover, "spotlight": spotlight,
-            "connections": links[:12], "beyond": beyond, "round": round_, "decade": decade,
+            "connections": credit_links(albums, artists, profs, links, rng, today), "beyond": beyond, "round": round_, "decade": decade,
             "decade_albums": [a[0] for a in rng.sample([a for a in albums if a[3] // 10 * 10 == decade and a[4]], min(18, sum(1 for a in albums if a[3] // 10 * 10 == decade and a[4])))] if decade else [],
             "genre": rng.choice(genres) if genres else ""}
 

@@ -654,7 +654,23 @@ const REL = { "member of band": ["member of", "members include"], collaboration:
   "supporting musician": ["played alongside", "backed by"], subgroup: ["grew out of", "spawned"], founder: ["founded", "founded by"], "vocal supporting musician": ["sang with", "sung with by"],
   "instrumental supporting musician": ["played for", "backed by"], tribute: ["a tribute to", "honoured by"], "named after": ["named after", "gave its name to"] };
 function relWords(type, dir) { const r = REL[type]; return r ? (dir === "backward" ? r[1] : r[0]) : String(type || "linked to").replace(/_/g, " "); }
+// what someone did on a record, as a sentence's verb: "produced and mixed", "played violin on"
+const ROLE_VERB = { producer: "produced", "co-producer": "co-produced", mixing: "mixed", engineer: "engineered", recording: "recorded", arranger: "arranged",
+  "instrument arranger": "arranged", "vocal arranger": "arranged the voices on", conductor: "conducted", remixer: "remixed", vocals: "sang on", "lead vocals": "sang on",
+  "background vocals": "sang backing on", "choir vocals": "sang in the choir on", concertmaster: "led the strings on" };
+const NOT_MUSIC = /copyright|publish|legal|misc|booking|manage|label|liner|photo|design|art direction|illustrat/i;
+function roleWords(roles) {
+  roles = [].concat.apply([], roles.map(r => r.split(", "))).filter((r, i, all) => all.indexOf(r) === i && !NOT_MUSIC.test(r));
+  if (!roles.length) return "worked on";
+  const done = roles.filter(r => ROLE_VERB[r]).map(r => ROLE_VERB[r]), played = roles.filter(r => !ROLE_VERB[r]).map(r => r.replace(/ \(.*\)$/, ""));
+  const verbs = done.filter((v, i) => done.indexOf(v) === i).slice(0, 2), plain = verbs.filter(v => !/ on$/.test(v));
+  if (verbs.length) return verbs.length === 2 && plain.length === 2 ? verbs.join(" and ") : verbs[0];
+  return `played ${played.slice(0, 2).join(" and ")} on`;
+}
 function linkCard(c) {
+  if (c.kind === "person") return `<div class="link pcon"><a class="pc-name" href="${personHref(c)}">${esc(c.name)}</a>
+    <ul>${c.on.map(o => `<li>${esc(roleWords(o.roles))} <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a></li>`).join("")}</ul>
+    ${c.more ? `<a class="pc-more" href="${personHref(c)}">and ${c.more} more of your artists</a>` : ""}</div>`;
   return `<div class="link">${face(c.a, "", "", "sm")}<div class="rel"><span>${esc(relWords(c.type, c.dir))}</span>${c.attrs && c.attrs.length ? `<em>${esc(c.attrs.join(", "))}</em>` : ""}</div>${face(c.b, "", "", "sm")}</div>`;
 }
 

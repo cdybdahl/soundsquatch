@@ -1522,3 +1522,11 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
   transform: rotate(-14deg); box-shadow: 0 3px 10px rgba(0, 0, 0, .6); pointer-events: none; z-index: 1; }
 .album-art img.cap-sticker { left: 14px; top: 14px; width: 21%; }
 .card:active .art img.cap-sticker { transform: rotate(-14deg); }
+
+/* Discover's connections: someone the shelves' credits share, and what they did on each record */
+.link.pcon { display: block; padding: 20px 22px; }
+.pcon .pc-name { display: block; font: 600 22px/1.2 var(--display); color: var(--ink); margin-bottom: 8px; }
+.pcon ul { list-style: none; margin: 0; padding: 0; font: 17px/1.4 var(--serif); color: var(--dim); }
+.pcon li { padding: 3px 0; }
+.pcon li a { color: var(--ink); }
+.pcon .pc-more { display: inline-block; margin-top: 8px; font-size: 14px; color: var(--accent); }
