@@ -1524,7 +1524,8 @@ def about_another(review, artist, title=""):
     opening = re.match(r"(.{1,120}?)\s+(?:is|was)\s+(?:the|an?)\b", text)
     if opening and title.strip():
         named, want = (re.sub(r"^the", "", plain(t)) for t in (opening.group(1), re.sub(r"\s*[(\[].*$", "", title)))
-        if named and want and want not in named and named not in want:
+        self_titled = named == re.sub(r"^the", "", plain(artist)) and re.match(r".{0,160}?\b(?:is|was) the [^.]{0,60}\balbum\b", text)
+        if named and want and want not in named and named not in want and not self_titled:  # (Peter Gabriel's III: "Peter Gabriel is the third…")
             return True
     makers = re.findall(r"\b(?:album|EP|LP|record|single|compilation|soundtrack|mixtape|box set)\s+by\s+(.{0,90})", text)
     if not makers:
@@ -1549,8 +1550,13 @@ def review_lookup(artist, title, album_id=None, fetch=True, again=False):
     k = copies(artist, title)
     with db() as c:
         got = c.execute("select data, fetched from albums where k = ?", (k,)).fetchone()
+    plain = re.sub(r"\s*[(\[].*?[)\]]", "", title)  # "(Remastered)" and the like: Wikipedia knows the album without them
     if got:
         data = json.loads(got[0])
+        if data.get("review") and about_another(data["review"], artist, plain):  # kept before the check knew better
+            data, got = {"review": "", "why": "another"}, (None, time.time())
+            with db_lock, db() as c:
+                c.execute("insert or replace into albums values (?,?,?)", (k, json.dumps(data), got[1]))
         if data.get("review"):
             return tidy(data["review"]), ""
         if not again and time.time() - got[1] < NOTHING_AGAIN:
@@ -1559,7 +1565,6 @@ def review_lookup(artist, title, album_id=None, fetch=True, again=False):
         return None, None
     if HAVE.get("mai") is False:
         return "", "no-mai"
-    plain = re.sub(r"\s*[(\[].*?[)\]]", "", title)  # "(Remastered)" and the like: Wikipedia knows the album without them
     asks = ([[f"album_id:{int(album_id)}"]] if album_id and int(album_id) > 0 else []) + [[f"artist:{artist}", f"album:{plain}"]]
     review = ""
     try:
