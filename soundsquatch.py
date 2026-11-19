@@ -1547,6 +1547,8 @@ def review_lookup(artist, title, album_id=None, fetch=True, again=False):
     good; none is asked again after NOTHING_AGAIN, or at once when again. (None, None) when not yet asked and fetch is
     off. Asked by Lyrion's album id first, so the plugin can use the record's own tags (its MusicBrainz id, a review
     file beside it), then by name."""
+    if not (title or "").strip():  # no title to go by (the library still loading after a start): nothing asked, nothing kept
+        return ("", "none") if fetch else (None, None)
     k = copies(artist, title)
     with db() as c:
         got = c.execute("select data, fetched from albums where k = ?", (k,)).fetchone()
