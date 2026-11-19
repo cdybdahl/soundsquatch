@@ -1639,10 +1639,16 @@ def album_tracks(album_id):
 def about_another(review, artist, title=""):
     """Whether Wikipedia's piece is about someone else's record of that name: its opening names the maker ("…is the
     eleventh studio album by the English musician David Bowie"), and none of its "album by …" says this artist (nor "of
-    the same name"). Low's EP Low got Bowie's Low."""
+    the same name"), or it opens on another title. Low's EP Low got Bowie's Low."""
     import unicodedata
     plain = lambda t: re.sub(r"[^a-z0-9]", "", "".join(c for c in unicodedata.normalize("NFKD", t.lower().replace("&", "and")) if not unicodedata.combining(c)))
     text = re.sub(r"\s+", " ", review or "")[:600]
+    # the piece opens on another record's name: SAULT's 10 got their Air ("Air is the sixth studio album by…")
+    opening = re.match(r"(.{1,120}?)\s+(?:is|was)\s+(?:the|an?)\b", text)
+    if opening and title.strip():
+        named, want = (re.sub(r"^the", "", plain(t)) for t in (opening.group(1), re.sub(r"\s*[(\[].*$", "", title)))
+        if named and want and want not in named and named not in want:
+            return True
     makers = re.findall(r"\b(?:album|EP|LP|record|single|compilation|soundtrack|mixtape|box set)\s+by\s+(.{0,90})", text)
     if not makers:
         return False
