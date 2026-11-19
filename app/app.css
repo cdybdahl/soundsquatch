@@ -553,6 +553,9 @@ input[type=range].vol::-webkit-slider-thumb { -webkit-appearance: none; width: 2
 :root { --live: #7fd492; --held: #e4b45b; }
 .room .state { font: 700 11px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; font-style: normal; }
 .room em { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room .room-group { font-style: normal; } /* a group's rooms, before its state */
+.room .room-group::after { content: " \00b7"; }
+.piece-gone { margin: 4px 0 8px; } .piece-gone .dim { margin: 0; font-style: italic; } /* a piece that didn't come, and Look again */
 .room .room-go > span { min-width: 0; }
 .room.st-playing { box-shadow: inset 4px 0 0 var(--live); }
 .room.st-playing.on { box-shadow: inset 4px 0 0 var(--live), inset 0 0 0 2px var(--accent); }

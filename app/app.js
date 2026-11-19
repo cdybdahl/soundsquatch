@@ -163,6 +163,18 @@ function seeded(seed) { let s = 0; for (let i = 0; i < seed.length; i++) s = (s 
 function shuffled(list, rnd) { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor((rnd || Math.random)() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 
 let toastT;
+/* A piece that didn't come (a record's write-up, an artist's story): why, in the house's voice, and a way to look
+   again past what was kept. why: "failed" (the lookup didn't get through), "none", "another" (the piece by that name
+   was about another record), "no-mai" (the plugin that fetches them isn't in Lyrion). */
+function missingNote(why, kind, v) {
+  const it = kind === "review" ? "this record" : "them";
+  const line = {
+    failed: `World hide-and-seek champion, still undefeated: the search for ${it} didn't get through this time. That one's on us, not Wikipedia.`,
+    another: `Wikipedia's piece by this name turned out to be about another record, so it's left out.`,
+    "no-mai": `Write-ups and stories come through Lyrion's Music &amp; Artist Information plugin. Install it and they'll turn up here.`
+  }[why] || (kind === "review" ? "Wikipedia has nothing written about this record yet." : "Wikipedia has nothing more on them yet.");
+  return `<div class="piece-gone"><p class="dim">${line}</p>${why === "no-mai" ? "" : `<button class="more-story" data-act="lookAgain" data-v="${esc(kind + ":" + v)}">Look again</button>`}</div>`;
+}
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove("on"); setTimeout(() => { t.hidden = true; }, 300); }, 2600); }
 
 /* The colour of a picture (its most vivid tones, averaged), for a page's accent: covers and portraits come from this
@@ -1069,18 +1081,19 @@ MAG.album = function (el, id) {
     }).join("")}</div>`;
     const len = $(".mag-len", el); if (len) len.textContent = `${d.tracks.length} tracks, ${Math.round(total / 60)} minutes`;
     if (!title) { $(".mag-head", el).textContent = d.album; }
-    const story = text => {
-      const list = paras(text || ""), box = $(".mag-review", el); if (!box) return;
+    const story = r => {
+      const list = paras(r.review || ""), box = $(".mag-review", el); if (!box) return;
       const words = list.filter(x => x.indexOf("\u00a7 ") !== 0); // its headings set as headings, never as text
       // a line someone said of it, pulled out: a quotation (opened after a space or a colon, closed before punctuation or a
       // space), set across both columns midway, never straight after a heading
       const q = (/(?:^|[\s:(])["\u201c]([^"\u201c\u201d]{70,190})["\u201d](?=[\s.,;:)]|$)/.exec(words.slice(1).join(" ")) || [])[1];
       let at = Math.max(1, Math.floor(list.length / 2));
       while (at > 1 && String(list[at - 1]).indexOf("\u00a7 ") === 0) at--;
-      box.innerHTML = words.length ? dropcap(list.slice(0, at), artist) + (q ? `<blockquote class="pull">&ldquo;${esc(q.replace(/[,]$/, ""))}&rdquo;</blockquote>` : "") + prose(list.slice(at), artist) + `<p class="mag-src">From Wikipedia</p>` : `<p class="dim">No one has written about this one yet.</p>`;
+      box.innerHTML = words.length ? dropcap(list.slice(0, at), artist) + (q ? `<blockquote class="pull">&ldquo;${esc(q.replace(/[,]$/, ""))}&rdquo;</blockquote>` : "") + prose(list.slice(at), artist) + `<p class="mag-src">From Wikipedia</p>` : missingNote(r.why, "review", id);
       const deck = $(".mag-album-deck", el); if (deck && words.length) deck.insertAdjacentHTML("beforeend", ` ${esc(standfirst(words[0], 160))}`);
     };
-    if (d.review != null) story(d.review); else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) story(r.review); }).catch(() => story(""));
+    el.paintReview = story;
+    if (d.review != null) story(d); else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) story(r); }).catch(() => story({ review: "", why: "failed" }));
     if (on("features", "credits")) creditsFor(a[0]).then(c => { const box = $(".mag-credits", el); if (box && el.isConnected) box.innerHTML = creditsHtml(c) || `<p class="dim">No credits known for it.</p>`; }).catch(() => {});
   }).catch(() => { const t = $(".mag-tracks", el); if (t) t.outerHTML = `<p class="dim">Couldn't load the tracks.</p>`; });
 };
@@ -1104,10 +1117,11 @@ VIEWS.album = function (el, id) {
     <div id="al-review"></div><div id="al-credits"></div>
     ${more.length ? section("Also on your shelves", "More by " + esc(artist), shelf(more.map(x => albumCard(x)))) : ""}<div id="al-sim"></div>`;
   const img = $(".album-art img", el); if (img) tint(img, el);
-  const showReview = text => {
-    const review = paras(text), box = $("#al-review", el);
-    if (box && review.length) box.outerHTML = `<section class="sec review"><div class="kicker">About the record</div>${folded(review, 3, artist)}<div class="credit">From Wikipedia</div></section>`;
+  const showReview = r => {
+    const review = paras(r.review || ""), box = $("#al-review", el); if (!box) return;
+    box.outerHTML = `<section class="sec review" id="al-review"><div class="kicker">About the record</div>${review.length ? folded(review, 3, artist) + `<div class="credit">From Wikipedia</div>` : missingNote(r.why, "review", id)}</section>`;
   };
+  el.paintReview = showReview;
   albumData(id).then(d => {
     if (!el.isConnected) return;
     const by = d.artist || artist, multi = d.tracks.some(t => t.disc && t.disc !== d.tracks[0].disc);
@@ -1122,8 +1136,8 @@ VIEWS.album = function (el, id) {
     if (!title) { $(".al-title", el).textContent = d.album; $(".al-by", el).textContent = by; $(".al-by", el).setAttribute("href", artistHref(by)); }
     if (title) api("/api/share?album_id=" + a[0]).then(r => { const acts = $(".album-head .acts", el); if (r.url && acts && el.isConnected) { const bin = $('[data-act="removeAsk"]', acts); if (bin) bin.insertAdjacentHTML("beforebegin", shareBtn(title + " by " + artist, r.url)); else acts.insertAdjacentHTML("beforeend", shareBtn(title + " by " + artist, r.url)); } }).catch(() => {});
     if (title && on("features", "credits")) creditsFor(a[0]).then(c => { const box = $("#al-credits", el); if (box && el.isConnected) box.outerHTML = creditsHtml(c); }).catch(() => {});
-    if (d.review != null) showReview(d.review);
-    else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) showReview(r.review); }).catch(() => {});
+    if (d.review != null) showReview(d);
+    else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) showReview(r); }).catch(() => showReview({ review: "", why: "failed" }));
     profile(by).then(p => {
       const box = $("#al-sim", el), sim = (p.qobuz && p.qobuz.similar) || [];
       if (box && sim.length) box.outerHTML = section("If you like this", "Kindred spirits", shelf(sim.map(s => face(s.name, s.image, onShelves(s.name) ? "on your shelves" : ""))));
@@ -1743,7 +1757,7 @@ function scrobbleRow(c) {
 }
 function drawSettings(el) {
   const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
-  const rooms = A.rooms.filter(p => p.modelname !== "Group"), start = device.get("room", "");
+  const rooms = A.rooms, start = device.get("room", ""); // a group (Lyrion's Groups plugin) too: some houses play in one most of the time
   $(".settings", el).innerHTML = `
     ${c.update ? section("A new version", "Soundsquatch " + esc(c.update.version), `<div class="set-row update"><span><b>It's out</b><em>to update, on the machine it runs on, in its folder: <code>docker compose pull &amp;&amp; docker compose up -d</code>. Everything kept in ./data stays.</em></span><a class="pill" href="${esc(c.update.url)}" target="_blank" rel="noopener">What's new</a></div>`) : ""}
     ${section("For every screen in the house", "Features", FEATS.filter(f => f[0] !== "prefer_captured" || on("features", "turntable_capture") || A.albums.some(capSticker)).map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
@@ -2032,8 +2046,19 @@ const ACT = {
   letter: v => { const t = document.getElementById("L-" + v); if (t) main().scrollTop = t.offsetTop - 20; },
   story: (v, t) => {
     const box = t.nextElementSibling; t.disabled = true; t.textContent = "Fetching the story…";
-    api("/api/story?name=" + encodeURIComponent(v)).then(r => { t.remove(); box.innerHTML = r.story ? prose(paras(r.story), v) : `<p class="dim">Wikipedia has nothing more.</p>`; })
-      .catch(() => { t.disabled = false; t.textContent = "Wikipedia's full story"; });
+    api("/api/story?name=" + encodeURIComponent(v)).then(r => { t.remove(); box.innerHTML = r.story ? prose(paras(r.story), v) : missingNote(r.why, "story", v); })
+      .catch(() => { t.remove(); box.innerHTML = missingNote("failed", "story", v); });
+  },
+  lookAgain: (v, t) => { // past what was kept: a failed or empty lookup asked again now
+    const at = v.indexOf(":"), kind = v.slice(0, at), what = v.slice(at + 1), box = t.closest(".piece-gone"), page = t.closest(".view") || (current && current.el);
+    t.disabled = true; t.textContent = "Looking\u2026";
+    const done = r => {
+      if (kind === "story") { const full = box.parentNode; full.innerHTML = r.story ? prose(paras(r.story), what) : missingNote(r.why, "story", what); }
+      else if (page && page.paintReview) page.paintReview(r);
+      if (!(r.review || r.story)) toast(r.why === "failed" ? "Didn't get through again" : "Still nothing");
+    };
+    api(kind === "review" ? "/api/review?again=1&id=" + encodeURIComponent(what) : "/api/story?again=1&name=" + encodeURIComponent(what))
+      .then(done).catch(() => done({ why: "failed" }));
   },
   unfold: (v, t) => { t.previousElementSibling.hidden = false; t.remove(); },
   qobuzSheet: v => openQobuz(JSON.parse(v)),
@@ -2670,12 +2695,14 @@ function openQobuz(r) {
 }
 /* Rooms that may play together: only players that tell Lyrion exactly where they are in a song, so it can keep them in
    step. The bridges (CastBridge for Chromecasts, UPnPBridge, AirPlay's RaopBridge) can't (their speakers buffer on their
-   own clocks and report no accurate position), and a group with one drifts audibly apart: they can't join or be joined. */
-const inStep = p => !!p && !/bridge/i.test(p.modelname || "") && p.modelname !== "Group";
+   own clocks and report no accurate position), and a group with one drifts audibly apart: they can't join or be joined.
+   A group player (Lyrion's Groups plugin) is a room of its own, its members set in Lyrion: played, never joined. */
+const isGroup = p => !!p && (p.modelname === "Group" || p.model === "group");
+const inStep = p => !!p && !/bridge/i.test(p.modelname || "") && !isGroup(p);
 function openRooms() {
   lms("", ["players", 0, 50]).then(r0 => {
     A.rooms = (r0.players_loop || []).filter(p => p.connected);
-    const listed = A.rooms.filter(p => p.modelname !== "Group");
+    const listed = A.rooms.filter(p => !isGroup(p)).concat(A.rooms.filter(isGroup)); // the groups after the rooms
     // each room's own state and what it has on, asked of every room at once
     return Promise.all([Promise.resolve(r0), Promise.all(listed.map(p => lms(p.playerid, ["status", "-", 1, "tags:a"]).catch(() => ({})))), readRadio(A.room).catch(() => "")]).then(r => [r0, r[1], listed]);
   }).then(r => {
@@ -2689,12 +2716,15 @@ function openRooms() {
       const mode = vinylHere ? "the turntable" : s2.mode === "play" ? "playing" : s2.mode === "pause" && +s2.playlist_tracks ? "paused" : !on ? "off" : +s2.playlist_tracks ? "stopped" : "idle";
       const what = vinylHere ? (A.tt.record ? ` &middot; ${esc(A.tt.record.title)} &mdash; ${esc(A.tt.record.artist)}` : "") : (mode === "playing" || mode === "paused") && t.title ? ` &middot; ${esc(t.title)}${t.artist ? " &mdash; " + esc(t.artist) : ""}` : "";
       const label = (me ? "this room, " : joined ? "with this room, " : "") + mode;
-      return `<div class="room ${me ? "on" : ""} st-${vinylHere ? "playing" : mode}"><button class="room-go" data-act="room" data-v="${p.playerid}">${mode === "playing" || vinylHere ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em><span class="state">${label}</span>${what}</em></span></button>
+      const members = isGroup(p) ? String(s2.members || "").split(",").filter(m => A.rooms.some(x => x.playerid === m)).map(roomName) : [];
+      const kind = isGroup(p) ? `<span class="room-group">${members.length ? esc(members.join(" + ")) : "a group"}</span> ` : "";
+      return `<div class="room ${me ? "on" : ""} st-${vinylHere ? "playing" : mode}"><button class="room-go" data-act="room" data-v="${p.playerid}">${mode === "playing" || vinylHere ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em>${kind}<span class="state">${label}</span>${what}</em></span></button>
         ${me ? "" : `<span class="room-acts">${joined ? `<button data-act="syncLeave" data-v="${p.playerid}" aria-label="Leave">${icon("close")}<span class="lb">Leave</span></button>` : inStep(p) && inStep(here[0]) ? `<button data-act="syncJoin" data-v="${p.playerid}" aria-label="Join">${icon("link")}<span class="lb">Join</span></button>` : ""}
           ${playing && !joined ? `<button data-act="moveTo" data-v="${p.playerid}" aria-label="Move music here">${icon("move")}<span class="lb">Move music here</span></button>` : ""}</span>`}</div>`;
     }).join("")}</div>
-    ${here[0] && !inStep(here[0]) ? `<p class="plan-note">${esc(roomName(A.room))} plays through a bridge (a Chromecast or the like), which can't keep in step with other rooms, so it can't be grouped.</p>`
-      : r[2].some(p => p.playerid !== A.room && !inStep(p)) ? `<p class="plan-note">Rooms without Join play through a bridge (a Chromecast or the like) and can't keep in step with others.</p>` : ""}
+    ${isGroup(here[0]) ? `<p class="plan-note">${esc(roomName(A.room))} is a group: the rooms in it play together, and which rooms they are is set in Lyrion's Groups plugin.</p>`
+      : here[0] && !inStep(here[0]) ? `<p class="plan-note">${esc(roomName(A.room))} plays through a bridge (a Chromecast or the like), which can't keep in step with other rooms, so it can't be grouped.</p>`
+      : r[2].some(p => p.playerid !== A.room && !inStep(p) && !isGroup(p)) ? `<p class="plan-note">Rooms without Join play through a bridge (a Chromecast or the like) and can't keep in step with others.</p>` : ""}
     ${has("radio") ? `<button class="radio-row radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")}<span><b>Radio in ${esc(roomName(A.room))}</b><em>When the queue runs out, more like it follows</em></span><i class="sw"></i></button>` : ""}`);
   });
 }

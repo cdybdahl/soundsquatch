@@ -123,6 +123,7 @@ ERRORS = deque(maxlen=25)  # the last things that went wrong, for the diagnostic
 def note_error(text):
     crawl_state["last_error"] = text
     ERRORS.append(time.strftime("%Y-%m-%d %H:%M ") + text)
+    print("error: " + text, flush=True)  # and in the container's log
 
 
 LMS_LOGIN = urllib.request.HTTPPasswordMgrWithPriorAuth()  # Lyrion's username and password, when it asks for them
@@ -1331,10 +1332,11 @@ def part_wiki(mb):
             "thumb": (s.get("thumbnail") or {}).get("source") or "", "url": ((s.get("content_urls") or {}).get("desktop") or {}).get("page") or ""}
 
 
-def part_photos(name):
+def part_photos(name, mb=None):
     if HAVE.get("mai") is False:
         return []
-    got = rpc("", "musicartistinfo", "artistphotos", f"artist:{name}", timeout=25).get("item_loop") or []
+    mbid = (mb or {}).get("mbid") or ""  # their MusicBrainz id: a namesake's photographs don't come instead
+    got = rpc("", "musicartistinfo", "artistphotos", f"artist:{name}", *([f"mbid:{mbid}"] if mbid else []), timeout=25).get("item_loop") or []
     return [{"url": p["url"], "w": int(p.get("width") or 0), "h": int(p.get("height") or 0)} for p in got if p.get("url")][:12]
 
 
@@ -1354,12 +1356,12 @@ def part_rgs(mb):
 def build(name, only=None):
     """Fetches the parts of an artist's profile it lacks (or all, when stale), keeping what it has if a part fails. The
     photographs (through Music & Artist Information) outlast a stale profile: found once, they are kept; an artist with
-    none is asked again after half a year."""
+    none is asked again after two weeks (NOTHING_AGAIN)."""
     have, fetched, complete = get_profile(name)
     d = dict(have) if have else {"name": name}
     if have and time.time() - fetched > STALE:
         d = {"name": name}
-        if "photos" in have and (have["photos"] or time.time() - have.get("_photos_at", fetched) < 6 * STALE):
+        if "photos" in have and (have["photos"] or time.time() - have.get("_photos_at", fetched) < NOTHING_AGAIN):
             d.update(photos=have["photos"], _photos_at=have.get("_photos_at", fetched))
     missing = [p for p in PARTS if p not in d and (only is None or p in only)]
     for p in missing:
@@ -1373,7 +1375,7 @@ def build(name, only=None):
             elif p == "rgs":
                 got = part_rgs(d.get("mb")) if "mb" in d else None
             else:
-                got = part_photos(name)
+                got = part_photos(name, d.get("mb"))
                 d["_photos_at"] = time.time()
             if got is not None:
                 d[p] = got
@@ -1651,25 +1653,50 @@ def about_another(review, artist, title=""):
     return not (first and first in plain(untitled))  # named elsewhere in the opening (Revolver's starts on the remix)
 
 
-def review_of(artist, title, fetch=True):
-    """Wikipedia's piece on an album (through Music & Artist Information): kept once found (a review doesn't change); an
-    album with none is asked again after half a year. None when not yet asked and fetch is off."""
+NOTHING_AGAIN = 14 * 86400  # a record or artist Music & Artist Information had nothing on is asked again after two weeks
+
+
+def review_lookup(artist, title, album_id=None, fetch=True, again=False):
+    """Wikipedia's piece on an album (through Music & Artist Information) and why there is none: (text, why), why ""
+    when found, "none" (nothing written), "another" (the piece by that name is about another record), "failed" (the
+    lookup itself didn't get through: noted, never kept) or "no-mai" (the plugin isn't there). A piece found is kept for
+    good; none is asked again after NOTHING_AGAIN, or at once when again. (None, None) when not yet asked and fetch is
+    off. Asked by Lyrion's album id first, so the plugin can use the record's own tags (its MusicBrainz id, a review
+    file beside it), then by name."""
     k = copies(artist, title)
     with db() as c:
         got = c.execute("select data, fetched from albums where k = ?", (k,)).fetchone()
-    if got and (json.loads(got[0]).get("review") or time.time() - got[1] < 6 * STALE):
-        return tidy(json.loads(got[0]).get("review", ""))
+    if got:
+        data = json.loads(got[0])
+        if data.get("review"):
+            return tidy(data["review"]), ""
+        if not again and time.time() - got[1] < NOTHING_AGAIN:
+            return "", data.get("why") or "none"
     if not fetch:
-        return None
+        return None, None
     if HAVE.get("mai") is False:
-        return ""
+        return "", "no-mai"
     plain = re.sub(r"\s*[(\[].*?[)\]]", "", title)  # "(Remastered)" and the like: Wikipedia knows the album without them
-    review = (rpc("", "musicartistinfo", "albumreview", f"artist:{artist}", f"album:{plain}", timeout=20).get("albumreview") or "").strip()
-    if about_another(review, artist, plain):
-        review = ""  # another record of that name: none rather than the wrong one
+    asks = ([[f"album_id:{int(album_id)}"]] if album_id and int(album_id) > 0 else []) + [[f"artist:{artist}", f"album:{plain}"]]
+    review = ""
+    try:
+        for ask in asks:
+            review = (rpc("", "musicartistinfo", "albumreview", *ask, timeout=20).get("albumreview") or "").strip()
+            if review:
+                break
+    except Exception as e:
+        note_error(f"album piece, {artist} - {title}: {type(e).__name__}: {e}"[:200])
+        return "", "failed"
+    why = "" if review else "none"
+    if review and about_another(review, artist, plain):
+        review, why = "", "another"  # another record of that name: none rather than the wrong one
     with db_lock, db() as c:
-        c.execute("insert or replace into albums values (?,?,?)", (k, json.dumps({"review": review}), time.time()))
-    return tidy(review)
+        c.execute("insert or replace into albums values (?,?,?)", (k, json.dumps({"review": review, "why": why}), time.time()))
+    return tidy(review), why
+
+
+def review_of(artist, title, fetch=True, album_id=None):
+    return review_lookup(artist, title, album_id, fetch)[0]
 
 
 def album_row(album_id):
@@ -1705,18 +1732,19 @@ def album(album_id):
     artist, title = (row[2], row[1]) if row else ((tracks[0]["artist"] if tracks else ""), (tracks[0]["album"] if tracks else ""))
     if not get_profile(artist)[0]:
         want(artist, front=True)
-    return {"id": album_id, "album": title, "artist": artist, "review": review_of(artist, title, fetch=False), "tracks": tracks}
+    text, why = review_lookup(artist, title, fetch=False)
+    return {"id": album_id, "album": title, "artist": artist, "review": text, "why": why, "tracks": tracks}
 
 
-def review(album_id):
+def review(album_id, again=False):
     row = album_row(album_id)
     if not row:
         tracks = album_tracks(album_id)
         row = [album_id, tracks[0]["album"], tracks[0]["artist"]] if tracks else None
-    try:
-        return {"review": review_of(row[2], row[1]) if row else ""}
-    except Exception:
-        return {"review": ""}
+    if not row:
+        return {"review": "", "why": "none"}
+    text, why = review_lookup(row[2], row[1], album_id, again=again)
+    return {"review": text, "why": why}
 
 
 def warmer():
@@ -1748,7 +1776,7 @@ def warmer():
                     break
                 if review_of(a[2], a[1], fetch=False) is None:
                     try:
-                        review_of(a[2], a[1])
+                        review_of(a[2], a[1], album_id=a[0])
                     except Exception:
                         pass
                     time.sleep(4)  # gently: Music & Artist Information's service and Wikipedia turned the first, faster pass away
@@ -1775,18 +1803,25 @@ def tidy(text):
     return "\n\n".join(out)
 
 
-def story(name):
+def story(name, again=False):
+    """Wikipedia's whole story of an artist (through Music & Artist Information) and why there is none, as review_lookup:
+    (text, why). Asked with their MusicBrainz id when the profile has it, so a namesake's story doesn't come instead."""
     with db() as c:
         got = c.execute("select story, fetched from stories where k = ?", (key(name),)).fetchone()
-    if got and time.time() - got[1] < STALE:
-        return got[0]
+    if got and (got[0] and time.time() - got[1] < STALE or not again and not got[0] and time.time() - got[1] < NOTHING_AGAIN):
+        return got[0], "" if got[0] else "none"
     if HAVE.get("mai") is False:
-        return ""
-    text = tidy(rpc("", "musicartistinfo", "biography", f"artist:{name}", timeout=25).get("biography") or "")
+        return "", "no-mai"
+    mbid = ((get_profile(name)[0] or {}).get("mb") or {}).get("mbid") or ""
+    try:
+        text = tidy(rpc("", "musicartistinfo", "biography", f"artist:{name}", *([f"mbid:{mbid}"] if mbid else []), timeout=25).get("biography") or "")
+    except Exception as e:
+        note_error(f"story, {name}: {type(e).__name__}: {e}"[:200])
+        return "", "failed"
     text = re.sub(r"<[^>]+>", "", text)
     with db_lock, db() as c:
         c.execute("insert or replace into stories values (?,?,?)", (key(name), text, time.time()))
-    return text
+    return text, "" if text else "none"
 
 
 cover_cache = {}
@@ -2059,7 +2094,7 @@ def cover_stories():
         dated.sort(key=lambda x: (not x[0][4], x[1]))  # with a cover first
         a, date = rng.choice([x for x in dated if x[0][4]] or dated)
         try:
-            review = review_of(a[2], a[1]) or ""  # fetched now if the background pass has not reached it
+            review = review_of(a[2], a[1], album_id=a[0]) or ""  # fetched now if the background pass has not reached it
         except Exception:
             review = ""
         stories.append({"kind": "day", "album_id": a[0], "title": a[1], "artist": a[2], "art": a[4], "date": date, "years": int(today[:4]) - int(date[:4]),
@@ -5034,9 +5069,11 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/album":
                 return self.reply(album(int(qs.get("id", "0"))))
             if url.path == "/api/review":
-                return self.reply(review(int(qs.get("id", "0"))), cache="max-age=86400")
+                got = review(int(qs.get("id", "0")), again=qs.get("again") == "1")
+                return self.reply(got, cache="max-age=86400" if got["review"] else "no-store")  # none: asked again soon
             if url.path == "/api/story":
-                return self.reply({"story": story(qs.get("name", "")[:200])})
+                text, why = story(qs.get("name", "")[:200], again=qs.get("again") == "1")
+                return self.reply({"story": text, "why": why})
             if url.path == "/api/cover":
                 return self.reply(cover_stories())
             if url.path == "/api/home":
