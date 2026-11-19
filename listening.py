@@ -104,6 +104,8 @@ create index if not exists steward_t on steward(t);
 """)
 home_now = ""  # who is home, as Home Assistant last said: "alex,sam", "sam", ""
 rooms = {}  # player MAC -> name
+groups = set()  # the group players (Lyrion's Groups plugin): a play heard on a group and on its rooms is one play, the group's
+TWIN = 5  # seconds: the same track started this close on two players is one play heard in both (a group, rooms joined)
 players = {}  # player MAC -> what it is playing: {"track": {...}, "started", "played", "resumed" (None while paused), "skip", "replace"}
 pending = []  # tracks just ended, as in players with "player", "ended" and "why", until settle writes them
 rounds = {}  # player MAC -> times the steward pruned it lately
@@ -123,6 +125,7 @@ def refresh_rooms():
     try:
         for p in rpc("", ["players", 0, 100]).get("players_loop", []):
             rooms[p["playerid"]] = p.get("name", p["playerid"])
+            (groups.add if p.get("model") == "group" or p.get("modelname") == "Group" else groups.discard)(p["playerid"])
     except Exception:
         pass
 
@@ -180,6 +183,14 @@ def write(cur):
         here = [p for p in cur["home"].split(",") if p]
         who = OWNERS.get(player) or (here[0] if len(here) == 1 else "household")
     with lock:
+        # heard in more than one room at once (a group and its rooms, or rooms joined): written once, as the group's
+        twin = db.execute("select id, player from plays where url = ? and player != ? and abs(started - ?) < ? and ended > ? limit 1",
+                          (tr["url"], player, cur["started"], TWIN, end - 3600)).fetchone() if tr["url"] else None
+        if twin:
+            if player in groups and twin[1] not in groups:
+                db.execute("update plays set player = ?, room = ? where id = ?", (player, rooms.get(player, player), twin[0]))
+                db.commit()
+            return
         first = 0 if db.execute("select 1 from plays where url = ? limit 1", (tr["url"],)).fetchone() else 1
         db.execute("insert into plays (player, room, started, ended, played, duration, track_id, url, title, artist, album, genre,"
                    " library, outcome, source, who, home, first) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
