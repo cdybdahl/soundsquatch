@@ -152,7 +152,8 @@ def detect():
         return rpc("", "pref", f"plugin.state:{name}", "?", timeout=5).get("_p2") == "enabled"
     try:
         HAVE.update(qobuz=can("qobuz", "items"), archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
-                    radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN")
+                    radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
+                    mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
     except Exception:
         pass  # Lyrion not answering: as it was
     return HAVE
@@ -1529,10 +1530,32 @@ def diagnostics():
     except Exception as e:
         st = {"error": type(e).__name__}
     s = settling()
+    with lib_lock:
+        versions = sum(len(a[10]) for a in library["albums"] if len(a) > 10)
+    try:
+        groups = sum(1 for p in rpc("", "players", "0", "100", timeout=5).get("players_loop") or [] if p.get("model") == "group" or p.get("modelname") == "Group")
+    except Exception:
+        groups = "?"
+    # Lyrion's My Music settings: which roles count as artists, release types (for how its own browsing looks)
+    prefs = ("useUnifiedArtistsList", "trackartistInArtists", "bandInArtists", "composerInArtists", "conductorInArtists", "useTPE2AsAlbumArtist",
+             "variousArtistAutoIdentification", "groupArtistAlbumsByReleaseType", "ignoreReleaseTypes", "cleanupReleaseTypes", "groupdiscs", "splitList")
+    try:
+        my_music = ", ".join(f"{p} {rpc('', 'pref', p, '?', timeout=5).get('_p2', '?')}" for p in prefs)
+    except Exception as e:
+        my_music = type(e).__name__
+    with db() as c:
+        tally = {"found": 0, "none": 0, "another": 0}
+        for (d,) in c.execute("select data from albums"):
+            d = json.loads(d)
+            tally["found" if d.get("review") else d.get("why") or "none"] = tally.get("found" if d.get("review") else d.get("why") or "none", 0) + 1
+    pieces = f"{tally['found']} found, {tally['none']} none, {tally['another']} about another record, {MAI_FAILED[0]} failed since the start"
     lines = [f"Soundsquatch {VERSION}, Python {sys.version.split()[0]}, {'Docker' if os.path.exists('/.dockerenv') else 'no Docker'}",
              f"Lyrion {st.get('version', st.get('error', '?'))}, language {HAVE.get('language', '?')}, {st.get('player count', '?')} players, login {'yes' if settings['connections']['lms_user'] else 'no'}",
-             "Plugins: " + ", ".join(f"{k} {'yes' if v else 'no'}" for k, v in HAVE.items() if k != "language"),
-             f"Library: {s['albums']} albums, {s['artists']} artists; profiled {s['profiled']}, genres to find {s['genres_left']}, credits to find {s['credits_left']}",
+             "Plugins: " + ", ".join(f"{k} {'yes' if v else 'no'}" for k, v in HAVE.items() if k not in ("language", "mai_lang")),
+             f"Library: {s['albums']} albums (+{versions} other versions), {s['artists']} artists; profiled {s['profiled']}, genres to find {s['genres_left']}, credits to find {s['credits_left']}",
+             f"Lyrion counts {st.get('info total albums', '?')} albums, {st.get('info total artists', '?')} artists; group players {groups}",
+             f"My Music: {my_music}",
+             f"Write-ups: {pieces}; Music & Artist Information asked in {', '.join(mai_langs())}{' (its own setting)' if HAVE.get('mai_lang') else ''}",
              "Features at work: " + ", ".join(k for k in settings["features"] if feature(k)),
              f"Listening log: {'its own' if RECORDER['built_in'] else 'the house recorder'}; PIN {'set' if settings['house']['pin'] else 'none'}; music folders {len(MUSIC_DIRS)}",
              f"Crawl: {crawl_state.get('errors', 0)} errors since {time.strftime('%Y-%m-%d %H:%M', time.localtime(crawl_state['started']))}",
@@ -1660,6 +1683,19 @@ def about_another(review, artist, title=""):
     return not (first and first in plain(untitled))  # named elsewhere in the opening (Revolver's starts on the remix)
 
 
+def mai_langs():
+    """The Wikipedias Music & Artist Information is asked in: the one chosen in its own settings, else English (the app's
+    language, where the long pieces are) and then Lyrion's own. Left to itself it asks in Lyrion's language, so a Dutch
+    house got Kid A's 3,000 Dutch characters over the 34,000 English ones."""
+    if HAVE.get("mai_lang"):
+        return [HAVE["mai_lang"]]
+    own = str(HAVE.get("language") or "EN").lower()
+    return ["en"] + ([own] if own != "en" else [])
+
+
+MAI_FAILED = [0]  # write-ups and stories whose lookup didn't get through, since the start (for the diagnostics)
+
+
 NOTHING_AGAIN = 14 * 86400  # a record or artist Music & Artist Information had nothing on is asked again after two weeks
 
 
@@ -1690,7 +1726,8 @@ def review_lookup(artist, title, album_id=None, fetch=True, again=False):
         return None, None
     if HAVE.get("mai") is False:
         return "", "no-mai"
-    asks = ([[f"album_id:{int(album_id)}"]] if album_id and int(album_id) > 0 else []) + [[f"artist:{artist}", f"album:{plain}"]]
+    asks = [ask + [f"lang:{lang}"] for lang in mai_langs()
+            for ask in ([[f"album_id:{int(album_id)}"]] if album_id and int(album_id) > 0 else []) + [[f"artist:{artist}", f"album:{plain}"]]]
     review = ""
     try:
         for ask in asks:
@@ -1698,6 +1735,7 @@ def review_lookup(artist, title, album_id=None, fetch=True, again=False):
             if review:
                 break
     except Exception as e:
+        MAI_FAILED[0] += 1
         note_error(f"album piece, {artist} - {title}: {type(e).__name__}: {e}"[:200])
         return "", "failed"
     why = "" if review else "none"
@@ -1826,9 +1864,14 @@ def story(name, again=False):
     if HAVE.get("mai") is False:
         return "", "no-mai"
     mbid = ((get_profile(name)[0] or {}).get("mb") or {}).get("mbid") or ""
+    text = ""
     try:
-        text = tidy(rpc("", "musicartistinfo", "biography", f"artist:{name}", *([f"mbid:{mbid}"] if mbid else []), timeout=25).get("biography") or "")
+        for lang in mai_langs():
+            text = tidy(rpc("", "musicartistinfo", "biography", f"artist:{name}", *([f"mbid:{mbid}"] if mbid else []), f"lang:{lang}", timeout=25).get("biography") or "")
+            if text:
+                break
     except Exception as e:
+        MAI_FAILED[0] += 1
         note_error(f"story, {name}: {type(e).__name__}: {e}"[:200])
         return "", "failed"
     text = re.sub(r"<[^>]+>", "", text)
