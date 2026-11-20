@@ -556,8 +556,12 @@ function plugName(name) {
 }
 // a plugin's picture: Lyrion's own path as it is, anyone else's through Lyrion's image proxy (which fetches any host)
 const plugPic = u => !u ? "" : u.charAt(0) === "/" ? u : /^https?:/.test(u) ? "/imageproxy/" + encodeURIComponent(u) + "/image.jpg" : "";
+// a plugin's record that's on the shelves is drawn as the shelves' own card: its cover, its page, its play chip
+const plugOwned = n => n.artist && (A.albums || []).find(a => plain(a[1]) === plain(n.title) && plain(a[2]) === plain(n.artist));
 function plugCard(p, it) {
-  const n = plugName(it.name), img = plugPic(it.image), mine = n.artist && onShelves(n.artist);
+  const n = plugName(it.name), own = plugOwned(n);
+  if (own) return albumCard(own, "q");
+  const img = plugPic(it.image), mine = n.artist && onShelves(n.artist);
   return `<div class="card q" data-act="plugPlay" data-v="${esc(JSON.stringify({ tag: p.tag, id: it.id, name: n.title }))}"><div class="art">${img ? `<img loading="lazy" decoding="async" src="${esc(img)}" alt="">` : `<div class="noart">${esc((n.artist || n.title).slice(0, 1))}</div>`}
     ${mine && p.badge ? `<span class="badge">Your artist</span>` : p.badge ? `<span class="badge">${p.badge}</span>` : ""}</div><div class="t">${esc(n.title)}</div><div class="s">${esc(n.artist)}${n.year ? " &middot; " + n.year : ""}</div></div>`;
 }
