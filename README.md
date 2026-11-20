@@ -46,6 +46,9 @@ few more. Expect rough edges, and please say what you find.
   - **Music & Artist Information**: album reviews, longer stories, more artist photographs
   - **ArchiveLMA**: Internet Archive shows
   - **Don't Stop the Music** with **LastMix**: radio and stations
+  - **Listen Later**: a Listen Later button on albums, and your saved list on Discover
+  - **ListenBrainz Fresh Releases**: fresh releases picked for you, on Discover
+  - **Pitchfork Reviews**: Best New Music, on Discover
 - A library up to about **10,000 albums**. Bigger ones aren't supported.
 - Lyrion set to **English** if you want to keep or remove Qobuz albums from Soundsquatch. Everything else works in
   any language.
@@ -232,7 +235,8 @@ password and the PIN.
 
 Artist names and album titles, sent to MusicBrainz, Wikidata and Wikipedia, LRCLIB (for lyrics), the Cover Art
 Archive, Apple and Deezer (for covers you choose), and to Qobuz and Discogs through Lyrion's own plugins. Nothing about who listens
-or when: the listening log stays in `./data`. Once a day it asks GitHub for the newest release number, which sends
+or when: the listening log stays in `./data`, unless you connect a scrobble server (Settings, Your records), which
+then gets each play: artist, track, album and when. Once a day it asks GitHub for the newest release number, which sends
 nothing but the question. If you connect Discogs (Settings, Your records), it reads your collection there once a day
 with your token, and, with a turntable listener, writes each record's plays to its Plays and Last played fields. A
 record you play that isn't in your collection yet is looked up on Discogs and, once it has played, added to the collection. The
