@@ -1,0 +1,18 @@
+# A test Soundsquatch beside the house's (test-install.sh): its own fresh data, its own ports (8098, turntable 8096),
+# the music read-only, no listening log of the house's. The house's container is left as it is.
+services:
+  soundsquatch-test:
+    build: /home/chad/soundsquatch-test-src
+    image: soundsquatch:test
+    container_name: soundsquatch-test
+    restart: "no"
+    network_mode: host
+    user: "1000:1000"
+    volumes:
+      - /home/chad/soundsquatch-test:/data
+      - /share:/share:ro
+    environment:
+      TZ: America/Chicago
+      MUSIC_APP_BIND: 192.168.1.6
+      MUSIC_APP_PORT: "8098"
+      TURNTABLE_PORT: "8096"
