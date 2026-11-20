@@ -46,6 +46,7 @@ const ICONS = {
   more: '<circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/>',
   radio: '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  bookmark: '<path d="M6 3h12v18l-6-4.5L6 21z"/>',
   grip: '<path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01" stroke-width="3.2"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   share: '<path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/>',
@@ -535,7 +536,7 @@ function drawDiscover(el) {
    ([tag, "playlist", "play", "item_id:N"]). Listen Later's own list, ListenBrainz's fresh releases for you, Pitchfork's
    Best New Music. A shelf the plugin leaves empty is left out. */
 const PLUG_SHELVES = [
-  { k: "listenlater", have: "ll_shelf", tag: "LLHome", kicker: "Saved for later", title: "Listen later", badge: "" },
+  { k: "listenlater", have: "ll_shelf", tag: "LLHome", kicker: "Saved for another day", title: "Bookmarked", badge: "" },
   { k: "lbfresh", have: "lbf", tag: "LBFForYou", kicker: "From ListenBrainz", title: "Fresh releases for you", badge: "ListenBrainz" },
   { k: "pitchfork", have: "pfr", tag: "PFRBnm", kicker: "From Pitchfork", title: "Best new music", badge: "Pitchfork" }];
 A.plug = {}; // each shelf's items as last read (five minutes)
@@ -1083,7 +1084,7 @@ MAG.album = function (el, id) {
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
         <div class="mag-by">${[a[6] && a[9] !== "vinyl" ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Spin it next">${icon("next_up")}<span>Next</span></button>
-          <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>${A.cfg && A.cfg.have && A.cfg.have.listenlater ? `<button data-act="listenLater" data-v="${a[0]}" aria-label="Save to Listen Later">${icon("clock")}<span>Later</span></button>` : ""}
+          <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>${A.cfg && A.cfg.have && A.cfg.have.listenlater ? `<button data-act="listenLater" data-v="${a[0]}" aria-label="Bookmark it for another day">${icon("bookmark")}<span>Bookmark</span></button>` : ""}
           ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}" aria-label="Add ${esc(artist)} to a station">${icon("radio_plus")}<span>Station</span></button>` : ""}
           <span class="mag-share"></span>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
         <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
@@ -1747,7 +1748,7 @@ const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on art
   ["mai", "Music & Artist Information", "album reviews, artists' longer stories and more of their photographs"],
   ["archive", "ArchiveLMA", "live shows from the Internet Archive: your favourites, each artist's shows, and On this night"],
   ["radio", "Don't Stop the Music, with LastMix", "radio that carries on when a queue runs out, and the stations"],
-  ["listenlater", "Listen Later", "a Later button on every album, and your saved list on Discover", true],
+  ["listenlater", "Listen Later", "a Bookmark button on every album, and your bookmarks on Discover", true],
   ["lbf", "ListenBrainz Fresh Releases", "fresh releases for you on Discover, your artists first", true],
   ["pfr", "Pitchfork Reviews", "Pitchfork's Best New Music on Discover", true]];
 // a Lyrion that asks for a password: its username and password, under its address (the password is never sent back)
@@ -1755,7 +1756,7 @@ const loginFields = c => `<div class="conn-login"><input data-conn="lms_user" va
   <input data-conn="lms_password" type="password" value="" placeholder="${c.lms_password_set ? "password (unchanged)" : "password"}" autocomplete="off"></div>`;
 const PLUGIN_FOR = { archive: "ArchiveLMA", stations: "Don't Stop the Music and LastMix" };
 const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", "Kindred spirits"], ["rotation", "On rotation"], ["back", "Back to it"], ["new", "New from your artists"],
-  ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
+  ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Bookmarked"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
   ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
 VIEWS.settings = function (el) {
@@ -2150,7 +2151,7 @@ const ACT = {
     const a = A.byId.get(+v);
     if (!a) return;
     lms("", ["listenlater", "add", "source:library", "albumid:" + a[0], "artist:" + a[2], "album:" + a[1]].concat(a[3] ? ["year:" + a[3]] : []))
-      .then(() => { delete A.plug.LLHome; toast(`${a[1]} saved to Listen Later`); }).catch(() => toast("Listen Later didn't answer"));
+      .then(() => { delete A.plug.LLHome; toast(`${a[1]} bookmarked`); }).catch(() => toast("Listen Later didn't answer"));
   },
   newRelease: v => { const r = JSON.parse(v); if (r.qobuz) openQobuz({ artist: r.qobuz.artist, album: r.qobuz.album, cover: r.cover, i: r.qobuz.i, page: r.artist }); else location.hash = artistHref(r.artist); },
   trackMenu: v => openTrackMenu(v),
