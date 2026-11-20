@@ -506,6 +506,7 @@ function drawDiscover(el) {
   if (on("discover", "rotation") && h.rotation.length) out.push(section("From the listening log", "On rotation", shelf(h.rotation.map(n => face(n, "", albumsBy(n).length + " on the shelves")))));
   if (on("discover", "back") && h.back.length) out.push(section("Pick up where you left off", "Back to it", shelf(h.back.map(id => albumCard(A.byId.get(id))))));
   if (on("discover", "new") && (h.new || []).length) out.push(section("Out lately", "New from your artists", shelf(h["new"].map(newCard))));
+  PLUG_SHELVES.forEach(p => { if (on("discover", p.k) && A.cfg && A.cfg.have && A.cfg.have[p.have]) out.push(`<div id="d-${p.k}"></div>`); });
   if (on("discover", "spotlight") && h.spotlight && (A.heroPick || A.heroAlbum || (on("discover", "cover") && coverStories().length))) out.push(`<div id="d-spot"></div>`); // the artist of the day, when something else leads
   if (physicalShelf()) out.push(section("Let's get physical", "From the record shelf", physicalShelf(), `<a class="more" href="#/vinyl">All of them</a>`));
   if (on("discover", "fresh")) out.push(section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
@@ -527,7 +528,46 @@ function drawDiscover(el) {
   }
   $("#d-body", el).innerHTML = out.join("");
   if (playing) profile(playing).then(p => { const box = $("#d-because", el); if (box) box.outerHTML = becauseHtml(p); }).catch(() => {});
+  PLUG_SHELVES.forEach(p => { if ($("#d-" + p.k, el)) plugShelf(p).then(html => { const box = $("#d-" + p.k, el); if (box) box.outerHTML = html; }); });
   if ($("#d-spot", el)) profile(h.spotlight).then(p => { const box = $("#d-spot", el); if (box) box.outerHTML = spotlightHtml(p); }).catch(() => {});
+}
+/* CrystalGipsy's Lyrion plugins, by their Material home shelves: flat lists of albums, each played by its item id
+   ([tag, "playlist", "play", "item_id:N"]). Listen Later's own list, ListenBrainz's fresh releases for you, Pitchfork's
+   Best New Music. A shelf the plugin leaves empty is left out. */
+const PLUG_SHELVES = [
+  { k: "listenlater", have: "ll_shelf", tag: "LLHome", kicker: "Saved for later", title: "Listen later", badge: "" },
+  { k: "lbfresh", have: "lbf", tag: "LBFForYou", kicker: "From ListenBrainz", title: "Fresh releases for you", badge: "ListenBrainz" },
+  { k: "pitchfork", have: "pfr", tag: "PFRBnm", kicker: "From Pitchfork", title: "Best new music", badge: "Pitchfork" }];
+A.plug = {}; // each shelf's items as last read (five minutes)
+function plugItems(p) {
+  const hit = A.plug[p.tag];
+  if (hit && Date.now() - hit.at < 300000) return Promise.resolve(hit.items);
+  return lms(A.room || "", [p.tag, "items", 0, 30]).then(r => {
+    const items = (r.loop_loop || []).filter(it => it.id != null && (+it.isaudio || it.type === "playlist" || it.type === "audio"));
+    A.plug[p.tag] = { at: Date.now(), items: items };
+    return items;
+  }).catch(() => []);
+}
+// "Artist – Album (2024)", "Artist - Album", "3. Artist - Album": the artist and the title
+function plugName(name) {
+  const s = String(name || "").replace(/^\d+\.\s+/, ""), m = s.match(/^(.*?)\s+[\u2013\u2014-]\s+(.*)$/);
+  const t = m ? m[2] : s, y = t.match(/^(.*?)\s*\((\d{4})\)$/);
+  return { artist: m ? m[1] : "", title: y ? y[1] : t, year: y ? y[2] : "" };
+}
+// a plugin's picture: Lyrion's own path as it is, anyone else's through Lyrion's image proxy (which fetches any host)
+const plugPic = u => !u ? "" : u.charAt(0) === "/" ? u : /^https?:/.test(u) ? "/imageproxy/" + encodeURIComponent(u) + "/image.jpg" : "";
+function plugCard(p, it) {
+  const n = plugName(it.name), img = plugPic(it.image), mine = n.artist && onShelves(n.artist);
+  return `<div class="card q" data-act="plugPlay" data-v="${esc(JSON.stringify({ tag: p.tag, id: it.id, name: n.title }))}"><div class="art">${img ? `<img loading="lazy" decoding="async" src="${esc(img)}" alt="">` : `<div class="noart">${esc((n.artist || n.title).slice(0, 1))}</div>`}
+    ${mine && p.badge ? `<span class="badge">Your artist</span>` : p.badge ? `<span class="badge">${p.badge}</span>` : ""}</div><div class="t">${esc(n.title)}</div><div class="s">${esc(n.artist)}${n.year ? " &middot; " + n.year : ""}</div></div>`;
+}
+function plugShelf(p) {
+  return plugItems(p).then(items => {
+    if (!items.length) return "";
+    // artists already on the shelves first (for the fresh releases and reviews; Listen Later keeps its own order)
+    const sorted = p.k === "listenlater" ? items : items.filter(it => onShelves(plugName(it.name).artist)).concat(items.filter(it => !onShelves(plugName(it.name).artist)));
+    return section(p.kicker, p.title, shelf(sorted.map(it => plugCard(p, it))));
+  });
 }
 function newCard(r) {
   const when = new Date(r.date + "T12:00"), soon = when > new Date();
@@ -1043,7 +1083,7 @@ MAG.album = function (el, id) {
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
         <div class="mag-by">${[a[6] && a[9] !== "vinyl" ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Spin it next">${icon("next_up")}<span>Next</span></button>
-          <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>
+          <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Queue it">${icon("queue")}<span>Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>${A.cfg && A.cfg.have && A.cfg.have.listenlater ? `<button data-act="listenLater" data-v="${a[0]}" aria-label="Save to Listen Later">${icon("clock")}<span>Later</span></button>` : ""}
           ${artist && on("features", "stations") ? `<button class="seed-btn ${isSeed(artist) ? "on" : ""}" data-act="seedSheet" data-v="${esc(artist)}" aria-label="Add ${esc(artist)} to a station">${icon("radio_plus")}<span>Station</span></button>` : ""}
           <span class="mag-share"></span>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
         <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
@@ -1706,13 +1746,16 @@ const FEATS = [["stations", "Stations", "radio seeded from artists you choose"],
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
   ["mai", "Music & Artist Information", "album reviews, artists' longer stories and more of their photographs"],
   ["archive", "ArchiveLMA", "live shows from the Internet Archive: your favourites, each artist's shows, and On this night"],
-  ["radio", "Don't Stop the Music, with LastMix", "radio that carries on when a queue runs out, and the stations"]];
+  ["radio", "Don't Stop the Music, with LastMix", "radio that carries on when a queue runs out, and the stations"],
+  ["listenlater", "Listen Later", "a Later button on every album, and your saved list on Discover", true],
+  ["lbf", "ListenBrainz Fresh Releases", "fresh releases for you on Discover, your artists first", true],
+  ["pfr", "Pitchfork Reviews", "Pitchfork's Best New Music on Discover", true]];
 // a Lyrion that asks for a password: its username and password, under its address (the password is never sent back)
 const loginFields = c => `<div class="conn-login"><input data-conn="lms_user" value="${esc(c.connections.lms_user || "")}" placeholder="Lyrion username" autocomplete="off" autocapitalize="off" spellcheck="false">
   <input data-conn="lms_password" type="password" value="" placeholder="${c.lms_password_set ? "password (unchanged)" : "password"}" autocomplete="off"></div>`;
 const PLUGIN_FOR = { archive: "ArchiveLMA", stations: "Don't Stop the Music and LastMix" };
 const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", "Kindred spirits"], ["rotation", "On rotation"], ["back", "Back to it"], ["new", "New from your artists"],
-  ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"],
+  ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
   ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
 VIEWS.settings = function (el) {
@@ -2102,6 +2145,13 @@ const ACT = {
     if (location.hash === "#/albums") route(); else location.hash = "#/albums";
   },
   histDays: v => { store.set("sq-hist-days", +v); VIEWS.history(current.el); },
+  plugPlay: v => { const x = JSON.parse(v); inOrder().then(() => send([x.tag, "playlist", "play", "item_id:" + x.id], `Spinning ${x.name} in ${roomName(A.room)}`)); },
+  listenLater: v => {
+    const a = A.byId.get(+v);
+    if (!a) return;
+    lms("", ["listenlater", "add", "source:library", "albumid:" + a[0], "artist:" + a[2], "album:" + a[1]].concat(a[3] ? ["year:" + a[3]] : []))
+      .then(() => { delete A.plug.LLHome; toast(`${a[1]} saved to Listen Later`); }).catch(() => toast("Listen Later didn't answer"));
+  },
   newRelease: v => { const r = JSON.parse(v); if (r.qobuz) openQobuz({ artist: r.qobuz.artist, album: r.qobuz.album, cover: r.cover, i: r.qobuz.i, page: r.artist }); else location.hash = artistHref(r.artist); },
   trackMenu: v => openTrackMenu(v),
   // an album's genres, chosen from the house's list: kept here, and written into its files when it has some
@@ -2133,8 +2183,8 @@ const ACT = {
       <p class="plan-note">Your ${s.albums.toLocaleString()} albums are here to play now. What Soundsquatch knows about them comes in the background: each artist's story, photographs, members and kindred spirits; each album's genres, credits and review. It asks MusicBrainz, Wikipedia${has("mai") ? " and Lyrion's Music &amp; Artist Information" : ""} for them, and MusicBrainz answers one question a second.</p>
       <p class="plan-note">For ${s.artists.toLocaleString()} artists that takes <b>about ${timeLeft(s.minutes)}</b>. Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
       <div class="settling settling-in"><span class="settling-t"><b>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists</b><span>genres for ${(s.albums - s.genres_left).toLocaleString()} of ${s.albums.toLocaleString()} albums, credits for ${(s.albums - s.credits_left).toLocaleString()}</span></span></div>
-      ${PLUGINS.some(x => !has(x[0])) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !has(x[0])).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !has(x[0])).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
-      <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !has(x[0])) ? `<a class="btn ghost" href="#/settings" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
+      ${PLUGINS.some(x => !x[3] && !has(x[0])) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0])).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0])).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
+      <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0])) ? `<a class="btn ghost" href="#/settings" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
   },
   // the diagnostics a tester pastes: shown to read, copied (the clipboard needs https, so a selection otherwise), and
   // the forum thread opened beside it in the same tap (a link, so no browser stops the new tab)
@@ -2574,7 +2624,7 @@ const ACT = {
 };
 // what plays, and so needs a room to play in
 const PLAYS = /^(playAlbum|nextAlbum|queueAlbum|playTrack|playSong|shuffleArtist|shuffleGenre|stationGo|focusPlay|focusMix|playPlaylist|artistRadio|radioToggle|toggle|next|prev|jump|shuffleMode|repeat|seekTo|trackDo|levelSet|saveQueue)$/;
-const playsHere = (act, v) => PLAYS.test(act) || (act === "qobuz" && v !== "keep") || (act === "archDo" && /^(play|queue|next)$/.test(v || ""));
+const playsHere = (act, v) => PLAYS.test(act) || act === "plugPlay" || (act === "qobuz" && v !== "keep") || (act === "archDo" && /^(play|queue|next)$/.test(v || ""));
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-act]");
   if (!t || !ACT[t.dataset.act]) return;

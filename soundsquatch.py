@@ -102,7 +102,7 @@ NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 
 # ───────────────────────── settings: settings.json beside the script, today's values the defaults ─────────────────────────
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
-DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "connections", "beyond", "round", "decade", "genre"]
+DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre"]
 DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
@@ -114,7 +114,8 @@ DEFAULTS = {
 }
 settings = json.loads(json.dumps(DEFAULTS))
 NEEDS = {"archive": "archive", "stations": "radio"}  # a feature that needs a Lyrion plugin, by HAVE's name for it
-HAVE = {}  # what this Lyrion has (detect): qobuz, archive, mai (Music & Artist Information), radio (Don't Stop the Music with LastMix)
+HAVE = {}  # what this Lyrion has (detect): qobuz, archive, mai (Music & Artist Information), radio (Don't Stop the Music with LastMix),
+# listenlater (Listen Later's add), ll_shelf, lbf, pfr (Listen Later's, ListenBrainz Fresh Releases' and Pitchfork Reviews' home shelves)
 
 
 ERRORS = deque(maxlen=25)  # the last things that went wrong, for the diagnostics a tester sends
@@ -151,6 +152,9 @@ def detect():
     def plugin(name):
         return rpc("", "pref", f"plugin.state:{name}", "?", timeout=5).get("_p2") == "enabled"
     try:
+        # CrystalGipsy's plugins: their Material home shelves (flat, playable by item id) and Listen Later's own add command
+        HAVE.update(listenlater=can("listenlater", "add"), ll_shelf=can("LLHome", "items"), lbf=can("LBFForYou", "items"),
+                    pfr=can("PFRBnm", "items"))
         HAVE.update(qobuz=can("qobuz", "items"), archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
                     radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
                     mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
