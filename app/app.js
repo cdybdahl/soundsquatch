@@ -565,12 +565,12 @@ function plugCard(p, it) {
   return `<div class="card q" data-act="plugPlay" data-v="${esc(JSON.stringify({ tag: p.tag, id: it.id, name: n.title }))}"><div class="art">${img ? `<img loading="lazy" decoding="async" src="${esc(img)}" alt="">` : `<div class="noart">${esc((n.artist || n.title).slice(0, 1))}</div>`}
     ${mine && p.badge ? `<span class="badge">Your artist</span>` : p.badge ? `<span class="badge">${p.badge}</span>` : ""}</div><div class="t">${esc(n.title)}</div><div class="s">${esc(n.artist)}${n.year ? " &middot; " + n.year : ""}</div></div>`;
 }
-function plugShelf(p) {
+function plugShelf(p, wrap) { // wrap: how the page sets a section (the magazine front has its own)
   return plugItems(p).then(items => {
     if (!items.length) return "";
     // artists already on the shelves first (for the fresh releases and reviews; Listen Later keeps its own order)
     const sorted = p.k === "listenlater" ? items : items.filter(it => onShelves(plugName(it.name).artist)).concat(items.filter(it => !onShelves(plugName(it.name).artist)));
-    return section(p.kicker, p.title, shelf(sorted.map(it => plugCard(p, it))));
+    return (wrap || section)(p.kicker, p.title, shelf(sorted.map(it => plugCard(p, it))));
   });
 }
 function newCard(r) {
@@ -1000,6 +1000,7 @@ VIEWS.front = function (el) {
         ${(h["new"] || []).length ? sec("New records", "Out lately", `<div class="fp-covers">${h["new"].slice(0, 6).map(newCard).join("")}</div>`) : ""}
       </div>
       ${(h.back || []).length ? sec("Pick up where you left off", "Back to it", shelf(cards(h.back).map(a => albumCard(a)))) : ""}
+      ${PLUG_SHELVES.filter(p => on("discover", p.k) && A.cfg && A.cfg.have && A.cfg.have[p.have]).map(p => `<div id="fp-${p.k}"></div>`).join("")}
       ${round.length ? sec("Round numbers", "This month's anniversaries", shelf(round.map(x => `<div class="rn"><span class="rn-age">${x[0]}</span>${albumCard(x[1])}</div>`))) : ""}
       <div id="fp-because"></div>
       ${A.archive.length && on("features", "archive") ? sec("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x)))) : ""}
@@ -1009,6 +1010,7 @@ VIEWS.front = function (el) {
       ${h.genre ? sec("Genre of the day", `<a href="#/genre/${encodeURIComponent(h.genre)}">${esc(h.genre)}</a>`, shelf(shuffled(A.albums.filter(a => a[4] && (a[8] || []).indexOf(h.genre) >= 0), seeded(h.date || "")).slice(0, 16).map(a => albumCard(a)))) : ""}
     </article>`;
     if (lead) fillLead(el, lead);
+    PLUG_SHELVES.forEach(p => { if ($("#fp-" + p.k, el)) plugShelf(p, sec).then(html => { const box = $("#fp-" + p.k, el); if (box) box.outerHTML = html; }).catch(() => {}); });
     if (lead && lead.kind === "pickArtist") profile(lead.name).then(p => { // the artist picked: their picture over the lead
       const a = $(".fp-story.lead > a", el), img = p.hero || p.thumb; if (a && img && !a.querySelector("img")) a.innerHTML = `<figure><img src="${esc(pic(img, 1600))}" alt=""></figure>`;
     }).catch(() => {});
