@@ -594,13 +594,11 @@ def genres_loop():
                 shelf_artists = set(library["artists"])
             crawl_state["genres_left"] = len(todo)
             # an artist on the shelves not yet profiled: their albums wait, as the profile brings their genres with it
-            todo = [a for a in todo if key(a[2]) not in shelf_artists or get_profile(a[2])[0] is not None]
-            if not todo:
-                time.sleep(60)
+            ready = [a for a in todo if key(a[2]) not in shelf_artists or get_profile(a[2])[0] is not None]
+            if not ready:
+                time.sleep(60 if todo else 3600)  # waiting on profiles: soon; nothing left: in an hour
                 continue
-            if not todo:
-                time.sleep(3600)
-                continue
+            todo = ready
             for a in todo[:20]:
                 try:
                     g, source = genres_for(a)
