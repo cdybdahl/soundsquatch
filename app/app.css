@@ -1551,3 +1551,10 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .person-ph { padding: 26px var(--gut) 0; }
 .person-ph img { width: 150px; height: 150px; border-radius: 50%; object-fit: cover; object-position: 50% 25%; display: block; }
 .pcon .pc-work b { display: block; font: 600 11px/1.3 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+
+/* Settings in tabs: every tab is drawn, the one on shown */
+.settings .set-tabs { display: flex; align-self: auto; width: max-content; max-width: calc(100% - 2 * var(--gut)); margin: 28px var(--gut) 0; }
+.settings .set-tab { display: none; }
+.settings[data-on="device"] .set-tab[data-tab="device"], .settings[data-on="discover"] .set-tab[data-tab="discover"],
+.settings[data-on="house"] .set-tab[data-tab="house"], .settings[data-on="help"] .set-tab[data-tab="help"] { display: block; }
+@media (max-width: 700px) { .settings .set-tabs { width: auto; } .settings .set-tabs button { flex: 1; padding: 0 6px; } }

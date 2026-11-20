@@ -1763,10 +1763,11 @@ const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", 
   ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
   ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
-VIEWS.settings = function (el) {
+VIEWS.settings = function (el, arg) {
+  if (SET_TABS.some(t => t[0] === arg)) device.set("settab", arg);
   el.innerHTML = `${pageBar("Settings", ["For the house", "and this device"])}<div class="settings"><p class="dim">Asking the server&hellip;</p></div>`;
   // the rooms as Lyrion has them now: a player added since this screen opened is listed too
-  Promise.all([api("/api/settings"), lms("", ["players", 0, 50]).then(r => { A.rooms = (r.players_loop || []).filter(p => p.connected); }).catch(() => {})]).then(r => { A.cfg = r[0]; drawSettings(el); }).catch(() => { $(".settings", el).innerHTML = `<p class="dim">The server isn't answering.</p>`; });
+  Promise.all([api("/api/settings"), lms("", ["players", 0, 50]).then(r => { A.rooms = (r.players_loop || []).filter(p => p.connected); }).catch(() => {})]).then(r => { A.cfg = r[0]; drawSettings(el); if (arg === "house") { const pl = $("#set-plugins", el); if (pl) pl.scrollIntoView(); } }).catch(() => { $(".settings", el).innerHTML = `<p class="dim">The server isn't answering.</p>`; });
 };
 // the house's Discogs collection: connected (whose, how many, when read) or how to connect it
 // the turntable's listener: whether it's sending, what it knows of the house's files, where songs are kept; and, on
@@ -1803,44 +1804,50 @@ function scrobbleRow(c) {
     <p class="plan-note">Maloja: its address followed by /apis/listenbrainz, and an API key from its admin page. ListenBrainz: https://api.listenbrainz.org and the token on your settings page there.</p>
     <div class="acts"><button class="btn" data-act="scrobbleSave">Save and send</button></div></div>`;
 }
+// Settings in four tabs, the one last used kept on each device; a new version is announced above them all
+const SET_TABS = [["device", "This device"], ["discover", "Discover"], ["house", "House"], ["help", "Help"]];
+const setTab = () => { const t = device.get("settab", "device"); return SET_TABS.some(x => x[0] === t) ? t : "device"; };
+const inTab = (t, html) => `<div class="set-tab" data-tab="${t}">${html}</div>`;
 function drawSettings(el) {
   const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
   const rooms = A.rooms, start = device.get("room", ""); // a group (Lyrion's Groups plugin) too: some houses play in one most of the time
   $(".settings", el).innerHTML = `
     ${c.update ? section("A new version", "Soundsquatch " + esc(c.update.version), `<div class="set-row update"><span><b>It's out</b><em>to update, on the machine it runs on, in its folder: <code>docker compose pull &amp;&amp; docker compose up -d</code>. Everything kept in ./data stays.</em></span><a class="pill" href="${esc(c.update.url)}" target="_blank" rel="noopener">What's new</a></div>`) : ""}
-    ${section("For every screen in the house", "Features", FEATS.filter(f => f[0] !== "prefer_captured" || on("features", "turntable_capture") || A.albums.some(capSticker)).map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
+    <div class="seg set-tabs">${SET_TABS.map(t => `<button class="${t[0] === setTab() ? "on" : ""}" data-act="setTab" data-v="${t[0]}">${t[1]}</button>`).join("")}</div>
+    ${inTab("house", section("For every screen in the house", "Features", FEATS.filter(f => f[0] !== "prefer_captured" || on("features", "turntable_capture") || A.albums.some(capSticker)).map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
       ? `<div class="set-row toggle missing"><span><b>${f[1]}</b><em>needs the ${PLUGIN_FOR[f[0]]} plugin in Lyrion</em></span><i class="sw"></i></div>`
-      : toggle("setFeat", f[0], c.features[f[0]], f[1], f[2])).join(""))}
-    ${section("For every screen in the house", "Rooms", rooms.map(p => { const r = c.rooms[p.playerid] || {};
-        return `<div class="set-row"><span><b>${esc(roomName(p.playerid))}</b><em>${r.name ? esc(p.name) + " in Lyrion" : "as Lyrion names it"}${r.fixed ? " &middot; volume set on the device" : ""}</em></span><button class="pill" data-act="roomEdit" data-v="${p.playerid}">Change</button></div>`; }).join("") || `<p class="dim">No players are connected to Lyrion.</p>`)}
-    ${section("For every screen in the house", "Discover", `<div class="set-grid">${DISC.map(d => toggle("setDisc", d[0], c.discover[d[0]], d[1])).join("")}</div>`)}
-    <div id="set-bans"></div>
-    ${section("For every screen in the house", "Backups", `<p class="plan-note">Each night Soundsquatch keeps a copy of what it can't fetch again (hearts, stars, tags, stations, the never-play list, removals and settings); the last two weeks of them stay on the server.</p>
+      : toggle("setFeat", f[0], c.features[f[0]], f[1], f[2])).join("")))}
+    ${inTab("house", section("For every screen in the house", "Rooms", rooms.map(p => { const r = c.rooms[p.playerid] || {};
+        return `<div class="set-row"><span><b>${esc(roomName(p.playerid))}</b><em>${r.name ? esc(p.name) + " in Lyrion" : "as Lyrion names it"}${r.fixed ? " &middot; volume set on the device" : ""}</em></span><button class="pill" data-act="roomEdit" data-v="${p.playerid}">Change</button></div>`; }).join("") || `<p class="dim">No players are connected to Lyrion.</p>`))}
+    ${inTab("discover", section("For every screen in the house", "Discover", `<div class="set-grid">${DISC.map(d => toggle("setDisc", d[0], c.discover[d[0]], d[1])).join("")}</div>`))}
+    ${inTab("house", `<div id="set-bans"></div>`)}
+    ${inTab("help", section("For every screen in the house", "Backups", `<p class="plan-note">Each night Soundsquatch keeps a copy of what it can't fetch again (hearts, stars, tags, stations, the never-play list, removals and settings); the last two weeks of them stay on the server.</p>
       <div class="set-row"><span><b>Last copy</b><em id="bk-last">&hellip;</em></span><a class="pill" href="/api/backup" download>${icon("share")}<span class="pl">Download one now</span></a></div>
-      <div class="set-row"><span><b>Restore</b><em>from a downloaded copy: what it holds replaces what is here (removals are added to)</em></span><label class="pill bk-restore">Choose a file<input type="file" accept=".json,application/json" hidden></label></div>`)}
-    ${section("This device only", "This device", `
+      <div class="set-row"><span><b>Restore</b><em>from a downloaded copy: what it holds replaces what is here (removals are added to)</em></span><label class="pill bk-restore">Choose a file<input type="file" accept=".json,application/json" hidden></label></div>`))}
+    ${inTab("device", section("This device only", "This device", `
       <div class="set-row"><span><b>Starts in</b><em>the room this screen controls when it opens</em></span><select id="set-room"><option value="">the last one used</option>${rooms.map(p => `<option value="${p.playerid}" ${p.playerid === start ? "selected" : ""}>${esc(roomName(p.playerid))}</option>`).join("")}</select></div>
       <div class="set-row"><span><b>Text size</b><em>everything larger or smaller on this screen</em></span><div class="seg">${[[0.9, "Smaller"], [1, "Normal"], [1.1, "Larger"], [1.2, "Largest"]].map(z => `<button class="${z[0] === device.get("zoom", 1) ? "on" : ""}" data-act="setZoom" data-v="${z[0]}">${z[1]}</button>`).join("")}</div></div>
       ${toggle("setDev", "lite", device.get("lite", false), "Lighter drawing", "no frosted glass or big blurs: smoother on a modest machine")}
       ${toggle("setDev", "still", device.get("still", false), "Reduce motion", "no slow zooms or shimmer, and the cover stories don't turn by themselves")}
       <div class="set-row"><span><b>Look</b><em>Classic, or set like a printed music magazine</em></span><div class="seg">${[["classic", "Classic"], ["magazine", "Magazine"]].map(l => `<button class="${(magOn() ? "magazine" : "classic") === l[0] ? "on" : ""}" data-act="setLook" data-v="${l[0]}">${l[1]}</button>`).join("")}</div></div>
-      ${toggle("setOsk", "", oskOn(), "On-screen keyboard", "for a screen without a keyboard of its own, such as one on a wall")}`)}
-    ${section("For every screen in the house", "Connections", `${CONN.map(k => { const good = !!c.checks[k[3]];
+      ${toggle("setOsk", "", oskOn(), "On-screen keyboard", "for a screen without a keyboard of its own, such as one on a wall")}`))}
+    ${inTab("house", section("For every screen in the house", "Connections", `${CONN.map(k => { const good = !!c.checks[k[3]];
         return `<div class="set-field conn ${good ? "" : "open"}" data-k="${k[0]}"><span><b>${k[1]}</b><em>${k[2]}</em></span>
         <span class="conn-now"><span class="check ${good ? "good" : "bad"}">${esc(c.checks[k[0]] || "")}</span><button class="pill" data-act="connEdit">Change</button></span>
         <input data-conn="${k[0]}" value="${esc(c.connections[k[0]] || "")}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         ${k[0] === "lms_url" && (c.checks.lms_auth || c.connections.lms_user) ? loginFields(c) : ""}
         </div>`; }).join("")}
       <div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>
-      <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`)}
-    ${section("For every screen in the house", "Your records", discogsRow(c) + ttRow(c) + scrobbleRow(c))}
-    ${section("What Lyrion adds", "Lyrion's plugins", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
-      ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`)}
-    ${section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`)}
-    ${section("When something's wrong", "Diagnostics", `<div class="set-row"><span><b>A report for the forum thread</b><em>versions, what was found, the last errors; no names, addresses or listening</em></span><button class="pill" data-act="diagnostics">Show it</button></div>`)}
+      <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`))}
+    ${inTab("house", section("For every screen in the house", "Your records", discogsRow(c) + ttRow(c) + scrobbleRow(c)))}
+    ${inTab("house", section("What Lyrion adds", "Lyrion's plugins <span id=\"set-plugins\"></span>", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
+      ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`))}
+    ${inTab("house", section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`))}
+    ${inTab("help", section("When something's wrong", "Diagnostics", `<div class="set-row"><span><b>A report for the forum thread</b><em>versions, what was found, the last errors; no names, addresses or listening</em></span><button class="pill" data-act="diagnostics">Show it</button></div>`))}
     <p class="dim center set-foot">Soundsquatch ${esc(c.version || "")} &middot; settings for the house are saved on the server; this device's are saved in this browser.</p>
     <p class="dim center set-foot"><a href="https://www.buymeacoffee.com/mryeti" target="_blank" rel="noopener">Buy the sasquatch a beer</a></p>`;
   $(".settings", el).classList.toggle("editing", !!el.querySelector(".conn.open"));
+  $(".settings", el).setAttribute("data-on", setTab());
   api("/api/backups").then(b => { const e = $("#bk-last", el); if (e) e.textContent = b.last ? new Date(b.last * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + ` · ${b.files.length} kept` : "none yet (the first is made tonight)"; }).catch(() => {});
   const file = $(".bk-restore input", el);
   if (file) file.addEventListener("change", () => {
@@ -2189,7 +2196,7 @@ const ACT = {
       <p class="plan-note">For ${s.artists.toLocaleString()} artists that takes <b>about ${timeLeft(s.minutes)}</b>. Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
       <div class="settling settling-in"><span class="settling-t"><b>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists</b><span>genres for ${(s.albums - s.genres_left).toLocaleString()} of ${s.albums.toLocaleString()} albums, credits for ${(s.albums - s.credits_left).toLocaleString()}</span></span></div>
       ${PLUGINS.some(x => !x[3] && !has(x[0])) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0])).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0])).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
-      <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0])) ? `<a class="btn ghost" href="#/settings" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
+      <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0])) ? `<a class="btn ghost" href="#/settings/house" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
   },
   // the diagnostics a tester pastes: shown to read, copied (the clipboard needs https, so a selection otherwise), and
   // the forum thread opened beside it in the same tap (a link, so no browser stops the new tab)
@@ -2452,6 +2459,8 @@ const ACT = {
       toast(`Volume levelling ${v === "0" ? "off" : "by " + LEVELS[+v][1].toLowerCase()} in ${roomName(room)}`);
     }).catch(() => toast("Lyrion didn't answer"));
   },
+  setTab: (v, t) => { device.set("settab", v); const box = t.closest(".settings"); box.setAttribute("data-on", v);
+    Array.from(box.querySelectorAll(".set-tabs button")).forEach(b => b.classList.toggle("on", b.dataset.v === v)); main().scrollTop = 0; },
   seedSheet: v => { if (!v) return; (A.stations ? Promise.resolve() : loadStations()).then(() => seedSheet(v)); },
   seedNewStation: v => {
     const title = ($("#st-new").value || "").replace(/\s+/g, " ").trim(); if (!title) return;
