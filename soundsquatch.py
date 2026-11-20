@@ -557,13 +557,19 @@ def import_genres():
 
 def genres_for(a):
     """An album's genres from MusicBrainz: its release group's tags, else the artist's (from their profile, else asked)."""
-    plain = (re.sub(r"\s*[(\[].*?[)\]]", "", a[1]).strip() or a[1]).replace('"', "")
-    found = mb_get("release-group", query=f'releasegroup:"{plain}" AND artist:"{a[2].replace(chr(34), "")}"', limit=3).get("release-groups") or []
-    if found and int(found[0].get("score") or 0) >= 90:
-        g = house_genres.pick([[t["name"], t.get("count", 0)] for t in found[0].get("tags") or []])
+    d = profiles.get(key(a[2]), ({},))[0] or {}
+    rg = next((g for g in d.get("rgs") or [] if "tags" in g and lms_qobuz.plain(g["title"]) == lms_qobuz.plain(a[1])), None)
+    if rg:  # the profile's release groups already hold this album's tags: no question to MusicBrainz
+        g = house_genres.pick(rg["tags"])
         if g:
             return g, "album"
-    d = profiles.get(key(a[2]), ({},))[0] or {}
+    else:
+        plain = (re.sub(r"\s*[(\[].*?[)\]]", "", a[1]).strip() or a[1]).replace('"', "")
+        found = mb_get("release-group", query=f'releasegroup:"{plain}" AND artist:"{a[2].replace(chr(34), "")}"', limit=3).get("release-groups") or []
+        if found and int(found[0].get("score") or 0) >= 90:
+            g = house_genres.pick([[t["name"], t.get("count", 0)] for t in found[0].get("tags") or []])
+            if g:
+                return g, "album"
     tags = [[t, 1] for t in (d.get("mb") or {}).get("genres") or []]
     if not tags and (d.get("mb") or {}).get("mbid"):
         got = mb_get(f"artist/{d['mb']['mbid']}", inc="tags")
@@ -585,7 +591,13 @@ def genres_loop():
             with lib_lock:
                 todo = [a for a in library["albums"] if key(a[2]) not in NOT_ARTISTS and copies(a[2], a[1]) not in mine and
                         (copies(a[2], a[1]) not in have or (have[copies(a[2], a[1])] < time.time() - STALE and not a[8]))]
+                shelf_artists = set(library["artists"])
             crawl_state["genres_left"] = len(todo)
+            # an artist on the shelves not yet profiled: their albums wait, as the profile brings their genres with it
+            todo = [a for a in todo if key(a[2]) not in shelf_artists or get_profile(a[2])[0] is not None]
+            if not todo:
+                time.sleep(60)
+                continue
             if not todo:
                 time.sleep(3600)
                 continue
@@ -1145,6 +1157,7 @@ def mb_get(path, **query):
 
 
 lms_qobuz.mb_get = mb_get
+lms_qobuz.MB_AGENT = dict(AGENT, Accept="application/json")  # MusicBrainz asks for a contact in the User-Agent
 
 
 def get_json(url, timeout=15):
@@ -1225,9 +1238,11 @@ def part_rgs(mb):
     """The artist's release groups on MusicBrainz with their dates, newest first (for New from your artists)."""
     if not (mb or {}).get("mbid"):
         return None
-    got = mb_get("release-group", artist=mb["mbid"], limit=100, type="album|ep")
+    got = mb_get("release-group", artist=mb["mbid"], limit=100, type="album|ep", inc="tags")  # with their tags: the albums' genres, asked once for all
     out = [{"id": g["id"], "title": g.get("title") or "", "date": g.get("first-release-date") or "", "type": g.get("primary-type") or "",
-            "extra": g.get("secondary-types") or []} for g in got.get("release-groups", [])]
+            "extra": g.get("secondary-types") or [],
+            "tags": [[t["name"], t.get("count", 0)] for t in sorted(g.get("tags") or [], key=lambda t: -t.get("count", 0))[:8]]}
+           for g in got.get("release-groups", [])]
     return sorted(out, key=lambda g: g["date"], reverse=True)[:100]  # enough to know every record on the shelves by its kind
 
 
@@ -1443,7 +1458,7 @@ def diagnostics():
 def settling():
     """How far Soundsquatch has got with what it gathers about the shelves (a new house's first hours): artists profiled,
     albums with genres and credits, and a rough time left. MusicBrainz, one question a second, sets the pace: an artist
-    takes about nine, an album's genres one or two, its credits about three. Settled when only a stray few are left."""
+    takes about nine, an album's genres mostly none (they come with the artist), its credits about three. Settled when only a stray few are left."""
     with lib_lock:
         names = list(library["artists"])
         shelf = [copies(a[2], a[1]) for a in library["albums"] if key(a[2]) not in NOT_ARTISTS]
@@ -1456,7 +1471,7 @@ def settling():
         have_credits = {k for (k,) in c.execute("select k from credits")}
     genres_left = sum(1 for k in shelf if k not in have_genres)
     credits_left = sum(1 for k in shelf if k not in have_credits) if settings["features"]["credits"] else 0
-    left = (len(names) - profiled) * 9 + genres_left * 1.5 + credits_left * 3
+    left = (len(names) - profiled) * 9 + genres_left * 0.5 + credits_left * 3
     few = lambda n, of: n <= max(3, of * 0.02)
     return {"artists": len(names), "profiled": profiled, "albums": albums, "genres_left": genres_left, "credits_left": credits_left,
             "minutes": round(left / 60), "settled": bool(names) and few(len(names) - profiled, len(names)) and few(genres_left, albums) and few(credits_left, albums)}
@@ -2547,6 +2562,11 @@ def credits_loop():
     time.sleep(120)
     while True:
         try:
+            with lib_lock:
+                unprofiled = any(get_profile(k)[0] is None for k in library["artists"])
+            if unprofiled:  # the artists first: MusicBrainz's one question a second goes to them
+                time.sleep(60)
+                continue
             todo = [a for a in list(library["albums"]) if credits_for(a[0], fetch=False) is None and key(a[2]) not in NOT_ARTISTS]
             crawl_state["credits_left"] = len(todo)
             if not todo:
