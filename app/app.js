@@ -500,33 +500,33 @@ function drawDiscover(el) {
   else if (A.heroPick) drawHero($("#d-hero", el), A.heroPick, "Picked at random from your shelves");
   else if (on("discover", "cover") && coverStories().length) drawCover($("#d-hero", el));
   else drawHero($("#d-hero", el), h.spotlight, "Artist of the day");
-  const out = [];
-  if (on("discover", "stations") && A.stations && A.stations.stations.length) out.push(section("The radio", "Stations", shelf(A.stations.stations.map(stationCard).concat([newStationCard()]))));
-  if (on("discover", "because") && playing) out.push(`<div id="d-because"></div>`);
-  if (on("discover", "rotation") && h.rotation.length) out.push(section("From the listening log", "On rotation", shelf(h.rotation.map(n => face(n, "", albumsBy(n).length + " on the shelves")))));
-  if (on("discover", "back") && h.back.length) out.push(section("Pick up where you left off", "Back to it", shelf(h.back.map(id => albumCard(A.byId.get(id))))));
-  if (on("discover", "new") && (h.new || []).length) out.push(section("Out lately", "New from your artists", shelf(h["new"].map(newCard))));
-  PLUG_SHELVES.forEach(p => { if (on("discover", p.k) && A.cfg && A.cfg.have && A.cfg.have[p.have]) out.push(`<div id="d-${p.k}"></div>`); });
-  if (on("discover", "spotlight") && h.spotlight && (A.heroPick || A.heroAlbum || (on("discover", "cover") && coverStories().length))) out.push(`<div id="d-spot"></div>`); // the artist of the day, when something else leads
-  if (physicalShelf()) out.push(section("Let's get physical", "From the record shelf", physicalShelf(), `<a class="more" href="#/vinyl">All of them</a>`));
-  if (on("discover", "fresh")) out.push(section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
-  if (on("discover", "rediscover") && h.rediscover.length) out.push(section("Not heard lately", "Rediscover", `<div class="mosaic">${h.rediscover.slice(0, 12).map((id, i) => albumCard(A.byId.get(id), i === 0 ? "big" : "")).join("")}</div>`));
-  if (on("discover", "connections") && h.connections.length) out.push(section("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`));
-  if (on("discover", "beyond") && h.beyond.length) out.push(section("Not on your shelves yet", "Beyond the shelves", shelf(h.beyond.map(b => face(b.name, b.image, b.because.length ? "like " + esc(b.because.slice(0, 2).join(", ")) : "", "new"))), "", "beyond"));
-  if (on("discover", "archive") && A.archive.length) out.push(section("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@archive">All of them</a>`));
+  const parts = {}, put = (k, html) => { parts[k] = html; }; // set in the house's order below
+  if (on("discover", "stations") && A.stations && A.stations.stations.length) put("stations", section("The radio", "Stations", shelf(A.stations.stations.map(stationCard).concat([newStationCard()]))));
+  if (on("discover", "because") && playing) put("because", `<div id="d-because"></div>`);
+  if (on("discover", "rotation") && h.rotation.length) put("rotation", section("From the listening log", "On rotation", shelf(h.rotation.map(n => face(n, "", albumsBy(n).length + " on the shelves")))));
+  if (on("discover", "back") && h.back.length) put("back", section("Pick up where you left off", "Back to it", shelf(h.back.map(id => albumCard(A.byId.get(id))))));
+  if (on("discover", "new") && (h.new || []).length) put("new", section("Out lately", "New from your artists", shelf(h["new"].map(newCard))));
+  PLUG_SHELVES.forEach(p => { if (on("discover", p.k) && A.cfg && A.cfg.have && A.cfg.have[p.have]) put(p.k, `<div id="d-${p.k}"></div>`); });
+  if (on("discover", "spotlight") && h.spotlight && (A.heroPick || A.heroAlbum || (on("discover", "cover") && coverStories().length))) put("spotlight", `<div id="d-spot"></div>`); // the artist of the day, when something else leads
+  if (on("discover", "vinyl") && physicalShelf()) put("vinyl", section("Let's get physical", "From the record shelf", physicalShelf(), `<a class="more" href="#/vinyl">All of them</a>`));
+  if (on("discover", "fresh")) put("fresh", section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
+  if (on("discover", "rediscover") && h.rediscover.length) put("rediscover", section("Not heard lately", "Rediscover", `<div class="mosaic">${h.rediscover.slice(0, 12).map((id, i) => albumCard(A.byId.get(id), i === 0 ? "big" : "")).join("")}</div>`));
+  if (on("discover", "connections") && h.connections.length) put("connections", section("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`));
+  if (on("discover", "beyond") && h.beyond.length) put("beyond", section("Not on your shelves yet", "Beyond the shelves", shelf(h.beyond.map(b => face(b.name, b.image, b.because.length ? "like " + esc(b.because.slice(0, 2).join(", ")) : "", "new"))), "", "beyond"));
+  if (on("discover", "archive") && A.archive.length) put("archive", section("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@archive">All of them</a>`));
   const loved = shuffled(A.albums.filter(a => markOf("album", albumKey(a))[0]), seeded(h.date || ""));
-  if (on("discover", "loved") && loved.length) out.push(section("The ones with hearts", "Loved", shelf(loved.slice(0, 20).map(a => albumCard(a))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@loved">All of them</a>`));
+  if (on("discover", "loved") && loved.length) put("loved", section("The ones with hearts", "Loved", shelf(loved.slice(0, 20).map(a => albumCard(a))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@loved">All of them</a>`));
   if (on("discover", "round") && (h.round || []).length) { // albums turning a round number this month, the oldest anniversaries first, each with its age
     const groups = h.round.map(r => [r.age, r.albums.map(id => A.byId.get(id)).filter(Boolean)]).filter(g => g[1].length);
     const cards = [].concat.apply([], groups.map(g => g[1].map(a => `<div class="rn"><span class="rn-age">${g[0]}</span>${albumCard(a)}</div>`)));
-    if (cards.length) out.push(section("Round numbers", groups.length === 1 ? `${cap(inWords(groups[0][0]))} this month` : "This month's anniversaries", shelf(cards.slice(0, 24))));
+    if (cards.length) put("round", section("Round numbers", groups.length === 1 ? `${cap(inWords(groups[0][0]))} this month` : "This month's anniversaries", shelf(cards.slice(0, 24))));
   }
-  if (on("discover", "decade") && h.decade_albums.length) out.push(section("A decade, drawn at random", `The ${h.decade}s`, shelf(h.decade_albums.map(id => albumCard(A.byId.get(id))))));
+  if (on("discover", "decade") && h.decade_albums.length) put("decade", section("A decade, drawn at random", `The ${h.decade}s`, shelf(h.decade_albums.map(id => albumCard(A.byId.get(id))))));
   if (on("discover", "genre") && h.genre) {
     const g = shuffled(A.albums.filter(a => a[4] && (a[8] || []).indexOf(h.genre) >= 0), seeded(h.date || "")).slice(0, 16);
-    if (g.length) out.push(section("Genre of the day", esc(h.genre), shelf(g.map(a => albumCard(a))), `<a class="more" href="#/genre/${encodeURIComponent(h.genre)}">The whole bin</a>`));
+    if (g.length) put("genre", section("Genre of the day", esc(h.genre), shelf(g.map(a => albumCard(a))), `<a class="more" href="#/genre/${encodeURIComponent(h.genre)}">The whole bin</a>`));
   }
-  $("#d-body", el).innerHTML = out.join("");
+  $("#d-body", el).innerHTML = discOrder(false).filter(k => parts[k]).map(k => parts[k]).join("");
   if (playing) profile(playing).then(p => { const box = $("#d-because", el); if (box) box.outerHTML = becauseHtml(p); }).catch(() => {});
   PLUG_SHELVES.forEach(p => { if ($("#d-" + p.k, el)) plugShelf(p).then(html => { const box = $("#d-" + p.k, el); if (box) box.outerHTML = html; }); });
   if ($("#d-spot", el)) profile(h.spotlight).then(p => { const box = $("#d-spot", el); if (box) box.outerHTML = spotlightHtml(p); }).catch(() => {});
@@ -985,29 +985,37 @@ VIEWS.front = function (el) {
     const round = [].concat.apply([], (h.round || []).map(g => cards(g.albums).map(a => [g.age, a]))).slice(0, 6);
     const sections = [["radio", "On the radio"], ["playing", "What the house is playing"], ["new", "New records"], ["round", "Round numbers"], ["lately", "Not heard lately"], ["artist", "Artist of the day"]];
     const sec = (dept, title, body, cls) => `<section class="fp-sec ${cls || ""}"><div class="mag-dept">${dept}</div><h3>${title}</h3>${body}</section>`;
+    // the sections in the house's order (Settings, Discover), each only while it's on and has something to show
+    const P = {}, D = k => on("discover", k);
+    if (D("fresh") && newArrivals(1).length) P.fresh = sec("Just in", `Recently added <a class="fp-all" href="#/albums" data-act="recentAll">All of them</a>`, shelf(newArrivals(20).map(arrivalCard)));
+    if (D("vinyl") && physicalShelf()) P.vinyl = sec("Let's get physical", `From the record shelf <a class="fp-all" href="#/vinyl">All of them</a>`, physicalShelf());
+    if (D("stations") && st.length) P.stations = sec("On the radio", "Stations", shelf(st.map(stationCard)));
+    if (D("spotlight") && h.spotlight) P.spotlight = `<section class="fp-artist" id="fp-artist"><div class="mag-dept">Artist of the day</div></section>`;
+    if (D("rotation") && (h.rotation || []).length) P.rotation = sec("What the house is playing", "On rotation", `<div class="fp-faces">${h.rotation.slice(0, 8).map(n => face(n, "", albumsBy(n).length + " on the shelves")).join("")}</div>`);
+    if (D("new") && (h["new"] || []).length) P["new"] = sec("New records", "Out lately", `<div class="fp-covers">${h["new"].slice(0, 6).map(newCard).join("")}</div>`);
+    if (D("back") && (h.back || []).length) P.back = sec("Pick up where you left off", "Back to it", shelf(cards(h.back).map(a => albumCard(a))));
+    PLUG_SHELVES.forEach(p => { if (D(p.k) && A.cfg && A.cfg.have && A.cfg.have[p.have]) P[p.k] = `<div id="fp-${p.k}"></div>`; });
+    if (D("round") && round.length) P.round = sec("Round numbers", "This month's anniversaries", shelf(round.map(x => `<div class="rn"><span class="rn-age">${x[0]}</span>${albumCard(x[1])}</div>`)));
+    if (D("because")) P.because = `<div id="fp-because"></div>`;
+    if (D("archive") && A.archive.length && on("features", "archive")) P.archive = sec("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x))));
+    if (D("rediscover") && (h.rediscover || []).length) P.rediscover = sec("Not heard lately", "Rediscover", `<div class="mosaic">${cards(h.rediscover.slice(0, 5)).map((a, i) => albumCard(a, i === 0 ? "big" : "")).join("")}</div>`);
+    if (D("connections") && (h.connections || []).length) P.connections = sec("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`);
+    if (D("decade") && (h.decade_albums || []).length) P.decade = sec("A decade, drawn at random", `The ${h.decade}s`, shelf(cards(h.decade_albums).map(a => albumCard(a))));
+    if (D("genre") && h.genre) P.genre = sec("Genre of the day", `<a href="#/genre/${encodeURIComponent(h.genre)}">${esc(h.genre)}</a>`, shelf(shuffled(A.albums.filter(a => a[4] && (a[8] || []).indexOf(h.genre) >= 0), seeded(h.date || "")).slice(0, 16).map(a => albumCard(a))));
+    // On rotation and Out lately side by side whenever one follows the other
+    const order = discOrder(true).filter(k => P[k]), body = [];
+    for (let i = 0; i < order.length; i++) {
+      const k = order[i], n = order[i + 1];
+      if ((k === "rotation" && n === "new") || (k === "new" && n === "rotation")) { body.push(`<div class="fp-pair">${P[k]}${P[n]}</div>`); i++; } else body.push(P[k]);
+    }
+    const frontBody = body.join("\n");
     el.innerHTML = `<article class="mag fp">
       <header class="fp-plate"><div class="fp-line"><span>Vol. 1 &middot; No. ${issue}</span><span>${esc(date)}</span><span>${A.albums.length.toLocaleString()} records on the shelves</span></div>
         <h1>Sound<em>squatch</em></h1><div class="fp-line fp-tag"><span>Your music, connected.</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></div></header>
       <div class="fp-top">${lead ? story(lead, true) : `<p class="dim">No stories today.</p>`}<div class="fp-also">${rest.map(x => story(x, false)).join("")}
         <div class="fp-lucky"><button data-act="surprise">${icon("dice")} A record at random</button><button data-act="pickArtist">${icon("person")} An artist at random</button></div></div></div>
       ${picked || A.heroPick ? `<div class="fp-back"><button data-act="heroBack">Back to today's paper</button></div>` : ""}
-      ${newArrivals(1).length ? sec("Just in", `Recently added <a class="fp-all" href="#/albums" data-act="recentAll">All of them</a>`, shelf(newArrivals(20).map(arrivalCard))) : ""}
-      ${physicalShelf() ? sec("Let's get physical", `From the record shelf <a class="fp-all" href="#/vinyl">All of them</a>`, physicalShelf()) : ""}
-      ${st.length ? sec("On the radio", "Stations", shelf(st.map(stationCard))) : ""}
-      ${h.spotlight ? `<section class="fp-artist" id="fp-artist"><div class="mag-dept">Artist of the day</div></section>` : ""}
-      <div class="fp-pair">
-        ${(h.rotation || []).length ? sec("What the house is playing", "On rotation", `<div class="fp-faces">${h.rotation.slice(0, 8).map(n => face(n, "", albumsBy(n).length + " on the shelves")).join("")}</div>`) : ""}
-        ${(h["new"] || []).length ? sec("New records", "Out lately", `<div class="fp-covers">${h["new"].slice(0, 6).map(newCard).join("")}</div>`) : ""}
-      </div>
-      ${(h.back || []).length ? sec("Pick up where you left off", "Back to it", shelf(cards(h.back).map(a => albumCard(a)))) : ""}
-      ${PLUG_SHELVES.filter(p => on("discover", p.k) && A.cfg && A.cfg.have && A.cfg.have[p.have]).map(p => `<div id="fp-${p.k}"></div>`).join("")}
-      ${round.length ? sec("Round numbers", "This month's anniversaries", shelf(round.map(x => `<div class="rn"><span class="rn-age">${x[0]}</span>${albumCard(x[1])}</div>`))) : ""}
-      <div id="fp-because"></div>
-      ${A.archive.length && on("features", "archive") ? sec("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x)))) : ""}
-      ${(h.rediscover || []).length ? sec("Not heard lately", "Rediscover", `<div class="mosaic">${cards(h.rediscover.slice(0, 5)).map((a, i) => albumCard(a, i === 0 ? "big" : "")).join("")}</div>`) : ""}
-      ${(h.connections || []).length ? sec("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`) : ""}
-      ${(h.decade_albums || []).length ? sec("A decade, drawn at random", `The ${h.decade}s`, shelf(cards(h.decade_albums).map(a => albumCard(a)))) : ""}
-      ${h.genre ? sec("Genre of the day", `<a href="#/genre/${encodeURIComponent(h.genre)}">${esc(h.genre)}</a>`, shelf(shuffled(A.albums.filter(a => a[4] && (a[8] || []).indexOf(h.genre) >= 0), seeded(h.date || "")).slice(0, 16).map(a => albumCard(a)))) : ""}
+      ${frontBody}
     </article>`;
     if (lead) fillLead(el, lead);
     PLUG_SHELVES.forEach(p => { if ($("#fp-" + p.k, el)) plugShelf(p, sec).then(html => { const box = $("#fp-" + p.k, el); if (box) box.outerHTML = html; }).catch(() => {}); });
@@ -1759,9 +1767,20 @@ const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on art
 const loginFields = c => `<div class="conn-login"><input data-conn="lms_user" value="${esc(c.connections.lms_user || "")}" placeholder="Lyrion username" autocomplete="off" autocapitalize="off" spellcheck="false">
   <input data-conn="lms_password" type="password" value="" placeholder="${c.lms_password_set ? "password (unchanged)" : "password"}" autocomplete="off"></div>`;
 const PLUGIN_FOR = { archive: "ArchiveLMA", stations: "Don't Stop the Music and LastMix" };
+/* Discover's order: each look its own until the house drags one into Settings' list, then both follow it (each skipping
+   what it doesn't draw); a section added since takes its place after the one it follows in the look's own order.
+   The cover stories (the classic page's top, the front's lead) aren't in it: the page starts with them. */
+const DISC_CLASSIC = ["stations", "because", "rotation", "back", "new", "listenlater", "lbfresh", "pitchfork", "spotlight", "vinyl", "fresh", "rediscover", "connections", "beyond", "archive", "loved", "round", "decade", "genre"];
+const DISC_FRONT = ["fresh", "vinyl", "stations", "spotlight", "rotation", "new", "back", "listenlater", "lbfresh", "pitchfork", "round", "because", "archive", "rediscover", "connections", "decade", "genre", "loved", "beyond"];
+function discOrder(mag) {
+  const base = mag ? DISC_FRONT : DISC_CLASSIC, out = ((A.cfg && A.cfg.discover_order) || []).filter(k => base.indexOf(k) >= 0);
+  if (!out.length) return base.slice();
+  base.forEach((k, i) => { if (out.indexOf(k) >= 0) return; const prev = base.slice(0, i).reverse().find(x => out.indexOf(x) >= 0); out.splice(prev ? out.indexOf(prev) + 1 : 0, 0, k); });
+  return out;
+}
 const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", "Kindred spirits"], ["rotation", "On rotation"], ["back", "Back to it"], ["new", "New from your artists"],
   ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
-  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"]];
+  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
 VIEWS.settings = function (el, arg) {
   if (SET_TABS.some(t => t[0] === arg)) device.set("settab", arg);
@@ -1808,6 +1827,14 @@ function scrobbleRow(c) {
 const SET_TABS = [["device", "This device"], ["discover", "Discover"], ["house", "House"], ["help", "Help"]];
 const setTab = () => { const t = device.get("settab", "device"); return SET_TABS.some(x => x[0] === t) ? t : "device"; };
 const inTab = (t, html) => `<div class="set-tab" data-tab="${t}">${html}</div>`;
+// Discover's sections as a list in the page's order: a switch each, and a grip to drag one to another place
+function discList(c) {
+  const name = k => (DISC.find(d => d[0] === k) || [k, k])[1];
+  return `<p class="plan-note">Drag a section by its grip to move it; its switch shows or hides it. Both looks, Classic and Magazine, follow this order; the cover stories always open the page.</p>
+    <div class="disc-list">${toggle("setDisc", "cover", c.discover.cover, name("cover"), "always at the top")}
+    ${discOrder(magOn()).map(k => `<div class="dord" data-k="${k}"><span class="dgrip" aria-label="Move">${icon("grip")}</span>${toggle("setDisc", k, c.discover[k], name(k))}</div>`).join("")}</div>
+    ${(c.discover_order || []).length ? `<div class="acts"><button class="pill" data-act="discReset">Back to each look's own order</button></div>` : ""}`;
+}
 function drawSettings(el) {
   const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
   const rooms = A.rooms, start = device.get("room", ""); // a group (Lyrion's Groups plugin) too: some houses play in one most of the time
@@ -1819,7 +1846,7 @@ function drawSettings(el) {
       : toggle("setFeat", f[0], c.features[f[0]], f[1], f[2])).join("")))}
     ${inTab("house", section("For every screen in the house", "Rooms", rooms.map(p => { const r = c.rooms[p.playerid] || {};
         return `<div class="set-row"><span><b>${esc(roomName(p.playerid))}</b><em>${r.name ? esc(p.name) + " in Lyrion" : "as Lyrion names it"}${r.fixed ? " &middot; volume set on the device" : ""}</em></span><button class="pill" data-act="roomEdit" data-v="${p.playerid}">Change</button></div>`; }).join("") || `<p class="dim">No players are connected to Lyrion.</p>`))}
-    ${inTab("discover", section("For every screen in the house", "Discover", `<div class="set-grid">${DISC.map(d => toggle("setDisc", d[0], c.discover[d[0]], d[1])).join("")}</div>`))}
+    ${inTab("discover", section("For every screen in the house", "Discover", discList(c)))}
     ${inTab("house", `<div id="set-bans"></div>`)}
     ${inTab("help", section("For every screen in the house", "Backups", `<p class="plan-note">Each night Soundsquatch keeps a copy of what it can't fetch again (hearts, stars, tags, stations, the never-play list, removals and settings); the last two weeks of them stay on the server.</p>
       <div class="set-row"><span><b>Last copy</b><em id="bk-last">&hellip;</em></span><a class="pill" href="/api/backup" download>${icon("share")}<span class="pl">Download one now</span></a></div>
@@ -2459,6 +2486,7 @@ const ACT = {
       toast(`Volume levelling ${v === "0" ? "off" : "by " + LEVELS[+v][1].toLowerCase()} in ${roomName(room)}`);
     }).catch(() => toast("Lyrion didn't answer"));
   },
+  discReset: () => saveSettings({ discover_order: [] }, "Each look has its own order again"),
   setTab: (v, t) => { device.set("settab", v); const box = t.closest(".settings"); box.setAttribute("data-on", v);
     Array.from(box.querySelectorAll(".set-tabs button")).forEach(b => b.classList.toggle("on", b.dataset.v === v)); main().scrollTop = 0; },
   seedSheet: v => { if (!v) return; (A.stations ? Promise.resolve() : loadStations()).then(() => seedSheet(v)); },
@@ -3210,6 +3238,28 @@ document.addEventListener("pointerdown", e => {
     const pl = (list.dataset.drag || "").split(":");
     if (pl[0] === "playlist") api("/api/playlist-do", { what: "move", playlist_id: +pl[1], from: +rows[from].dataset.i, to: +rows[to].dataset.i }).then(() => { forgetPlaylists(); VIEWS.playlist(current.el, pl[1]); });
     else send(["playlist", "move", rows[from].dataset.i, rows[to].dataset.i]);
+  };
+  document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
+});
+// Discover's sections in Settings move by dragging a row by its grip (as the queue does); the order is the house's
+document.addEventListener("pointerdown", e => {
+  const g = e.target.closest && e.target.closest(".dgrip"); if (!g) return;
+  e.preventDefault();
+  const row = g.closest(".dord"), rows = Array.prototype.slice.call(row.parentNode.querySelectorAll(".dord"));
+  const from = rows.indexOf(row), h = row.offsetHeight, y0 = e.clientY;
+  let to = from;
+  row.classList.add("dragging");
+  const move = ev => {
+    const dy = ev.clientY - y0; row.style.transform = `translateY(${dy}px)`;
+    to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / h)));
+    rows.forEach((r, i) => { if (r === row) return; const shift = from < to && i > from && i <= to ? -h : from > to && i < from && i >= to ? h : 0; r.style.transform = shift ? `translateY(${shift}px)` : ""; });
+  };
+  const up = () => {
+    document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", up);
+    rows.forEach(r => { r.style.transform = ""; }); row.classList.remove("dragging");
+    if (to === from) return;
+    const keys = rows.map(r => r.dataset.k); keys.splice(to, 0, keys.splice(from, 1)[0]);
+    saveSettings({ discover_order: keys }, `${(DISC.find(d => d[0] === keys[to]) || [0, "It"])[1]} moved`);
   };
   document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
 });

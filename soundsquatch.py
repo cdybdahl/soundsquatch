@@ -102,7 +102,7 @@ NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 
 # ───────────────────────── settings: settings.json beside the script, today's values the defaults ─────────────────────────
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
-DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre"]
+DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl"]
 DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
@@ -110,7 +110,7 @@ DEFAULTS = {
                  "turntable_capture": False,  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
                  "prefer_captured": True},  # an album with a take from the turntable shows and spins that take first
     "discover": {k: True for k in DISCOVER_SECTIONS},
-    "house": {"rooms": {}, "pin": "", "turntable_lid": "", "turntable_room": "", "scrobble_url": ""},  # scrobble_url: a ListenBrainz-style API the plays go to ("" none)  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
+    "house": {"rooms": {}, "pin": "", "discover_order": [], "turntable_lid": "", "turntable_room": "", "scrobble_url": ""},  # scrobble_url: a ListenBrainz-style API the plays go to ("" none)  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
 }
 settings = json.loads(json.dumps(DEFAULTS))
 NEEDS = {"archive": "archive", "stations": "radio"}  # a feature that needs a Lyrion plugin, by HAVE's name for it
@@ -503,7 +503,7 @@ def physical_records(albums):
 def settings_for_app():
     checks = check_settings()
     conn = dict(settings["connections"], lms_password="")  # the password is never sent back
-    return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"],
+    return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"], "discover_order": settings["house"]["discover_order"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
             "have": {k: v for k, v in HAVE.items()}, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
@@ -546,6 +546,9 @@ def save_settings(req):
                 settings["house"]["rooms"][pid] = room
             else:
                 settings["house"]["rooms"].pop(pid, None)
+    if isinstance(req.get("discover_order"), list):  # Discover's sections in the house's order ([] the looks' own)
+        order = [k for k in req["discover_order"] if k in DISCOVER_SECTIONS]
+        settings["house"]["discover_order"] = list(dict.fromkeys(order))
     if isinstance(req.get("new_pin"), str):
         settings["house"]["pin"] = pin_hash(req["new_pin"].strip()) if req["new_pin"].strip() else ""
     if isinstance(req.get("turntable_room"), str) and (lms_qobuz.PLAYER.match(req["turntable_room"]) or not req["turntable_room"]):

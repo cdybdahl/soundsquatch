@@ -1558,3 +1558,11 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .settings[data-on="device"] .set-tab[data-tab="device"], .settings[data-on="discover"] .set-tab[data-tab="discover"],
 .settings[data-on="house"] .set-tab[data-tab="house"], .settings[data-on="help"] .set-tab[data-tab="help"] { display: block; }
 @media (max-width: 700px) { .settings .set-tabs { width: auto; } .settings .set-tabs button { flex: 1; padding: 0 6px; } }
+
+/* Discover's sections in Settings: one list, a grip on each row */
+.disc-list .dord { display: flex; align-items: center; position: relative; background: var(--bg); }
+.disc-list .dord .set-row { flex: 1; min-width: 0; }
+.disc-list .dord.dragging { z-index: 2; box-shadow: 0 6px 24px rgba(0, 0, 0, .5); transition: none; }
+.disc-list .dord:not(.dragging) { transition: transform .15s; }
+.disc-list > .set-row { padding-left: 34px; }
+.dgrip { width: 34px; height: 48px; flex: none; display: flex; align-items: center; justify-content: center; color: var(--faint); touch-action: none; cursor: grab; }
