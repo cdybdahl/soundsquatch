@@ -4811,7 +4811,8 @@ def turntable_state():
     rec = spin and spin["record"]
     un = tt_unnamed()
     plays = (kv_get("tt_plays", {}) or {}).get(str(rec[0]), {}) if rec else {}
-    return {"state": TT["state"], "listener": bool(EAR and EAR.connected), "lid": TT["lid"], "level": round(EAR.level, 1) if EAR else None,
+    # a record nothing has named yet is still playing: said so, with the question of what it is (it read "idle")
+    return {"state": "playing" if un and TT["state"] == "idle" else TT["state"], "listener": bool(EAR and EAR.connected), "lid": TT["lid"], "level": round(EAR.level, 1) if EAR else None,
             "record": {"id": rec[0], "title": rec[1].strip(), "artist": rec[2], "year": tt_year(rec), "image": rec[4], "album_id": rec[8],
                        "href": f"#/album/{rec[8]}" if rec[8] else f"#/record/{rec[0]}", "plays": plays.get("n", 0), "last": plays.get("last", ""),
                        "new": bool(len(rec) > 9 and (rec[9] or {}).get("new"))} if rec else
