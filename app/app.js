@@ -104,6 +104,9 @@ const cover = (art, s) => art ? `/cover/${art}/${snap(COVER_SIZES, s || 300)}.jp
 const pic = (u, w) => !u ? "" : u.charAt(0) === "/" ? u : "/img?u=" + encodeURIComponent(u) + (w ? "&w=" + snap(PICTURE_WIDTHS, w) : "");
 const artistHref = n => "#/artist/" + encodeURIComponent(n);
 const albumHref = id => "#/album/" + id;
+// a record off the shelves has a page too (from Qobuz), opened the same way wherever it's shown; the cover rides along to draw it at once
+const awayChip = (artist, album) => `<button class="chip" data-act="awayChip" data-v="${esc(JSON.stringify([artist || "", album || ""]))}" aria-label="Spin it">${icon("play")}</button>`;
+const awayHref = (artist, album, cover) => "#/away/" + encodeURIComponent(JSON.stringify([artist || "", album || "", cover || ""]));
 const roomName = id => houseRoom(id).name || ((A.rooms.find(r => r.playerid === id) || {}).name) || "a room";
 const mmss = s => { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
 const paras = t => String(t || "").replace(/\r/g, "").replace(/&copy;?/g, "\u00a9").split(/\n\s*\n|\n/).map(p => p.trim()).filter(Boolean);
@@ -562,8 +565,8 @@ function plugCard(p, it) {
   const n = plugName(it.name), own = plugOwned(n);
   if (own) return albumCard(own, "q");
   const img = plugPic(it.image), mine = n.artist && onShelves(n.artist);
-  return `<div class="card q" data-act="plugPlay" data-v="${esc(JSON.stringify({ tag: p.tag, id: it.id, name: n.title }))}"><div class="art">${img ? `<img loading="lazy" decoding="async" src="${esc(img)}" alt="">` : `<div class="noart">${esc((n.artist || n.title).slice(0, 1))}</div>`}
-    ${mine && p.badge ? `<span class="badge">Your artist</span>` : p.badge ? `<span class="badge">${p.badge}</span>` : ""}</div><div class="t">${esc(n.title)}</div><div class="s">${esc(n.artist)}${n.year ? " &middot; " + n.year : ""}</div></div>`;
+  return `<a class="card q" href="${awayHref(n.artist, n.title, img)}"><div class="art">${img ? `<img loading="lazy" decoding="async" src="${esc(img)}" alt="">` : `<div class="noart">${esc((n.artist || n.title).slice(0, 1))}</div>`}<button class="chip" data-act="plugPlay" data-v="${esc(JSON.stringify({ tag: p.tag, id: it.id, name: n.title }))}" aria-label="Spin it">${icon("play")}</button>
+    ${mine && p.badge ? `<span class="badge">Your artist</span>` : p.badge ? `<span class="badge">${p.badge}</span>` : ""}</div><div class="t">${esc(n.title)}</div><div class="s">${esc(n.artist)}${n.year ? " &middot; " + n.year : ""}</div></a>`;
 }
 function plugShelf(p, wrap) { // wrap: how the page sets a section (the magazine front has its own)
   return plugItems(p).then(items => {
@@ -576,8 +579,8 @@ function plugShelf(p, wrap) { // wrap: how the page sets a section (the magazine
 function newCard(r) {
   const when = new Date(r.date + "T12:00"), soon = when > new Date();
   const date = (soon ? "Out " : "") + when.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return `<div class="card q" data-act="newRelease" data-v="${esc(JSON.stringify(r))}"><div class="art"><img loading="lazy" decoding="async" src="${esc(pic(r.cover, 320))}" alt="">
-    ${r.owned ? `<span class="badge">On your shelves</span>` : r.qobuz ? `<span class="badge">Qobuz</span>` : ""}</div><div class="t">${esc(r.title)}</div><div class="s">${esc(r.artist)} &middot; ${date}</div></div>`;
+  return `<a class="card q" href="${awayHref(r.artist, r.title, r.cover)}"><div class="art"><img loading="lazy" decoding="async" src="${esc(pic(r.cover, 320))}" alt="">
+    ${r.owned ? `<span class="badge">On your shelves</span>` : r.qobuz ? `<span class="badge">Qobuz</span>` : ""}${soon ? "" : awayChip(r.artist, r.title)}</div><div class="t">${esc(r.title)}</div><div class="s">${esc(r.artist)} &middot; ${date}</div></a>`;
 }
 /* the cover: the day's stories, a spread each, turning every ten seconds (still while touched; swipe or tap a dot) */
 const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
@@ -744,12 +747,62 @@ function linkCard(c) {
       <ul>${c.on.map(o => `<li>${line(o)}</li>`).join("")}</ul>
       <div class="pc-foot"><button class="pill" data-act="playConnection" data-v="${esc(JSON.stringify(songs))}">${icon("play")}<span class="pl">${songs.length > 1 ? `Play these ${songs.length}` : "Play it"}</span></button>
       ${c.more ? `<a class="pc-more" href="${personHref(c)}">and ${c.more} more of your artists</a>` : ""}</div>
-      ${(c.beyond || []).length ? `<div class="pc-beyond"><div class="kicker">Beyond your shelves</div>${c.beyond.map(w => `<button class="pc-work" data-act="findWork" data-v="${esc(w.artist + " " + w.title)}">
-        <span class="pc-art">${w.cover ? `<img loading="lazy" src="${esc(pic(w.cover, 120))}" alt="" onerror="this.remove()">` : ""}</span><span><b>${esc(roleWords(w.roles).replace(/ on$/, ""))}</b><i>${esc(w.title)}</i><em>${esc(w.artist)}${w.date ? " &middot; " + w.date.slice(0, 4) : ""}</em></span></button>`).join("")}</div>` : ""}</div>`;
+      ${(c.beyond || []).length ? `<div class="pc-beyond"><div class="kicker">Beyond your shelves</div>${c.beyond.map(w => `<a class="pc-work" href="${awayHref(w.artist, w.title, w.cover)}">
+        <span class="pc-art">${w.cover ? `<img loading="lazy" src="${esc(pic(w.cover, 120))}" alt="" onerror="this.remove()">` : ""}</span><span><b>${esc(roleWords(w.roles).replace(/ on$/, ""))}</b><i>${esc(w.title)}</i><em>${esc(w.artist)}${w.date ? " &middot; " + w.date.slice(0, 4) : ""}</em></span></a>`).join("")}</div>` : ""}</div>`;
   }
   return `<div class="link">${face(c.a, "", "", "sm")}<div class="rel"><span>${esc(relWords(c.type, c.dir))}</span>${c.attrs && c.attrs.length ? `<em>${esc(c.attrs.join(", "))}</em>` : ""}</div>${face(c.b, "", "", "sm")}</div>`;
 }
 
+/* ───────────────────────── a record off the shelves ─────────────────────────
+   Opened like any album, wherever it was found (Qobuz, a plugin's shelf, a credit, a new release): on the shelves after
+   all, its own album page; else Qobuz's release, set as an album page is in each look, with Spin it, Play Next, Add to
+   Queue and Add to the library. */
+VIEWS.away = function (el, arg) {
+  let x; try { x = JSON.parse(arg); } catch (e) { x = ["", arg, ""]; }
+  const artist = x[0] || "", title = x[1] || "", mag = magOn(), more = artist ? albumsBy(artist).filter(a => !a.archive) : [];
+  const art = c => c ? `<img src="${esc(pic(c, 800))}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`;
+  const acts = big => [["play", "play", "Spin it"], ["next", "next_up", "Play Next"], ["queue", "queue", "Add to Queue"], ["keep", "heart", "Add to the library"]]
+    .map((b, n) => big ? `<button class="${n ? "btn ghost" : "btn"}" data-act="awayAct" data-v="${b[0]}">${icon(b[1])} ${b[2]}</button>`
+      : `<button ${n ? "" : `class="al-spin" `}data-act="awayAct" data-v="${b[0]}">${icon(b[1])}${n ? `<span>${b[2]}</span>` : " " + b[2]}</button>`).join("");
+  const rows = `<div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div>`;
+  const by = artist ? `<a href="${artistHref(artist)}">${esc(artist)}</a>` : "";
+  el.innerHTML = mag ? `<article class="mag mag-al">${magRun("The Records")}
+    <div class="al-open"><figure class="mag-cover"><div class="album-art">${art(x[2])}</div></figure>
+      <div class="al-head"><div class="mag-dept">Not on your shelves</div><h1 class="mag-head mag-head-album">${esc(title)}</h1>
+        <p class="mag-deck mag-album-deck">${by ? "By " + by : ""}<span class="aw-year"></span>.</p><div class="mag-by aw-facts"></div>
+        <div class="al-acts aw-acts">${acts(false)}</div></div></div>
+    <div class="al-body"><div class="al-main"><div class="mag-dept">The tracks</div>${rows}<div class="aw-story"></div></div>
+    <aside class="al-aside">${more.length ? `<div class="mag-recs"><div class="ff-h">On your shelves</div>${more.map(a => `<a class="mr" href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""><span class="y">${a[3] || "&mdash;"}</span><b>${esc(a[1])}</b></a>`).join("")}</div>` : ""}</aside></div></article>`
+    : `${pageBar(esc(title || "Album"), ["Not on your shelves", esc(artist)], "", true)}<div class="album-bg">${x[2] ? `<img src="${esc(pic(x[2], 150))}" alt="">` : ""}</div><div class="album">
+    <div class="album-art">${art(x[2])}</div>
+    <div class="album-head"><div class="kicker al-kick aw-facts">Not on your shelves</div><h1 class="al-title">${esc(title)}</h1><div class="byline">${by.replace("<a ", `<a class="by al-by" `)}</div>
+      <div class="acts aw-acts">${acts(true)}</div>${rows}</div></div>
+    <div class="aw-story"></div>${more.length ? section("Already on your shelves", "More by " + esc(artist), shelf(more.map(a => albumCard(a)))) : ""}`;
+  const img = $(".album-art img", el); if (img) tint(img, el);
+  api("/api/away?" + new URLSearchParams({ artist: artist, album: title, player: A.room || "" })).then(r => {
+    if (!el.isConnected) return;
+    if (r.album_id) { history.replaceState(null, "", albumHref(r.album_id)); A.views.delete(location.hash); return route(); } // on the shelves after all
+    el.away = r;
+    const t = $(".tracks", el);
+    if (r.error || !r.tracks.length) {
+      if (t) t.outerHTML = `<p class="dim">${r.error === "no Qobuz" ? "Not on your shelves, and Lyrion has no Qobuz plugin to find it on." : r.error === "failed" ? "Qobuz didn't answer this time." : "Qobuz doesn't have this one."} <a href="#/search" data-act="findWork" data-v="${esc(artist + " " + title)}">Search for it</a></p>`;
+      $(".aw-acts", el).hidden = true;
+    } else {
+      t.outerHTML = `<div class="tracks${mag ? " mag-tracks" : ""}">${r.tracks.map(s => `<div class="trk" data-act="awayTrack" data-v="${s.k}"><span class="n">${s.n}</span><span class="tt">${esc(s.title)}</span></div>`).join("")}</div>`;
+      const d = r.details, facts = [d.type && d.type !== "Album" ? d.type : "", r.year, d.label, d.genre, d.length ? d.length.replace(/^0:/, "") : ""].filter(Boolean);
+      const f = $(".aw-facts", el); if (f) f.innerHTML = mag ? facts.filter(v => v !== r.year).map(esc).join(" &middot; ") + " &middot; On Qobuz" : ["Not on your shelves"].concat(facts).map(esc).join(" &middot; ");
+      const y = $(".aw-year", el); if (y && r.year) y.textContent = ", " + r.year;
+      if (r.kept) { const k = $('[data-act="awayAct"][data-v="keep"]', el); if (k) { k.disabled = true; k.lastChild.textContent = mag ? "In your library" : " In your library"; } }
+      if (!x[2] && r.cover) $(".album-art", el).innerHTML = art(r.cover);
+    }
+    return api("/api/review?" + new URLSearchParams({ artist: r.artist || artist, album: r.album || title }));
+  }).then(rv => {
+    const box = $(".aw-story", el); if (!rv || !box || !el.isConnected) return;
+    const review = paras(rv.review || "");
+    if (review.length) box.outerHTML = mag ? `<div class="mag-body mag-review"><div class="mag-dept">The story</div>${folded(review, 3, artist)}<div class="credit">From Wikipedia</div></div>`
+      : `<section class="sec review"><div class="kicker">About the record</div>${folded(review, 3, artist)}<div class="credit">From Wikipedia</div></section>`;
+  }).catch(() => { const t = $(".tracks.loading-rows", el); if (t) t.outerHTML = `<p class="dim">Qobuz didn't answer this time.</p>`; });
+};
 /* ───────────────────────── an artist ───────────────────────── */
 VIEWS.artist = function (el, name) {
   let drawn = "";
@@ -813,7 +866,7 @@ function archShelf(shows) {
 }
 function qCard(r) {
   const art = r.cover ? `<img loading="lazy" decoding="async" src="${esc(pic(r.cover, 320))}" alt="">` : `<div class="noart">${esc(r.album.slice(0, 1))}</div>`;
-  return `<div class="card q" data-act="qobuzSheet" data-v="${esc(JSON.stringify(r))}"><div class="art">${art}<span class="badge">Qobuz</span></div><div class="t">${esc(r.album)}</div><div class="s">${esc(r.artist)}</div></div>`;
+  return `<a class="card q" href="${awayHref(r.artist, r.album, r.cover)}"><div class="art">${art}<span class="badge">Qobuz</span>${awayChip(r.artist, r.album)}</div><div class="t">${esc(r.album)}</div><div class="s">${esc(r.artist)}</div></a>`;
 }
 
 /* ───────────────────────── the magazine (a mock-up, at #/mag/NAME) ─────────────────────────
@@ -821,7 +874,7 @@ function qCard(r) {
    photograph with its caption, the story in two columns with a drop cap and a pull quote, a fact file in the margin,
    and a buyer's guide to their records on the shelves. Not linked from anywhere yet: the artist page stays as it is. */
 // the magazine look, on this device: the pages it has its own way of setting (the rest keep theirs, under a running head)
-const magOn = () => device.get("look", "classic") === "magazine";
+const magOn = () => (/[?&]look=magazine/.test(location.search) || device.get("look", "classic") === "magazine") && !/[?&]look=classic/.test(location.search); // ?look= for a screenshot of either
 const MAG = {};
 function magRun(section) {
   const issue = Math.floor((Date.now() - new Date("2026-01-01").getTime()) / 86400000) + 1;
@@ -861,7 +914,7 @@ VIEWS.mag = function (el, name) {
     // theirs on Qobuz, not on the shelves, grouped as Qobuz groups them; each opens the Qobuz sheet (Spin it, Queue, Add to the library)
     const owned = new Set(mine.map(a => plain(a[1]))), away = {};
     ((p.qobuz && p.qobuz.releases) || []).forEach(r => { if (!owned.has(plain(r.album))) (away[r.group] = away[r.group] || []).push(r); });
-    const awayHtml = Object.keys(away).map(g => `<div class="mr-k mag-away-k">${esc(g)}</div><ol>${away[g].map(r => `<li><button class="mag-away" data-act="qobuzSheet" data-v="${esc(JSON.stringify({ artist: r.artist, album: r.album, cover: r.cover, i: r.i, page: realName }))}">${r.cover ? `<img loading="lazy" src="${esc(pic(r.cover, 320))}" alt="">` : `<span class="noart"></span>`}<span class="y">Qobuz</span><b>${esc(r.album)}</b><em></em></button></li>`).join("")}</ol>`).join("");
+    const awayHtml = Object.keys(away).map(g => `<div class="mr-k mag-away-k">${esc(g)}</div><ol>${away[g].map(r => `<li><a class="mag-away" href="${awayHref(r.artist || realName, r.album, r.cover)}">${r.cover ? `<img loading="lazy" src="${esc(pic(r.cover, 320))}" alt="">` : `<span class="noart"></span>`}<span class="y">Qobuz</span><b>${esc(r.album)}</b><em></em></a></li>`).join("")}</ol>`).join("");
     const credit = /wikimedia/.test(p.hero || "") ? "Wikimedia Commons" : /qobuz/.test(p.hero || "") ? "Qobuz" : /discogs/.test(p.hero || "") ? "Discogs" : "";
     const half = Math.ceil(list.length / 2);
     const body = list.slice(0, Math.max(half, 2)).map((x, i) => i === 0 ? `<p class="dc">${linked(x, realName)}</p>` : `<p>${linked(x, realName)}</p>`).join("")
@@ -1050,7 +1103,7 @@ VIEWS.record = function (el, id) {
       <dl class="rec-facts">${[["Year", recordYear(r) && recordYear(r) !== r[3] ? recordYear(r) + " (this pressing " + r[3] + ")" : r[3] || ""], ["Format", r[5] + (d.t ? ", " + Array.from(new Set(d.t.split(/,\s*/))).join(", ") : "")], ["Label", r[6]],
         ["Genre", (d.s || d.g || []).join(", ")], ["Added", r[7] ? new Date(r[7] + "T12:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : ""]]
         .filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join("")}<dt class="rec-more-dt" hidden></dt></dl>
-      <div class="acts">${alb ? `<button class="btn" data-act="playAlbum" data-v="${alb[0]}">${icon("play")} Spin the digital one</button>` : has("qobuz") ? `<button class="btn" data-act="findWork" data-v="${esc(r[2] + " " + title)}">${icon("search")} Find it to play</button>` : ""}
+      <div class="acts">${alb ? `<button class="btn" data-act="playAlbum" data-v="${alb[0]}">${icon("play")} Spin the digital one</button>` : has("qobuz") ? `<a class="btn" href="${awayHref(r[2], title, r[4])}">${icon("play")} The digital one, on Qobuz</a>` : ""}
         ${A.tt && A.tt.record && A.tt.record.id === r[0] ? `<button class="btn ghost" data-act="openNp">${icon("disc")} On the turntable now</button>` : ""}</div>
       <p class="rec-stats dim"></p></div></div>
     <nav class="mag-tabs rec-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"], ["pressing", "The pressing"], ["videos", "Videos"], ["plays", "Plays"]].map(t =>
@@ -1162,8 +1215,8 @@ VIEWS.album = function (el, id) {
       <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
       ${title ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}${(a[8] || []).length ? `<button class="g-edit" data-act="genreEdit" data-v="${a[0]}" aria-label="Edit genres">${icon("edit")}</button>` : `<button class="g-edit named" data-act="genreEdit" data-v="${a[0]}">${icon("edit")} Add genres</button>`}</div>` : ""}
       ${title ? `<div class="al-marks">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</div>` : ""}
-      <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button class="btn ghost" data-act="nextAlbum" data-v="${a[0]}">${icon("next_up")} Spin it next</button>
-      <button class="btn ghost" data-act="queueAlbum" data-v="${a[0]}">${icon("queue")} Queue</button>
+      <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button class="btn ghost" data-act="nextAlbum" data-v="${a[0]}">${icon("next_up")} Play Next</button>
+      <button class="btn ghost" data-act="queueAlbum" data-v="${a[0]}">${icon("queue")} Add to Queue</button>
       <button class="btn ghost" data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}</button>
       ${title ? `<button class="btn ghost" data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
       <div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div></div></div>
@@ -1666,9 +1719,9 @@ VIEWS.person = function (el, arg) {
   }
 };
 function workCard(w) {
-  return `<div class="card q" data-act="findWork" data-v="${esc((w.artist ? w.artist + " " : "") + w.title)}"><div class="art"><div class="noart">${esc(w.title.slice(0, 1))}</div>
+  return `<a class="card q" href="${awayHref(w.artist, w.title, w.cover)}"><div class="art"><div class="noart">${esc(w.title.slice(0, 1))}</div>
     ${w.cover ? `<img loading="lazy" decoding="async" src="${esc(pic(w.cover, 320))}" alt="" onerror="this.remove()">` : ""}</div>
-    <div class="role">${esc(w.roles.join(", "))}</div><div class="t">${esc(w.title)}</div><div class="s">${esc(w.artist || "")}${w.date ? (w.artist ? " &middot; " : "") + w.date.slice(0, 4) : ""}</div></div>`;
+    <div class="role">${esc(w.roles.join(", "))}</div><div class="t">${esc(w.title)}</div><div class="s">${esc(w.artist || "")}${w.date ? (w.artist ? " &middot; " : "") + w.date.slice(0, 4) : ""}</div></a>`;
 }
 // the credits of the song playing, for Now Playing's Credits tab: its own, then the record's
 function npCredits(t) {
@@ -2191,6 +2244,20 @@ const ACT = {
     lms("", ["listenlater", "add", "source:library", "albumid:" + a[0], "artist:" + a[2], "album:" + a[1]].concat(a[3] ? ["year:" + a[3]] : []))
       .then(() => { delete A.plug.LLHome; toast(`${a[1]} saved to Listen Later`); }).catch(() => toast("Listen Later didn't answer"));
   },
+  awayAct: (v, t) => {
+    const r = current && current.el.away; if (!r || !r.term) return;
+    const words = { play: `Spinning ${r.album} in ${roomName(A.room)}`, next: `${r.album} plays next`, queue: `${r.album} is queued`, keep: "Adding it to the library…" }[v];
+    const call = v === "next" ? api("/api/away-play", { term: r.term, index: r.i, how: "insert", player: A.room }) : api("/api/qobuz", { action: v, term: r.term, index: r.i, player: A.room });
+    toast(words);
+    inOrder().then(() => call).then(o => {
+      if (o.error) return toast(o.error);
+      if (v === "keep") { t.disabled = true; t.lastChild.textContent = " In your library"; toast(o.result === "already" ? `${r.album} is in the library already` : `${r.album} joins the library: it's on the shelves in a minute or two`); }
+      setTimeout(poll, 800);
+    }).catch(() => toast("The server didn't answer"));
+  },
+  awayTrack: v => { const r = current && current.el.away; if (!r) return; inOrder().then(() => api("/api/away-play", { term: r.term, index: r.i, track: +v, how: "play", player: A.room })).then(() => { toast(`Playing in ${roomName(A.room)}`); setTimeout(poll, 800); }).catch(() => toast("The server didn't answer")); },
+  awayChip: (v, t, e) => { if (e) { e.preventDefault(); e.stopPropagation(); } const x = JSON.parse(v); toast("Starting it…");
+    api("/api/away?" + new URLSearchParams({ artist: x[0], album: x[1], player: A.room || "" })).then(r => r.album_id ? ACT.playAlbum(String(r.album_id)) : r.term ? inOrder().then(() => api("/api/qobuz", { action: "play", term: r.term, index: r.i, player: A.room })).then(() => { toast(`Spinning ${r.album} in ${roomName(A.room)}`); setTimeout(poll, 800); }) : toast("Qobuz doesn't have this one")).catch(() => toast("The server didn't answer")); },
   newRelease: v => { const r = JSON.parse(v); if (r.qobuz) openQobuz({ artist: r.qobuz.artist, album: r.qobuz.album, cover: r.cover, i: r.qobuz.i, page: r.artist }); else location.hash = artistHref(r.artist); },
   trackMenu: v => openTrackMenu(v),
   // an album's genres, chosen from the house's list: kept here, and written into its files when it has some
@@ -2666,7 +2733,7 @@ const ACT = {
 };
 // what plays, and so needs a room to play in
 const PLAYS = /^(playAlbum|nextAlbum|queueAlbum|playTrack|playSong|shuffleArtist|shuffleGenre|stationGo|focusPlay|focusMix|playPlaylist|artistRadio|radioToggle|toggle|next|prev|jump|shuffleMode|repeat|seekTo|trackDo|levelSet|saveQueue)$/;
-const playsHere = (act, v) => PLAYS.test(act) || act === "plugPlay" || (act === "qobuz" && v !== "keep") || (act === "archDo" && /^(play|queue|next)$/.test(v || ""));
+const playsHere = (act, v) => PLAYS.test(act) || act === "plugPlay" || act === "awayTrack" || act === "awayChip" || (act === "awayAct" && v !== "keep") || (act === "qobuz" && v !== "keep") || (act === "archDo" && /^(play|queue|next)$/.test(v || ""));
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-act]");
   if (!t || !ACT[t.dataset.act]) return;

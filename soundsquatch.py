@@ -1794,6 +1794,75 @@ def album(album_id):
     return {"id": album_id, "album": title, "artist": artist, "review": text, "why": why, "tracks": tracks}
 
 
+# ───────────────────────── a record not on the shelves: its own page, from Qobuz ─────────────────────────
+AWAY = {}  # (artist, title) → (when asked, the page), a day
+AWAY_DETAILS = {"Genre": "genre", "Qobuz Release Type": "type", "Duration": "length", "Released at": "released", "Music Label": "label"}
+
+
+def away_album(artist, title, player, fresh=False):
+    """A record off the shelves, as a page: on the shelves after all → its album id; else Qobuz's release of that name by
+    that artist (the plugin's search, then the release's own menu): its songs, the facts its menu lists, whether it's a
+    favourite, and the search and place that play, queue or keep it."""
+    artist, title = (artist or "").strip()[:200], (title or "").strip()[:200]
+    if not title:
+        return {"error": "no record named"}
+    want = lms_qobuz.plain(re.sub(r"\s*[(\[].*$", "", title)) or lms_qobuz.plain(title)
+    for a in list(library["albums"]):
+        if (not artist or key(a[2]) == key(artist)) and lms_qobuz.plain(re.sub(r"\s*[(\[].*$", "", a[1])) == want:
+            return {"album_id": a[0]}
+    k = (key(artist), want)
+    hit = AWAY.get(k)
+    if hit and not fresh and time.time() - hit[0] < 86400:
+        return hit[1]
+    out = {"artist": artist, "album": title, "tracks": [], "details": {}, "kept": False}
+    player = player if lms_qobuz.PLAYER.match(player or "") else PLAYER  # the plugin answers for a player; any will do to look
+    if HAVE.get("qobuz") is False or not lms_qobuz.PLAYER.match(player or ""):
+        return dict(out, error="no Qobuz")
+    term = f"{artist} {title}".strip()[:120]
+    try:
+        _, found = lms_qobuz.releases(term, player)
+        def fit(r):
+            a, t = lms_qobuz.split(r[1])
+            same_t = lms_qobuz.plain(re.sub(r"\s*[(\[].*$", "", t)) == want
+            return (same_t and (not artist or lms_qobuz.same_name(a, artist) or key(a) == key(artist))) * 2 + same_t
+        best = max(range(len(found)), key=lambda n: fit(found[n]), default=None)
+        if best is None or not fit(found[best]):
+            AWAY[k] = (time.time(), dict(out, error="not on Qobuz"))
+            return AWAY[k][1]
+        item, name, img, path = found[best]
+        a, t = lms_qobuz.split(name)
+        entries = lms_qobuz.rpc(player, "qobuz", "items", "0", "100", f"item_id:{path}", f"search:{term}").get("loop_loop") or []
+    except Exception as e:
+        note_error(f"Qobuz for {artist} - {title}: {type(e).__name__}: {e}")
+        return dict(out, error="failed")
+    tracks, details = [], {}
+    for n, x in enumerate(entries):
+        nm = x.get("name") or ""
+        if x.get("isaudio") and " by " in nm:
+            song = nm[:-len(" from " + t)] if nm.endswith(" from " + t) else nm.rsplit(" from ", 1)[0]
+            tracks.append({"n": len(tracks) + 1, "title": song.rsplit(" by ", 1)[0], "k": n})
+        elif ": " in nm and nm.split(": ", 1)[0] in AWAY_DETAILS:
+            details[AWAY_DETAILS[nm.split(": ", 1)[0]]] = nm.split(": ", 1)[1]
+    m = re.match(r"(\d+)/(\d+)/(\d{4})$", details.get("released", ""))
+    page = {"artist": a or artist, "album": t, "cover": lms_qobuz.cover(img), "term": term, "i": best, "tracks": tracks, "details": details,
+            "year": m.group(3) if m else "", "kept": any((x.get("name") or "").startswith("Remove Release ") for x in entries)}
+    AWAY[k] = (time.time(), page)
+    return page
+
+
+def away_play(req):
+    """One song of a record off the shelves, played from there on (its place in the release's menu)."""
+    term, player = (req.get("term") or "")[:120], req.get("player") or PLAYER
+    if not lms_qobuz.PLAYER.match(player) or not term:
+        return {"error": "no such player or record"}
+    _, found = lms_qobuz.releases(term, player)
+    i, k = int(req.get("index") or 0), int(req.get("track") or 0)
+    if i >= len(found):
+        return {"error": "Qobuz no longer lists that release"}
+    lms_qobuz.rpc(player, "qobuz", "playlist", req.get("how") if req.get("how") in ("play", "insert") else "play", f"item_id:{found[i][3]}.{k}" if req.get("track") is not None else f"item_id:{found[i][0]}", f"search:{term}")
+    return {"result": "playing"}
+
+
 def review(album_id, again=False):
     row = album_row(album_id)
     if not row:
@@ -5132,6 +5201,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(profile_for_app(qs["name"].strip()[:200]))
             if url.path == "/api/album":
                 return self.reply(album(int(qs.get("id", "0"))))
+            if url.path == "/api/away":
+                return self.reply(away_album(qs.get("artist", ""), qs.get("album", ""), qs.get("player", ""), fresh=qs.get("again") == "1"))
+            if url.path == "/api/review" and qs.get("album"):  # a record off the shelves, by its names
+                text, why = review_lookup(qs.get("artist", "")[:200], qs["album"][:200], again=qs.get("again") == "1")
+                return self.reply({"review": text or "", "why": why or "none"}, cache="max-age=86400" if text else "no-store")
             if url.path == "/api/review":
                 got = review(int(qs.get("id", "0")), again=qs.get("again") == "1")
                 return self.reply(got, cache="max-age=86400" if got["review"] else "no-store")  # none: asked again soon
@@ -5227,7 +5301,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({"error": "pin", "pin": True}, status=403)
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
-                  "/api/import": import_, "/api/qobuz": qobuz, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
+                  "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
                   "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}
