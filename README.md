@@ -256,6 +256,20 @@ listening). `docker logs soundsquatch` has the rest.
 
 Soundsquatch is for 64-bit machines (x86, or ARM such as a Raspberry Pi on 64-bit Raspberry Pi OS); a 32-bit Pi isn't supported.
 
+### Coming next
+
+Planned, in no promised order, mostly from what testers have asked for:
+
+- **Every artist on an album**: features, collaborations and "A & B" albums counted for each artist, as Lyrion counts
+  them, and an **Appearances** section on artist pages for the records they guest on (Lyrion 9's release types).
+- **Lyrion's My Music settings** respected: the browse menus your house has switched off, off here too.
+- **The turntable**: the track being played picked out on the record's page, and a part-captured record shown with
+  the side still to capture.
+- **A faster first scan** on big libraries and small machines.
+
+Not now, but not ruled out: Library Views and virtual libraries, Dynamic Playlists, and everything Lyrion's own
+settings and every plugin's menus can do.
+
 ## Layout
 
 | Path | What |
