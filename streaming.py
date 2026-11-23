@@ -2,7 +2,7 @@
 Soundsquatch needs no account of its own): Qobuz, and TIDAL. Each is a class with the same few doings, so the rest of
 Soundsquatch asks "the service" and never a service by name:
 
-  available(can)                    whether Lyrion has the plugin (can: Lyrion's "can" query)
+  available(can, player)            whether Lyrion has the plugin, signed in (can: Lyrion's "can" query; a player to ask its menu for)
   sheet(name, player)               an artist's page there: {name, bio, photo, releases [{i, group, artist, album, cover}], similar}
   search(term, player)              the releases a search finds: [(artist, album, cover)], in the plugin's order
   act(req, player)                  the app's asks (search, play, queue, keep; aplay, aqueue, akeep from an artist's page),
@@ -34,11 +34,21 @@ def rpc(player, *cmd):
     return lms_keep_album.rpc(player, *[str(x) for x in cmd])
 
 
+def signed_in(tag, player):
+    """Whether a plugin has an account behind it: signed out, its top menu is one line asking for one (TIDAL's "Please
+    go to Settings…", Qobuz's alike); signed in, it's the service's own menu. Unknown (no player to ask for) counts as yes."""
+    if not player:
+        return True
+    try:
+        return int(rpc(player, tag, "items", "0", "5").get("count") or 0) > 1
+    except Exception:
+        return True  # not answering just now: as it was
+
 class Qobuz:
     key, label, scheme = "qobuz", "Qobuz", "qobuz"
 
-    def available(self, can):
-        return can("qobuz", "items")
+    def available(self, can, player=""):
+        return can("qobuz", "items") and signed_in("qobuz", player)
 
     def sheet(self, name, player):
         return lms_qobuz.artist_sheet(name, player)
@@ -116,8 +126,8 @@ class Tidal:
     key, label, scheme = "tidal", "TIDAL", "tidal"
     SEARCH, S_ARTISTS, S_ALBUMS = 7, 2, 3  # the places of Search and its Artists and Albums (plugin 1.10)
 
-    def available(self, can):
-        return can("tidal_browse", "items")
+    def available(self, can, player=""):
+        return can("tidal_browse", "items") and signed_in("tidal", player)
 
     def _items(self, player, path, term=None, n=100):
         cmd = ["tidal", "items", "0", str(n), f"item_id:{path}", "menu:1"] + ([f"search:{term}"] if term else [])

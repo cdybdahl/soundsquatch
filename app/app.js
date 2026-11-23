@@ -64,6 +64,7 @@ const FORUM = "https://forums.lyrion.org/forum/user-forums/3rd-party-software/18
 // the house's settings (/api/settings) and this device's own (localStorage, sq-dev-*)
 // what this Lyrion has (the server asks it): a feature whose plugin is missing is off, whatever the setting
 // the streaming service Lyrion has a plugin for, by its name (Qobuz, TIDAL)
+const streams = () => !!(A.cfg ? A.cfg.service : true); // a streaming service, signed in (assumed until the app knows)
 const SVC = () => (A.cfg && A.cfg.service && A.cfg.service.label) || "Qobuz";
 const has = k => !A.cfg || !A.cfg.have || A.cfg.have[k] !== false;
 const NEEDS = { archive: "archive", stations: "radio" };
@@ -891,7 +892,7 @@ VIEWS.artist = function (el, name) {
         ${on("features", "stations") ? `<button class="btn ghost seed-btn ${isSeed(realName) ? "on" : ""}" data-act="seedSheet" data-v="${esc(realName)}" aria-label="Add to a station">${icon("radio_plus")}</button>` : ""}</div></div></div>
       <div class="cols"><article class="story">${p.partial && !text ? `<p class="dim">Gathering their story&hellip;</p>` : folded(paras(text), 2, realName)}
         ${(p.qobuz || p.wiki) && has("mai") ? `<button class="more-story" data-act="story" data-v="${esc(realName)}">Wikipedia's full story</button><div class="full-story"></div>` : ""}
-        ${p.wiki && p.wiki.url ? `<div class="credit">Sources: ${p.qobuz && p.qobuz.name ? "Qobuz, " : ""}Wikipedia${p.mb && p.mb.mbid ? ", MusicBrainz" : ""}</div>` : ""}</article>
+        ${p.wiki && p.wiki.url ? `<div class="credit">Sources: ${p.qobuz && p.qobuz.name ? (p.qobuz.service === "tidal" ? "TIDAL, " : "Qobuz, ") : ""}Wikipedia${p.mb && p.mb.mbid ? ", MusicBrainz" : ""}</div>` : ""}</article>
       <aside class="side">${heard.plays ? `<div class="box"><div class="kicker">The listening log</div><div class="stat"><b>${heard.plays}</b> plays, <b>${heard.finished}</b> heard through${heard.skipped ? `, <b>${heard.skipped}</b> skipped early` : ""}</div>${heard.last ? `<div class="dim">last ${new Date(heard.last * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>` : ""}</div>` : ""}
         ${Object.keys(rels).map(w => `<div class="box"><div class="kicker">${esc(w.charAt(0).toUpperCase() + w.slice(1))}</div>${rels[w].slice(0, 12).map(r => `<a class="rel-name ${onShelves(r.name) ? "own" : ""}" href="${artistHref(r.name)}">${esc(r.name)}${r.begin ? ` <span>${r.begin}${r.end ? "–" + r.end : ""}</span>` : ""}</a>`).join("")}</div>`).join("")}
         ${p.mb && p.mb.homepage ? `<div class="box"><div class="kicker">Elsewhere</div><div class="dim">${esc(p.mb.homepage.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</div></div>` : ""}</aside></div>
@@ -1159,7 +1160,7 @@ VIEWS.record = function (el, id) {
       <dl class="rec-facts">${[["Year", recordYear(r) && recordYear(r) !== r[3] ? recordYear(r) + " (this pressing " + r[3] + ")" : r[3] || ""], ["Format", r[5] + (d.t ? ", " + Array.from(new Set(d.t.split(/,\s*/))).join(", ") : "")], ["Label", r[6]],
         ["Genre", (d.s || d.g || []).join(", ")], ["Added", r[7] ? new Date(r[7] + "T12:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : ""]]
         .filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join("")}<dt class="rec-more-dt" hidden></dt></dl>
-      <div class="acts">${alb ? `<button class="btn" data-act="playAlbum" data-v="${alb[0]}">${icon("play")} Spin the digital one</button>` : has("qobuz") ? `<a class="btn" href="${awayHref(r[2], title, r[4])}">${icon("play")} The digital one, on ${SVC()}</a>` : ""}
+      <div class="acts">${alb ? `<button class="btn" data-act="playAlbum" data-v="${alb[0]}">${icon("play")} Spin the digital one</button>` : streams() ? `<a class="btn" href="${awayHref(r[2], title, r[4])}">${icon("play")} The digital one, on ${SVC()}</a>` : ""}
         ${A.tt && A.tt.record && A.tt.record.id === r[0] ? `<button class="btn ghost" data-act="openNp">${icon("disc")} On the turntable now</button>` : ""}</div>
       <p class="rec-stats dim"></p></div></div>
     <nav class="mag-tabs rec-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"], ["pressing", "The pressing"], ["videos", "Videos"], ["plays", "Plays"]].map(t =>
@@ -1178,7 +1179,7 @@ VIEWS.record = function (el, id) {
       if (t.type !== "track") return `<div class="disc">${esc(t.title)}</div>`;
       const s = (/^[A-Za-z]+/.exec(t.pos) || [""])[0].toUpperCase(), head = s && s !== side ? `<div class="disc">Side ${esc(s)}</div>` : ""; side = s || side;
       return `${head}<div class="trk"><span class="n">${esc(t.pos)}</span><span class="tt">${esc(t.title)}${t.artists ? `<em>${esc(t.artists)}</em>` : ""}${t.credits.length ? `<em>${esc(t.credits.map(c => c[1] + ": " + c[0]).join("; "))}</em>` : ""}</span>
-        ${heard[t.pos] ? `<span class="heard" title="Heard on the turntable">${icon("disc")} ${heard[t.pos]}</span>` : ""}<span class="d">${esc(t.dur || "")}</span>${has("qobuz") ? `<button class="trk-more" data-act="findWork" data-v="${esc(r[2] + " " + t.title)}" aria-label="Find it to play">${icon("search")}</button>` : ""}</div>`;
+        ${heard[t.pos] ? `<span class="heard" title="Heard on the turntable">${icon("disc")} ${heard[t.pos]}</span>` : ""}<span class="d">${esc(t.dur || "")}</span>${streams() ? `<button class="trk-more" data-act="findWork" data-v="${esc(r[2] + " " + t.title)}" aria-label="Find it to play">${icon("search")}</button>` : ""}</div>`;
     }).join("")}</div>` : `<p class="dim">Discogs has no tracklist for it.</p>`);
     set("story", x.review || x.notes ? `<div class="mag-body">${x.review ? prose(paras(x.review), r[2]) : ""}${x.notes ? `<h4 class="sub">From Discogs</h4>${prose(paras(x.notes), r[2])}` : ""}</div>` : `<p class="dim">Nothing written about it yet.</p>`);
     const roles = {}; (x.credits || []).forEach(c => { (roles[c[1]] = roles[c[1]] || []).push(c[0] + (c[2] ? " (" + c[2] + ")" : "")); });
@@ -1407,7 +1408,7 @@ VIEWS.vinyl = function (el) {
   const capture = pick.digital === "capture";
   const rows = A.physical.filter(r => facets.every(f => !pick[f[0]] || f[3](r, pick[f[0]]))).map(vinylRow).sort(SORTS[sort][1]);
   if (capture) rows.sort((x, y) => captureRank(x.vinyl) - captureRank(y.vinyl)); // stable: the chosen order within each
-  if (!A.vinylQobuz && has("qobuz")) api("/api/vinyl-qobuz").then(q => { A.vinylQobuz = q; if (capture && el.isConnected && current && current.el === el) VIEWS.vinyl(el); }).catch(() => {});
+  if (!A.vinylQobuz && streams()) api("/api/vinyl-qobuz").then(q => { A.vinylQobuz = q; if (capture && el.isConnected && current && current.el === el) VIEWS.vinyl(el); }).catch(() => {});
   const both = A.physical.filter(r => r[8]).length, picked = Object.keys(pick).filter(k => pick[k]).length;
   A.vinylShown = rows.map(x => x.vinyl);
   el.innerHTML = `${pageBar("Let's get physical", ["The collection", picked ? `${rows.length.toLocaleString()} of ${A.physical.length.toLocaleString()} records` : `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
@@ -1457,7 +1458,7 @@ function vinylPull() {
   return `<section class="vpull"><a class="vpull-art" href="${recordHref(r)}">${r[4] ? `<img src="${esc(pic(r[4], 800))}" alt="">` : `<div class="noart">${esc((r[1] || "?").slice(0, 1))}</div>`}</a>
     <div class="vpull-text"><div class="kicker">${icon("disc")} Pulled from the shelf</div><h2><a href="${recordHref(r)}">${esc(r[1].trim())}</a></h2>
       <a class="vpull-by" href="${artistHref(r[2])}">${esc(r[2])}</a><p>${[recordYear(r) || "", what].filter(Boolean).map(esc).join(" &middot; ")}</p><p class="dim">${esc(pressLine(r))}</p>
-      <div class="acts">${r[8] ? `<button class="btn" data-act="playAlbum" data-v="${r[8]}">${icon("play")} Spin it</button>` : has("qobuz") ? `<button class="btn" data-act="findWork" data-v="${esc(r[2] + " " + r[1])}">${icon("search")} Find it to play</button>` : ""}
+      <div class="acts">${r[8] ? `<button class="btn" data-act="playAlbum" data-v="${r[8]}">${icon("play")} Spin it</button>` : streams() ? `<button class="btn" data-act="findWork" data-v="${esc(r[2] + " " + r[1])}">${icon("search")} Find it to play</button>` : ""}
         <button class="btn ghost" data-act="vinylPull">${icon("dice")} Another</button></div></div></section>`;
 }
 // the line on an album's page when the house has it on the shelf too
@@ -2176,7 +2177,7 @@ function noResults(q, n, askedQobuz, askedArchive) {
     "The needle's in the run-out groove.", "Nobody here but the tape hiss.", "This bin's been picked clean."];
   const quip = quips[Array.from(n).reduce((s, c) => s + c.charCodeAt(0), 0) % quips.length]; // the same line for the same search
   return `<div class="no-results"><div class="kicker">Nothing for &ldquo;${esc(q)}&rdquo;</div><h2>${quip}</h2>${nearNames(n)}
-    <p class="dim">Search looks at artists, albums, songs, genres and playlists on your shelves${askedQobuz ? `, and at ${SVC()}` : has("qobuz") ? `; ${SVC()} is asked from three letters on` : ""}${askedArchive ? ", and the shows in your Archive collections" : ""}. Check the spelling, or try fewer words.</p></div>`;
+    <p class="dim">Search looks at artists, albums, songs, genres and playlists on your shelves${askedQobuz ? `, and at ${SVC()}` : streams() ? `; ${SVC()} is asked from three letters on` : ""}${askedArchive ? ", and the shows in your Archive collections" : ""}. Check the spelling, or try fewer words.</p></div>`;
 }
 function runSearch(el, q) {
   lastQ = q; const n = norm(q), box = $("#results", el);
@@ -2210,7 +2211,7 @@ function runSearch(el, q) {
     : ["artists", "albums", "songs", "shows", "genres", "lists"];
   // nothing on the shelves by that name: say so while the songs (and Qobuz) are asked, and if they find nothing either,
   // offer the nearest names on the shelves instead of a blank page
-  const local = artists.length + albums.length + shows.length + genres.length + lists.length, asksQobuz = n.length >= 3 && has("qobuz");
+  const local = artists.length + albums.length + shows.length + genres.length + lists.length, asksQobuz = n.length >= 3 && streams();
   const asksArchive = n.length >= 3 && on("features", "archive");
   const tally = { found: local, waiting: 1 + asksQobuz + asksArchive, qobuz: 0 };
   const settle = (found, fromQobuz) => {

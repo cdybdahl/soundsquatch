@@ -157,8 +157,9 @@ def detect():
         # CrystalGipsy's plugins: their Material home shelves (flat, playable by item id) and Listen Later's own add command
         HAVE.update(listenlater=can("listenlater", "add"), ll_shelf=can("LLHome", "items"), lbf=can("LBFForYou", "items"),
                     pfr=can("PFRBnm", "items"), ratings=can("ratingslight", "ratealbum"))  # Ratings Light 3.2 on: track ratings are Lyrion's
-        HAVE.update(**{x.key: bool(x.available(can)) for x in streaming.ALL})
-        HAVE.update(qobuz=can("qobuz", "items"), archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
+        asker = PLAYER if lms_qobuz.PLAYER.match(PLAYER or "") else next((p["playerid"] for p in rpc("", "players", "0", "20", timeout=5).get("players_loop") or [] if p.get("connected")), "")
+        HAVE.update(**{x.key: bool(x.available(can, asker)) for x in streaming.ALL})  # installed and signed in
+        HAVE.update(archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
                     radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
                     mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
     except Exception:
