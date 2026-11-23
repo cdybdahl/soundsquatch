@@ -1566,3 +1566,20 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .disc-list .dord:not(.dragging) { transition: transform .15s; }
 .disc-list > .set-row { padding-left: 34px; }
 .dgrip { width: 34px; height: 48px; flex: none; display: flex; align-items: center; justify-content: center; color: var(--faint); touch-action: none; cursor: grab; }
+
+/* an artist's discography: the shelves' records and Qobuz's together, All / Mine / On Qobuz */
+.disc-head { padding: 40px var(--gut) 0; }
+.disc-head h2 { font-size: clamp(32px, 3.6vw, 44px); line-height: 1.05; margin-top: 6px; }
+.disc-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 4px; }
+.disc-bar button { height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--rule); font: 500 13px var(--sans); color: var(--dim); white-space: nowrap; }
+.disc-bar button span { opacity: .6; margin-left: 2px; }
+.disc-bar button.on { background: var(--ink); color: #121110; border-color: var(--ink); }
+.disc-k.sec { padding-top: 26px; }
+.disc[data-f="mine"] .d-q, .disc[data-f="qobuz"] .d-own { display: none; }
+.disc[data-f="mine"] .disc-k:not(.k-own), .disc[data-f="qobuz"] .disc-k:not(.k-q) { display: none; }
+.mag-guide .disc-bar { margin: 4px 0 26px; }
+.mag-guide .disc-bar button { border-color: rgba(236, 228, 214, .3); color: rgba(236, 228, 214, .7); }
+.mag-guide .disc-bar button.on { background: rgba(236, 228, 214, .92); color: #121110; border-color: transparent; }
+.mag-guide .q-tag { font: 700 10px var(--sans); font-style: normal; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+.mag-guide .mag-away .noart { grid-row: 1 / 3; width: 64px; height: 64px; background: rgba(236, 228, 214, .08); }
+.mag-guide .disc-k + .disc-k h2 { margin-top: 10px; padding-top: 22px; border-top: 1px solid rgba(236, 228, 214, .2); }

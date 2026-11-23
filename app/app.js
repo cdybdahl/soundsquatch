@@ -253,8 +253,14 @@ function useLibrary(lib) {
 // an artist's shelves by kind, as MusicBrainz files their releases (else the title says): albums, EPs and singles, live
 // and sessions (with their Archive shows), compilations; one heading only when there is more than one kind
 const KINDS = [["album", "Albums"], ["ep", "EPs & singles"], ["live", "Live & sessions"], ["comp", "Compilations"]];
+// MusicBrainz's record of an album (its release group, with the date it first came out), by title
+const rgOf = (title, rgs) => { // the same title; else one the beginning of the other ("Before the Flood" / "…: Music From the Motion Picture")
+  const t = plain(title), all = rgs || [];
+  return all.find(r => plain(r.title) === t) || all.find(r => { const g = plain(r.title); return g.length > 3 && t.length > 3 && (t.indexOf(g) === 0 || g.indexOf(t) === 0); });
+};
+const firstYear = (title, rgs) => { const g = rgOf(title, rgs); return (g && +String(g.date || "").slice(0, 4)) || 0; };
 function kindOf(a, rgs) {
-  const t = plain(a[1]), g = (rgs || []).find(r => plain(r.title) === t || t.indexOf(plain(r.title)) === 0 && plain(r.title).length > 3);
+  const g = rgOf(a[1], rgs);
   if (g) { // MusicBrainz knows the record: its word goes ("I Could Live in Hope" is no live album)
     const extra = g.extra || [];
     return extra.indexOf("Live") >= 0 ? "live" : extra.indexOf("Compilation") >= 0 ? "comp" : /^(ep|single)$/i.test(g.type || "") ? "ep" : "album";
@@ -264,13 +270,43 @@ function kindOf(a, rgs) {
   if (/\b(ep|single)\b/i.test(a[1])) return "ep";
   return "album";
 }
-function discography(mine, shows, p) {
-  const by = {}; mine.forEach(a => { const k = kindOf(a, p.rgs); (by[k] = by[k] || []).push(albumCard(a)); });
-  if (shows.length) by.live = (by.live || []).concat(shows.map(x => archCard(x)));
-  const kinds = KINDS.filter(k => by[k[0]]);
+// an artist's whole discography: the records on the shelves and theirs on Qobuz that aren't, one list per kind, each in
+// the order they first came out (MusicBrainz's date for the record, not the pressing's; else the shelves' year; Qobuz's
+// own with no date known go last). Items: { a } a record on the shelves, { q } one on Qobuz, with y its year
+function discItems(mine, p) {
+  const who = plain((p.qobuz && p.qobuz.name) || p.name || ""), out = { album: [], ep: [], live: [], comp: [] };
+  const same = t => { const k = plain(t); return who && k.length > who.length + 3 && k.indexOf(who) === 0 ? k.slice(who.length) : k; }; // "Mogwai Young Team" is Young Team
+  const seen = new Set(mine.map(a => same(a[1])));
+  mine.forEach(a => out[kindOf(a, p.rgs)].push({ a, y: firstYear(a[1], p.rgs) || a[3] || 0 }));
+  ((p.qobuz && p.qobuz.releases) || []).forEach(r => {
+    if (seen.has(same(r.album))) return; // on the shelves already, or another edition of one Qobuz has listed
+    seen.add(same(r.album));
+    const g = rgOf(r.album, p.rgs), grp = r.group || "";
+    const k = g ? kindOf([0, r.album], p.rgs) : /live/i.test(grp) ? "live" : /compil/i.test(grp) ? "comp" : /\b(ep|single)/i.test(grp) ? "ep" : kindOf([0, r.album], p.rgs);
+    out[k].push({ q: r, y: firstYear(r.album, p.rgs) });
+  });
+  Object.keys(out).forEach(k => out[k].sort((x, y) => (x.y || 9999) - (y.y || 9999)));
+  return out;
+}
+// All, Mine, Qobuz: which of the discography shows (this device remembers); only when there are both to choose between
+const DISC_F = [["all", "All"], ["mine", "Mine"], ["qobuz", "On Qobuz"]];
+function discBar(items) {
+  const all = [].concat.apply([], Object.keys(items).map(k => items[k])), own = all.filter(x => x.a).length, q = all.length - own;
+  if (!own || !q) return "";
+  const f = device.get("disc", "all"), n = { all: all.length, mine: own, qobuz: q };
+  return `<div class="disc-bar">${DISC_F.map(x => `<button class="${x[0] === f ? "on" : ""}" data-act="discFilter" data-v="${x[0]}">${x[1]} <span>${n[x[0]]}</span></button>`).join("")}</div>`;
+}
+const discF = items => discBar(items) ? device.get("disc", "all") : "all";
+// what each kind holds, for the filter to hide a kind with none of what it shows
+const discHas = list => (list.some(x => x.a) ? " k-own" : "") + (list.some(x => x.q) ? " k-q" : "");
+const mark = (html, cls) => html.replace(/class="/, `class="${cls} `); // a card's first class list, with the filter's mark
+function discography(mine, shows, p, realName) {
+  const items = discItems(mine, p), card = x => x.a ? albumCard(x.a) : qCard({ artist: x.q.artist || realName, album: x.q.album, cover: x.q.cover });
+  const kinds = KINDS.filter(k => items[k[0]].length || (k[0] === "live" && shows.length));
   if (!kinds.length) return "";
-  if (kinds.length === 1) return section("In the library", "On your shelves", `<div class="grid">${by[kinds[0][0]].join("")}</div>`);
-  return kinds.map((k, i) => section(i ? "" : "In the library", k[1], `<div class="grid">${by[k[0]].join("")}</div>`)).join("");
+  const body = kinds.map(k => section("", k[1], `<div class="grid">${items[k[0]].map(x => mark(card(x), x.a ? "d-own" : "d-q")).join("")}${k[0] === "live" ? shows.map(x => mark(archCard(x), "d-own")).join("") : ""}</div>`,
+    "", "disc-k" + discHas(items[k[0]]) + (k[0] === "live" && shows.length ? " k-own" : ""))).join("");
+  return `<div class="disc" data-f="${discF(items)}"><header class="disc-head"><div class="kicker">${mine.length ? "In the library and on Qobuz" : "On Qobuz"}</div><h2>Discography</h2>${discBar(items)}</header>${body}</div>`;
 }
 // the artist of the page on screen (its tags, its name for the pickers), not the last one drawn
 const pageArtist = () => (current && current.el && current.el.artistTags) || null;
@@ -807,7 +843,7 @@ VIEWS.away = function (el, arg) {
 VIEWS.artist = function (el, name) {
   let drawn = "";
   const draw = p => {
-    const sig = JSON.stringify([p.hero, p.qobuz, p.mb, p.wiki, p.photos, p.heard, p.partial]);
+    const sig = JSON.stringify([p.hero, p.qobuz, p.mb, p.wiki, p.photos, p.heard, p.partial, p.rgs]);
     if (sig === drawn) return; // nothing new: the page stays as it is, its pictures and scroll untouched
     drawn = sig;
     const realName = (p.qobuz && p.qobuz.name) || name, mine = albumsBy(name).length ? albumsBy(name) : albumsBy(realName);
@@ -816,9 +852,6 @@ VIEWS.artist = function (el, name) {
     const allTags = (p.mb && p.mb.genres) || [], hidden = p.hidden_tags || [];
     const genres = allTags.filter(g => hidden.indexOf(g) < 0).slice(0, 5);
     el.artistTags = { name, all: allTags.slice(0, 16), hidden }; // the page's own: a page kept and shown again keeps its artist
-    const owned = new Set(mine.map(a => plain(a[1])));
-    const groups = {};
-    ((p.qobuz && p.qobuz.releases) || []).forEach(r => { if (!owned.has(plain(r.album))) (groups[r.group] = groups[r.group] || []).push(r); });
     const bg = p.hero ? `<img class="hero-img" src="${esc(pic(p.hero, 1600))}" data-focus="${esc(p.hero)}" alt="">` : p.thumb ? `<img class="hero-img blur" src="${esc(pic(p.thumb, 320))}" alt="">`
       : mine.length ? `<img class="hero-img blur" src="${cover(mine[0][4], 300)}" alt="">` : "";
     const rels = {};
@@ -838,9 +871,8 @@ VIEWS.artist = function (el, name) {
       <aside class="side">${heard.plays ? `<div class="box"><div class="kicker">The listening log</div><div class="stat"><b>${heard.plays}</b> plays, <b>${heard.finished}</b> heard through${heard.skipped ? `, <b>${heard.skipped}</b> skipped early` : ""}</div>${heard.last ? `<div class="dim">last ${new Date(heard.last * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>` : ""}</div>` : ""}
         ${Object.keys(rels).map(w => `<div class="box"><div class="kicker">${esc(w.charAt(0).toUpperCase() + w.slice(1))}</div>${rels[w].slice(0, 12).map(r => `<a class="rel-name ${onShelves(r.name) ? "own" : ""}" href="${artistHref(r.name)}">${esc(r.name)}${r.begin ? ` <span>${r.begin}${r.end ? "–" + r.end : ""}</span>` : ""}</a>`).join("")}</div>`).join("")}
         ${p.mb && p.mb.homepage ? `<div class="box"><div class="kicker">Elsewhere</div><div class="dim">${esc(p.mb.homepage.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</div></div>` : ""}</aside></div>
-      ${discography(mine, shows, p)}
+      ${discography(mine, shows, p, realName)}
       <div id="ar-arch">${archShelf(archArtistCache.get(norm(realName)) && archArtistCache.get(norm(realName)).done)}</div>
-      ${Object.keys(groups).map(g => section("On Qobuz, not on your shelves", esc(g), shelf(groups[g].map(r => qCard({ artist: r.artist, album: r.album, cover: r.cover, i: r.i, page: realName }))))).join("")}
       ${p.qobuz && p.qobuz.similar && p.qobuz.similar.length ? section("If you like " + esc(realName), "Similar artists", shelf(p.qobuz.similar.filter(s => !onShelves(s.name)).map(s => face(s.name, s.image, "new to you", "new")).concat(p.qobuz.similar.filter(s => onShelves(s.name)).map(s => face(s.name, s.image, "on your shelves"))))) : ""}
       ${p.photos && p.photos.length > 1 ? section("Pictures", "In the frame", `<div class="photos">${p.photos.map(x => `<img loading="lazy" decoding="async" src="${esc(pic(x.url, 640))}" alt="">`).join("")}</div>`) : ""}
       ${p.partial ? `<p class="dim center">More is on its way from MusicBrainz and Wikipedia&hellip;</p>` : ""}`;
@@ -902,19 +934,20 @@ VIEWS.mag = function (el, name) {
     const vinylOnly = (A.vinylOnly || []).filter(r => norm(r[2]) === norm(realName) || norm(r[2]) === norm(name)).sort((x, y) => (x[3] || 9999) - (y[3] || 9999));
     const sim = (p.qobuz && p.qobuz.similar) || [], like = sim.filter(x => !onShelves(x.name)).concat(sim.filter(x => onShelves(x.name)));
     const shows = A.archive.filter(x => norm(x.artist) === norm(realName) || norm(x.artist) === norm(name));
-    const tab = mine.length || shows.length ? store.get("sq-mag-tab", "story") : (el.magTab || "records"); // nothing on the shelves: their records elsewhere first
+    const tab = (/[?&]tab=(\w+)/.exec(location.search) || [])[1] || (mine.length || shows.length ? store.get("sq-mag-tab", "story") : (el.magTab || "records")); // ?tab= for a screenshot // nothing on the shelves: their records elsewhere first
     // the records by kind, each kind by date: the studio ones on The records, every live one (theirs, and the tapes) on Live
     const yearOf = a => a[3] || +((/^(\d{4})-\d\d-\d\d/.exec(a[1]) || [])[1] || 0); // a tape's year from its dated title
     const byYear = list => list.slice().sort((a, b) => (yearOf(a) || 9999) - (yearOf(b) || 9999));
     const kinds = { album: [], ep: [], comp: [], live: [] };
     mine.forEach(a => kinds[kindOf(a, p.rgs)].push(a));
-    const guide = list => `<ol>${byYear(list).map(a => `<li><a href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 300)}" alt=""><span class="y">${yearOf(a) || "&mdash;"}</span><b>${esc(a[1])}</b><em>${[(a[8] || [])[0] || "", (a[10] || []).length ? (a[10].length + 1) + " pressings" : ""].filter(Boolean).join(" &middot; ")}</em></a></li>`).join("")}</ol>`;
     const studio = [["album", "LPs"], ["ep", "EPs & singles"], ["comp", "Compilations"]].filter(k => kinds[k[0]].length);
-    const studioCount = kinds.album.length + kinds.ep.length + kinds.comp.length, liveCount = kinds.live.length + shows.length;
-    // theirs on Qobuz, not on the shelves, grouped as Qobuz groups them; each opens the Qobuz sheet (Spin it, Queue, Add to the library)
-    const owned = new Set(mine.map(a => plain(a[1]))), away = {};
-    ((p.qobuz && p.qobuz.releases) || []).forEach(r => { if (!owned.has(plain(r.album))) (away[r.group] = away[r.group] || []).push(r); });
-    const awayHtml = Object.keys(away).map(g => `<div class="mr-k mag-away-k">${esc(g)}</div><ol>${away[g].map(r => `<li><a class="mag-away" href="${awayHref(r.artist || realName, r.album, r.cover)}">${r.cover ? `<img loading="lazy" src="${esc(pic(r.cover, 320))}" alt="">` : `<span class="noart"></span>`}<span class="y">Qobuz</span><b>${esc(r.album)}</b><em></em></a></li>`).join("")}</ol>`).join("");
+    // the buyer's guide: the shelves' records and Qobuz's (the ones not on the shelves, marked), each kind in the order they came out
+    const items = discItems(mine, p), f = discF(items), bar = discBar(items);
+    const entry = x => x.a ? `<li class="d-own"><a href="${albumHref(x.a[0])}"><img loading="lazy" src="${cover(x.a[4], 300)}" alt=""><span class="y">${x.y || "&mdash;"}</span><b>${esc(x.a[1])}</b><em>${[(x.a[8] || [])[0] || "", (x.a[10] || []).length ? (x.a[10].length + 1) + " pressings" : ""].filter(Boolean).join(" &middot; ")}</em></a></li>`
+      : `<li class="d-q"><a class="mag-away" href="${awayHref(x.q.artist || realName, x.q.album, x.q.cover)}">${x.q.cover ? `<img loading="lazy" src="${esc(pic(x.q.cover, 320))}" alt="">` : `<span class="noart"></span>`}<span class="y">${x.y || "&mdash;"}</span><b>${esc(x.q.album)}</b><em class="q-tag">On Qobuz</em></a></li>`;
+    const guideK = (k, word) => `<div class="disc-k${discHas(items[k])}"><h2>${word} <span>${items[k].length}</span></h2><ol>${items[k].map(entry).join("")}</ol></div>`;
+    const recKinds = [["album", "LPs"], ["ep", "EPs & singles"], ["comp", "Compilations"]].filter(k => items[k[0]].length);
+    const studioCount = recKinds.reduce((n, k) => n + items[k[0]].length, 0), liveCount = items.live.length + shows.length;
     const credit = /wikimedia/.test(p.hero || "") ? "Wikimedia Commons" : /qobuz/.test(p.hero || "") ? "Qobuz" : /discogs/.test(p.hero || "") ? "Discogs" : "";
     const half = Math.ceil(list.length / 2);
     const body = list.slice(0, Math.max(half, 2)).map((x, i) => i === 0 ? `<p class="dc">${linked(x, realName)}</p>` : `<p>${linked(x, realName)}</p>`).join("")
@@ -949,10 +982,9 @@ VIEWS.mag = function (el, name) {
           `<a class="mr" href="#/record/${r[0]}">${r[4] ? `<img loading="lazy" src="${esc(pic(r[4], 150))}" alt="">` : `<i class="mr-blank"></i>`}<span class="y">${r[3] || "&mdash;"}</span><b>${esc(r[1])}<em>${esc(r[5] || "")}</em></b></a>`).join("")}</div>` : ""}</aside>
       </div></div>
       <div class="mag-page" data-tab="records" ${tab === "records" ? "" : "hidden"}>
-      ${studio.length ? `<section class="mag-guide"><div class="mag-dept">Buyer's guide</div>${studio.map(k => `<h2>${k[1]} <span>${kinds[k[0]].length}</span></h2>${guide(kinds[k[0]])}`).join("")}</section>` : `<p class="dim">None of their studio records on the shelves yet.</p>`}
-      ${awayHtml ? `<section class="mag-guide"><div class="mag-dept">Beyond the shelves</div><h2>Not on your shelves</h2>${awayHtml}</section>` : ""}</div>
+      ${recKinds.length ? `<section class="mag-guide disc" data-f="${f}"><div class="mag-dept">Buyer's guide</div>${bar}${recKinds.map(k => guideK(k[0], k[1])).join("")}</section>` : `<p class="dim">None of their studio records on the shelves or on Qobuz.</p>`}</div>
       ${liveCount ? `<div class="mag-page" data-tab="live" ${tab === "live" ? "" : "hidden"}><section class="mag-guide"><div class="mag-dept">On stage</div>
-        ${kinds.live.length ? `<h2>On the shelves <span>${kinds.live.length}</span></h2>${guide(kinds.live)}` : ""}
+        ${items.live.length ? `<div class="disc" data-f="${f}">${items.live.some(x => x.q) ? bar : ""}${guideK("live", "Live records")}</div>` : ""}
         ${shows.length ? `<h2>From the Internet Archive <span>${shows.length}</span></h2><div class="grid">${shows.map(x => archCard(x)).join("")}</div>` : ""}</section></div>` : ""}
       ${like.length ? `<section class="mag-like"><div class="mag-dept">If you like ${esc(realName)}</div><h2>Kindred spirits <span>${like.filter(x => !onShelves(x.name)).length} new to you</span></h2>
         <div class="faces">${like.map(x => `<div>${onShelves(x.name) ? face(x.name, x.image, "on your shelves") : face(x.name, x.image, "new to you", "new")}</div>`).join("")}</div></section>` : ""}
@@ -2510,6 +2542,11 @@ const ACT = {
     }).catch(() => toast("The server didn't answer"));
   },
   banLiftArtist: v => { closeSheet(); api("/api/ban", { kind: "artist", lift: v }).then(() => toast("Off the never-play list")).catch(() => toast("The server didn't answer")); },
+  discFilter: v => { // the discography's filter, on every page drawn (this device remembers it)
+    device.set("disc", v);
+    document.querySelectorAll(".disc").forEach(d => { d.dataset.f = v; });
+    document.querySelectorAll(".disc-bar button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  },
   magTab: (v, t) => {
     const art = t.closest(".mag"); store.set(t.dataset.store || "sq-mag-tab", v); const view = t.closest(".view"); if (view) view.magTab = v;
     art.querySelectorAll(".mag-tabs button").forEach(b => b.classList.toggle("on", b === t));
