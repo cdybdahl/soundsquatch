@@ -102,7 +102,7 @@ const snap = (sizes, s) => sizes.filter(x => x >= s)[0] || sizes[sizes.length - 
 const NO_COVER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect width='1' height='1' fill='%23221e1b'/%3E%3C/svg%3E";
 const cover = (art, s) => art ? `/cover/${art}/${snap(COVER_SIZES, s || 300)}.jpg` : NO_COVER;
 const pic = (u, w) => !u ? "" : u.charAt(0) === "/" ? u : "/img?u=" + encodeURIComponent(u) + (w ? "&w=" + snap(PICTURE_WIDTHS, w) : "");
-const artistHref = n => "#/artist/" + encodeURIComponent(n);
+const artistHref = n => "#/artist/" + encodeURIComponent(shelfName(n)); // the shelves' spelling of a name, where they have it
 const albumHref = id => "#/album/" + id;
 // a record off the shelves has a page too (from Qobuz), opened the same way wherever it's shown; the cover rides along to draw it at once
 const awayChip = (artist, album) => `<button class="chip" data-act="awayChip" data-v="${esc(JSON.stringify([artist || "", album || ""]))}" aria-label="Spin it">${icon("play")}</button>`;
@@ -237,6 +237,7 @@ function useLibrary(lib) {
     lib.albums.forEach(a => { const k = norm(a[2]); if (!A.byArtist.has(k)) A.byArtist.set(k, []); A.byArtist.get(k).push(a); });
     A.artists = lib.artists; // [name, id, albums, photo, kind]
     A.artistInfo = new Map(lib.artists.map(a => [norm(a[0]), a]));
+    A.loose = new Map(); lib.artists.forEach(a => { if (!A.loose.has(loose(a[0]))) A.loose.set(loose(a[0]), norm(a[0])); });
     Object.keys(linkCache).forEach(k => { delete linkCache[k]; });
     // the house's records on the shelf (its Discogs collection): [release id, title, artist, year, cover, format,
     // label and number, added, the shelves' album it matches or 0 for one only on the shelf]
@@ -318,8 +319,13 @@ function versionsOf(a) {
   const main = A.byId.get(a[12] || a[0]) || a;
   return [[main[0], main[1], main[6], main[3], main[4], main[9]]].concat(main[10] || []);
 }
-const onShelves = name => A.artistInfo.has(norm(name));
-const albumsBy = name => (A.byArtist.get(norm(name)) || []).slice().sort((a, b) => (a[3] || 9999) - (b[3] || 9999));
+// an artist's name however it's punctuated ("Godspeed You! Black Emperor" is the shelves' Godspeed You Black Emperor): the
+// key the shelves know them by, else the name's own
+const loose = s => norm(s).replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
+const ak = name => { const k = norm(name); return !A.artistInfo || A.artistInfo.has(k) || A.byArtist.has(k) ? k : (A.loose && A.loose.get(loose(name))) || k; };
+function shelfName(n) { const info = A.artistInfo && A.artistInfo.get(ak(n)); return info ? info[0] : n; }
+const onShelves = name => A.artistInfo.has(ak(name));
+const albumsBy = name => (A.byArtist.get(ak(name)) || []).slice().sort((a, b) => (a[3] || 9999) - (b[3] || 9999));
 
 function profile(name) {
   const k = norm(name);
@@ -421,7 +427,7 @@ if (!sizeWatch) document.addEventListener("click", () => setTimeout(reframe, 50)
 function face(name, image, sub, cls) {
   // someone on the shelves wears their own picture (the one chosen for them), whatever another list offers: Qobuz's
   // similar artists can name a namesake ("LUNA", a singer, for Luna the band)
-  const info = A.artistInfo.get(norm(name)), img = (info && info[3]) || image || "";
+  const info = A.artistInfo.get(ak(name)), img = (info && info[3]) || image || "";
   const inner = img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 320))}" alt="">` : `<div class="mono">${esc(name.replace(/^the /i, "").slice(0, 1))}</div>`;
   return `<a class="face ${cls || ""} ${info ? "own" : ""}" href="${artistHref(name)}"><div class="ph">${inner}</div>${mk("artist", norm(name), "loved")}<div class="t">${esc(name)}</div>${sub ? `<div class="s">${sub}</div>` : ""}</a>`;
 }
@@ -793,7 +799,7 @@ function linkCard(c) {
     const line = o => o.song ? `${esc(roleWords(o.roles))} &ldquo;${esc(o.song.replace(/^["“]+|["”]+$/g, ""))}&rdquo;, from <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a>`
       : `${esc(roleWords(o.roles))} <a href="${artistHref(o.artist)}">${esc(o.artist)}</a>&rsquo;s <a href="${albumHref(o.album_id)}"><i>${esc(o.album)}</i></a>`;
     const songs = c.on.map(o => [o.album_id, o.n, o.song]);
-    const info = c.kind === "guest" && A.artistInfo.get(norm(c.name)), img = c.photo || (info && info[3]) || "";
+    const info = c.kind === "guest" && A.artistInfo.get(ak(c.name)), img = c.photo || (info && info[3]) || "";
     return `<div class="link pcon"><div class="pc-head"><a class="pc-ph" href="${href}">${img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 320))}" alt="" onerror="this.remove()">` : ""}<span>${esc(c.name.slice(0, 1))}</span></a>
       <div><div class="kicker">${CONN_KIND[c.kind]}</div><a class="pc-name" href="${href}">${esc(c.name)}</a></div></div>
       <ul>${c.on.map(o => `<li>${line(o)}</li>`).join("")}</ul>
@@ -898,7 +904,7 @@ VIEWS.artist = function (el, name) {
     const img = $(".hero-img", el); if (img) tint(img, el);
   };
   // drawn at once from a profile fetched before; one never fetched turns the disc until it has something, then fills in as it comes
-  const known = A.profiles.get(norm(name)), info = A.artistInfo.get(norm(name));
+  const known = A.profiles.get(norm(name)), info = A.artistInfo.get(ak(name));
   if (known && known.name) draw(known);
   else el.innerHTML = `${pageBar(esc(name), ["Artist"], "", true)}${gathering()}`;
   let tries = 0;
@@ -2257,7 +2263,7 @@ const ACT = {
     return hit && hit.id;
   }).catch(() => null))).then(ids => { ids = ids.filter(Boolean); if (ids.length) inOrder().then(() => send(["playlistcontrol", "cmd:load", "track_id:" + ids.join(",")], `Playing ${ids.length > 1 ? "the connection" : "it"} in ${roomName(A.room)}`)); else toast("Those songs aren't on the shelves any more"); }),
   shuffleArtist: v => {
-    const info = A.artistInfo.get(norm(v)); if (!info) return;
+    const info = A.artistInfo.get(ak(v)); if (!info) return;
     send(["playlistcontrol", "cmd:load", "artist_id:" + info[1]]).then(() => send(["playlist", "shuffle", 1], `Shuffling ${info[0]} in ${roomName(A.room)}`));
   },
   shuffleGenre: v => { const fam = GENRE_FAMILIES.some(f => f[0] === v) ? familyOf(v) : [v], list = A.albums.filter(a => (a[8] || []).some(x => fam.indexOf(x) >= 0)); if (list.length) ACT.playAlbum(list[Math.floor(Math.random() * list.length)][0]); },
@@ -2825,7 +2831,7 @@ const ACT = {
   },
   // a station of one: the server queues their best songs with a few by artists like them, and the radio carries on from there
   artistRadio: v => {
-    const room = A.room, name = (A.artistInfo.get(norm(v)) || [v])[0];
+    const room = A.room, name = (A.artistInfo.get(ak(v)) || [v])[0];
     toast(`Tuning in ${name} radio…`);
     inOrder().then(() => (A.radio[room] ? null : setRadio(true))).then(() => api("/api/artist-radio", { artist: name, player: room })).then(r => {
       if (r.error) return toast(r.error);

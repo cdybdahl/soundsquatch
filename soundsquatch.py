@@ -2570,10 +2570,12 @@ def home():
     shelved_profs = sorted(k for k in profs if k in artists)
     base = [key(n) for n in rotation] or rng.sample(shelved_profs, min(40, len(shelved_profs)))
     tally, faces = Counter(), {}
+    loose = lambda n: re.sub(r"[^a-z0-9]", "", key(n).replace("&", "and"))
+    shelved_loose = {loose(a["name"]) for a in artists.values()}  # "Godspeed You! Black Emperor" is on the shelves as Godspeed You Black Emperor
     for k in base:
         for s in ((profs.get(k) or {}).get("qobuz") or {}).get("similar", []):
             sk = key(s["name"])
-            if sk not in artists and sk not in NOT_ARTISTS:
+            if sk not in artists and sk not in NOT_ARTISTS and loose(s["name"]) not in shelved_loose:
                 tally[sk] += 1
                 faces.setdefault(sk, s)
     beyond = []
