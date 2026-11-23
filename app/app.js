@@ -2675,7 +2675,7 @@ const ACT = {
   },
   histOpen: (v, t) => { const list = t.parentNode.querySelector(".hg-list"); list.hidden = !list.hidden; t.classList.toggle("on", !list.hidden); },
   ttDismiss: v => { closeSheet(); A.ttShowing = ""; api("/api/turntable/dismiss", { id: v }).then(r => { if (A.tt) A.tt.alert = r.alert; ttBadge(); }).catch(() => toast("The server didn't answer")); },
-  ttLater: v => { A.ttLater = v; A.ttShowing = ""; closeSheet(); }, // not again until the app is opened afresh; the dot stays
+  ttLater: v => { store.set("sq-tt-later", v); A.ttShowing = ""; closeSheet(); }, // not again on this device for this alert (a new one still says so); the dot stays
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;
     if (open && open.classList.contains("trk-credits")) { open.remove(); t.classList.remove("on"); return; }
@@ -3199,7 +3199,7 @@ function ttBadge() {
 }
 function ttAlertSheet() {
   const a = A.tt && A.tt.alert;
-  if (!a || A.ttLater === a.id || A.ttShowing === a.id || !$("#sheet") || !$("#sheet").hidden) return;
+  if (!a || store.get("sq-tt-later", "") === a.id || A.ttShowing === a.id || !$("#sheet") || !$("#sheet").hidden) return;
   A.ttShowing = a.id;
   openSheet(`<div class="kicker">${icon("disc")} The signal check</div><h3>${esc(a.title)}</h3><p class="tt-alert-text">${esc(a.text)}</p>
     <div class="dim">${new Date(a.at * 1000).toLocaleDateString(undefined, { month: "long", day: "numeric" })}</div>
