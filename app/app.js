@@ -1971,7 +1971,8 @@ const FEATS = [["stations", "Stations", "radio seeded from artists you choose"],
   ["history", "History", "the History tab, from the listening log"], ["credits", "Credits", "who made each album, from MusicBrainz"], ["lyrics", "Lyrics", "synced lyrics in Now Playing (LRCLIB)"],
   ["write_files", "Change music files", "genres, titles and covers written into the files; Remove from the library moves them to music-removed. Off, genres are Soundsquatch's own and the files are never touched"],
   ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"],
-  ["prefer_captured", "Your vinyl first", "an album with a take captured from the turntable opens and spins that take; off, the best-sounding copy does"]];
+  ["prefer_captured", "Your vinyl first", "an album with a take captured from the turntable opens and spins that take; off, the best-sounding copy does"],
+  ["capture_level", "Even out quiet captures", "a captured side recorded quietly is raised to full level as it's filed (how much is worked out from each side; a stray click may clip); off, each capture is kept exactly as it was recorded"]];
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
   ["a1001", "1001 Albums", "today's album from your 1001albumsgenerator.com project, on Discover (its username in the plugin's settings)", 1],
   ["bliss", "Bliss Mixer", "\"Sounds like this\" on album pages and Discover, from how your own files sound (your files only, not streamed albums)", 1],
@@ -2061,7 +2062,7 @@ function drawSettings(el) {
   $(".settings", el).innerHTML = `
     ${c.update ? section("A new version", "Soundsquatch " + esc(c.update.version), `<div class="set-row update"><span><b>It's out</b><em>to update, on the machine it runs on, in its folder: <code>docker compose pull &amp;&amp; docker compose up -d</code>. Everything kept in ./data stays.</em></span><a class="pill" href="${esc(c.update.url)}" target="_blank" rel="noopener">What's new</a></div>`) : ""}
     <div class="seg set-tabs">${SET_TABS.map(t => `<button class="${t[0] === setTab() ? "on" : ""}" data-act="setTab" data-v="${t[0]}">${t[1]}</button>`).join("")}</div>
-    ${inTab("house", section("For every screen in the house", "Features", FEATS.filter(f => f[0] !== "prefer_captured" || on("features", "turntable_capture") || A.albums.some(capSticker)).map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
+    ${inTab("house", section("For every screen in the house", "Features", FEATS.filter(f => (f[0] !== "prefer_captured" || on("features", "turntable_capture") || A.albums.some(capSticker)) && (f[0] !== "capture_level" || on("features", "turntable_capture"))).map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
       ? `<div class="set-row toggle missing"><span><b>${f[1]}</b><em>needs the ${PLUGIN_FOR[f[0]]} plugin in Lyrion</em></span><i class="sw"></i></div>`
       : toggle("setFeat", f[0], c.features[f[0]], f[1], f[2])).join("")))}
     ${inTab("house", section("For every screen in the house", "Rooms", rooms.map(p => { const r = c.rooms[p.playerid] || {};

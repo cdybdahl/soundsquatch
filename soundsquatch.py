@@ -119,7 +119,8 @@ DEFAULTS = {
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
                  "write_files": False,  # changing music files (genres, titles, covers, removing): off until the house says so
                  "turntable_capture": False,  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
-                 "prefer_captured": True},  # an album with a take from the turntable shows and spins that take first
+                 "prefer_captured": True,  # an album with a take from the turntable shows and spins that take first
+                 "capture_level": True},  # a quiet captured side raised to full level as it's filed (off: the recording as it came)
     "discover": {k: True for k in DISCOVER_SECTIONS},
     "house": {"rooms": {}, "pin": "", "discover_order": [], "turntable_lid": "", "turntable_room": "", "scrobble_url": ""},  # scrobble_url: a ListenBrainz-style API the plays go to ("" none)  # turntable_lid: Home Assistant's sensor, on (open) while a record plays  # rooms: player id → {"name": the app's own, "fixed": volume set on the device}; pin: a hash
 }
@@ -5142,7 +5143,7 @@ def tt_side(path, s0, s1, gaps):
         safe = lambda t: re.sub(r'[\\/:*?"<>|]+', "-", t).strip(" .")[:120] or "-"
         lengths = {}
         try:
-            gain = tt_side_gain(path)
+            gain = tt_side_gain(path) if settings["features"].get("capture_level", True) else 0.0
         except Exception as e:
             gain = 0.0
             note_error(f"turntable level: {type(e).__name__}: {e}"[:200])
