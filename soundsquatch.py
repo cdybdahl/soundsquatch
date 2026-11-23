@@ -514,8 +514,50 @@ def physical_records(albums):
     d = kv_get("discogs", {}) or {}
     by = {}
     for a in albums:
-        by.setdefault((key(a[2]), lms_qobuz.plain(a[1])), a[0])
-    return [r[:8] + [by.get((key(r[2]), lms_qobuz.plain(r[1])), 0), r[8] if len(r) > 8 else {}] for r in d.get("records", [])]
+        by.setdefault((loose_artist(a[2]), lms_qobuz.plain(a[1])), a[0])
+    return [r[:8] + [by.get((loose_artist(r[2]), lms_qobuz.plain(r[1])), 0), r[8] if len(r) > 8 else {}] for r in d.get("records", [])]
+
+
+def loose_artist(name):
+    """An artist's name however it's punctuated, and without Discogs's number for a namesake ("Low (3)"): Godspeed You!
+    Black Emperor and Godspeed You Black Emperor are one band."""
+    return re.sub(r"[^a-z0-9]", "", key(re.sub(r"\s*\(\d+\)$", "", name or "")).replace("&", "and"))
+
+
+def qobuz_has(artist, title):
+    """Whether Qobuz has a record (by that artist, or the first of those named, of that title whatever the edition or
+    however its subtitle is set): True, False, or None when it couldn't be asked."""
+    names = [re.sub(r"\s*\(\d+\)$", "", n).strip() for n in re.split(r",\s*", artist or "") if n.strip()] or [""]
+    edition = r"\s*(?:[-\u2013:]\s*)?(?:\d{2,4}\s*)?(?:(?:super\s+)?deluxe|remaster(?:ed)?|expanded|anniversary|reissue)\b.*$"
+    tidy = lambda t: lms_qobuz.plain(re.sub(edition, "", re.sub(r"[(\[]", " ", re.sub(r"[)\]]", " ", t or "")), flags=re.I)) or lms_qobuz.plain(t or "")
+    want = tidy(title)
+    same_t = lambda t: t == want or (min(len(t), len(want)) > 3 and (t.startswith(want) or want.startswith(t)))
+    same_a = lambda a: any(lms_qobuz.same_name(a, n) or (loose_artist(a) and loose_artist(n) and (loose_artist(a) in loose_artist(n) or loose_artist(n) in loose_artist(a))) for n in names)
+    try:
+        _, found = lms_qobuz.releases(f"{names[0]} {re.sub(r'[(][^)]*[)]', '', title or '')}".strip()[:120], PLAYER)
+    except Exception:
+        return None
+    return any(same_t(tidy(lms_qobuz.split(r[1])[1])) and same_a(lms_qobuz.split(r[1])[0]) for r in found)
+
+
+def vinyl_qobuz_loop():
+    """For the Vinyl page's To capture: which records on the shelf with nothing digital Qobuz has, so the ones it doesn't
+    (capture them, or hear them only on the turntable) come first. Each asked once, and again after three months."""
+    time.sleep(60)
+    while True:
+        try:
+            if HAVE.get("qobuz") and lms_qobuz.PLAYER.match(PLAYER or ""):
+                known = kv_get("vinyl-qobuz", {}) or {}
+                stale = lambda k: not k or time.time() - k[1] > 90 * 86400 or (not k[0] and len(k) < 3)  # a "no" before the looser match: asked again
+                for r in [r for r in physical_now()[1] if not r[8] and stale(known.get(str(r[0])))][:300]:
+                    has = qobuz_has(r[2], r[1])
+                    if has is not None:
+                        known[str(r[0])] = [has, time.time(), 2]
+                        kv_set("vinyl-qobuz", known)
+                    time.sleep(2)
+        except Exception as e:
+            note_error(f"records on Qobuz: {type(e).__name__}: {e}"[:200])
+        time.sleep(6 * 3600)
 
 
 def settings_for_app():
@@ -5273,6 +5315,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(profile_for_app(qs["name"].strip()[:200]))
             if url.path == "/api/album":
                 return self.reply(album(int(qs.get("id", "0"))))
+            if url.path == "/api/vinyl-qobuz":  # the shelf's records with nothing digital: whether Qobuz has each
+                return self.reply({k: v[0] for k, v in (kv_get("vinyl-qobuz", {}) or {}).items()})
             if url.path == "/api/ratings":
                 return self.reply(album_ratings(int(qs.get("album_id", "0"))) if HAVE.get("ratings") else {"error": "no Ratings Light"})
             if url.path == "/api/away":
@@ -5463,7 +5507,7 @@ if __name__ == "__main__":
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
     start_turntable()
-    for job in (carry_ratings, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop):
+    for job in (carry_ratings, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does

@@ -1362,7 +1362,19 @@ function vinylCard(r, cls) {
 // the filters, one choice in each row, the rows together: which shelves, what format, what pressing, Discogs's genre, the decade
 const COLOURED = /\b(clear|translucent|transparent|colou?red|splatter|marbled?|swirl|smoke|blue|red|white|green|yellow|pink|purple|orange|gold|silver|bone|cream|grey|gray|black ice)\b/i;
 const pressDetails = r => r[9] || {};
+// what a record on the shelf has beside it, digitally: "vinyl" a take captured from the turntable, "files" the house's own
+// copy, "qobuz" only Qobuz's, "none" nothing (Qobuz may still have it: A.vinylQobuz says, once asked)
+function digitalOf(r) {
+  const a = r[8] && A.byId.get(r[8]), main = a && (A.byId.get(a[12] || a[0]) || a);
+  if (!main) return "none";
+  const src = [main[9]].concat((main[10] || []).map(v => v[5]));
+  return src.indexOf("vinyl") >= 0 ? "vinyl" : src.some(x => x !== "qobuz" && x !== "vinyl") ? "files" : "qobuz";
+}
+// To capture: first those Qobuz doesn't have, then the rest with nothing digital, then those only on Qobuz
+const captureRank = r => { const d = digitalOf(r); return d === "qobuz" ? 2 : A.vinylQobuz && A.vinylQobuz[r[0]] === false ? 0 : 1; };
+const captureWords = r => { const d = digitalOf(r); return d === "qobuz" ? "Only on Qobuz" : A.vinylQobuz && A.vinylQobuz[r[0]] === false ? "Not on Qobuz" : "Nothing digital"; };
 const VINYL_FACETS = [
+  ["digital", "Digital copy", () => [["capture", "To capture"], ["captured", "Captured"]], (r, v) => { const d = digitalOf(r); return v === "capture" ? d === "none" || d === "qobuz" : d === "vinyl"; }],
   ["have", "Shelves", () => [["both", "Also digital"], ["only", A.physWord === "vinyl" ? "Only on vinyl" : "Only physical"]], (r, v) => v === "both" ? !!r[8] : !r[8]],
   ["format", "Format", () => [["lp", "LP"], ["dlp", "Double LP and more"], ["ep", '12" and EPs'], ["small", '7" and 10"'], ["box", "Box sets"], ["cd", "CDs"], ["tape", "Cassettes"]], (r, v) => {
     const f = r[5] || "", d = pressDetails(r);
@@ -1390,7 +1402,10 @@ VIEWS.vinyl = function (el) {
   }
   const sort = store.get("sq-vsort", "added"), pick = store.get("sq-vf", {});
   const facets = VINYL_FACETS.map(f => [f[0], f[1], f[2]().filter(o => A.physical.some(r => f[3](r, o[0]))), f[3]]).filter(f => f[2].length > 1 || pick[f[0]]);
+  const capture = pick.digital === "capture";
   const rows = A.physical.filter(r => facets.every(f => !pick[f[0]] || f[3](r, pick[f[0]]))).map(vinylRow).sort(SORTS[sort][1]);
+  if (capture) rows.sort((x, y) => captureRank(x.vinyl) - captureRank(y.vinyl)); // stable: the chosen order within each
+  if (!A.vinylQobuz && has("qobuz")) api("/api/vinyl-qobuz").then(q => { A.vinylQobuz = q; if (capture && el.isConnected && current && current.el === el) VIEWS.vinyl(el); }).catch(() => {});
   const both = A.physical.filter(r => r[8]).length, picked = Object.keys(pick).filter(k => pick[k]).length;
   A.vinylShown = rows.map(x => x.vinyl);
   el.innerHTML = `${pageBar("Let's get physical", ["The collection", picked ? `${rows.length.toLocaleString()} of ${A.physical.length.toLocaleString()} records` : `${A.physical.length.toLocaleString()} records &middot; ${both.toLocaleString()} also digital`],
@@ -1398,7 +1413,7 @@ VIEWS.vinyl = function (el) {
     <div class="vfacets">${facets.map(f => `<div class="vfacet"><span class="vf-h">${f[1]}</span><div class="chips">${f[2].map(o =>
       `<button class="${pick[f[0]] === o[0] ? "on" : ""}" data-act="vinylPick" data-v="${esc(f[0] + "|" + o[0])}">${esc(o[1])}</button>`).join("")}</div></div>`).join("")}
       ${picked ? `<button class="vf-clear" data-act="vinylPick" data-v="">Clear the filters</button>` : ""}</div>
-    ${ttOn() ? ttPanel() : ""}${rows.length ? `${ttOn() ? "" : vinylPull()}<div class="grid">${rows.map(x => vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}
+    ${ttOn() ? ttPanel() : ""}${rows.length ? `${ttOn() ? "" : vinylPull()}<div class="grid">${rows.map(x => capture ? vinylCard(x.vinyl).replace('<div class="t">', `<div class="cap-w cap-${captureRank(x.vinyl)}">${captureWords(x.vinyl)}</div><div class="t">`) : vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}
     <section class="sec tt-signal" id="tt-signal"></section>`;
   signalCheck(el);
 };

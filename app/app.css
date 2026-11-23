@@ -1609,3 +1609,8 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .hg-open.on { color: var(--ink); background: rgba(255, 255, 255, .08); }
 .hg-list { padding-left: 24px; border-left: 2px solid var(--rule); margin-left: 30px; }
 .hgrp .halb .ho { width: 92px; } @media (max-width: 1000px) { .hgrp .halb .ho { width: 62px; } }
+
+/* the Vinyl page's To capture: what each record has digitally, the ones Qobuz lacks most urgent */
+.cap-w { margin-top: 8px; font: 700 10px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.cap-w.cap-0 { color: var(--accent); }
+.cap-w + .t { margin-top: 2px; }
