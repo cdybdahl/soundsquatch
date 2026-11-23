@@ -18,6 +18,8 @@ const fixedVolume = id => !!houseRoom(id).fixed;
 const ICONS = {
   compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.6a8 8 0 1 0 11.4 0"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
   apps: '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><circle cx="16.5" cy="16.5" r="3.5"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
@@ -2896,6 +2898,18 @@ const ACT = {
     lmItems(k === "album" ? ["albuminfo", "items"] : ["trackinfo", "items"], k === "album" ? { album_id: id } : k === "queue" ? { playlist_index: id } : { track_id: id }, 0, 100)
       .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, ""); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
   },
+  roomPower: (v, t) => { const on = t.classList.contains("on"); lms(v, ["power", on ? 0 : 1]).then(() => { t.classList.toggle("on", !on); toast(`${roomName(v)} ${on ? "off" : "on"}`); if (v === A.room) setTimeout(poll, 400); }).catch(() => toast("Lyrion didn't answer")); },
+  sleepSheet: () => {
+    const left = +(A.st || {}).will_sleep_in || 0;
+    openSheet(`<div class="kicker">Sleep</div><h3>${esc(roomName(A.room))}</h3>${left ? `<div class="dim">Stops in ${Math.ceil(left / 60)} minutes.</div>` : ""}
+      <div class="acts col">${[15, 30, 45, 60, 90].map(m => `<button class="btn ghost" data-act="sleepSet" data-v="${m * 60}">${m} minutes</button>`).join("")}
+      <button class="btn ghost" data-act="sleepSet" data-v="end">At the end of this song</button>${left ? `<button class="btn" data-act="sleepSet" data-v="0">Cancel the timer</button>` : ""}</div>`);
+  },
+  sleepSet: v => {
+    closeSheet();
+    const st = A.st || {}, secs = v === "end" ? Math.max(1, Math.round((+st.duration || 0) - (+st.time || 0))) : +v;
+    lms(A.room, ["sleep", secs]).then(() => { toast(secs ? `Stops in ${Math.ceil(secs / 60)} minutes` : "Timer off"); setTimeout(poll, 400); }).catch(() => toast("Lyrion didn't answer"));
+  },
   shuffleSet: v => send(["playlist", "shuffle", v]),
   queueClear: () => openSheet(`<div class="kicker">The queue</div><h3>Clear it?</h3><div class="dim">Everything in ${esc(roomName(A.room))}'s queue goes, the song playing too.</div>
     <div class="acts col"><button class="btn danger-solid" data-act="queueClearDo">${icon("trash")} Clear the queue</button><button class="btn ghost" data-act="closeSheet">Keep it</button></div>`),
@@ -3302,6 +3316,7 @@ function openRooms() {
       }).filter(Boolean) : [];
       const kind = isGroup(p) ? `<span class="room-group">${members.length ? esc(members.join(" + ")) : "a group"}</span> ` : "";
       return `<div class="room ${me ? "on" : ""} st-${vinylHere ? "playing" : mode}"><button class="room-go" data-act="room" data-v="${p.playerid}">${mode === "playing" || vinylHere ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em>${kind}<span class="state">${label}</span>${what}</em></span></button>
+        <button class="room-power ${on ? "on" : ""}" data-act="roomPower" data-v="${p.playerid}" aria-label="${on ? "Switch off" : "Switch on"}">${icon("power")}</button>
         ${me ? "" : `<span class="room-acts">${joined ? `<button data-act="syncLeave" data-v="${p.playerid}" aria-label="Leave">${icon("close")}<span class="lb">Leave</span></button>` : inStep(p) && inStep(here[0]) ? `<button data-act="syncJoin" data-v="${p.playerid}" aria-label="Join">${icon("link")}<span class="lb">Join</span></button>` : ""}
           ${playing && !joined ? `<button data-act="moveTo" data-v="${p.playerid}" aria-label="Move music here">${icon("move")}<span class="lb">Move music here</span></button>` : ""}</span>`}</div>`;
     }).join("")}</div>
@@ -3602,7 +3617,7 @@ function drawNp() {
       <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>${t.turntable && A.tt ? ttAsk(A.tt) : ""}
-        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
+        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button><button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
       <div class="np-next"></div></div></div>`;
   drawNpSide();
