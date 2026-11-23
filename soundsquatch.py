@@ -160,7 +160,25 @@ def detect():
                     mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
     except Exception:
         pass  # Lyrion not answering: as it was
+    if HAVE.get("qobuz"):
+        qobuz_arrived()
     return HAVE
+
+
+def qobuz_arrived():
+    """Profiles built while there was no Qobuz kept an empty Qobuz part, and kept it for a month: once Qobuz answers,
+    those parts are dropped so the crawler fetches them (an artist page shows Qobuz's albums within the hour, not next month)."""
+    stale = [k for k, (d, f, comp) in list(profiles.items()) if d is not None and d.get("qobuz") == {}]
+    if not stale:
+        return
+    with db_lock, db() as c:
+        for k in stale:
+            d, f, comp = profiles[k]
+            d = {p: v for p, v in d.items() if p != "qobuz"}
+            d.get("_tried", {}).pop("qobuz", None)
+            profiles[k] = (d, f, 0)
+            c.execute("update artists set data = ?, complete = 0 where k = ?", (json.dumps(d, ensure_ascii=False), k))
+    payload["version"] += 1
 
 
 def find_lms():
