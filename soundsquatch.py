@@ -87,7 +87,8 @@ STALE = 30 * 86400  # a profile is fetched again after a month
 RETRY = 86400  # a profile missing a part tries for it again after a day
 PICTURE_HOSTS = ("archive.org", "static.qobuz.com", "upload.wikimedia.org", "thumb.wikimedia.org", "i.discogs.com", "img.discogs.com", "coverartarchive.org",
                  "is1-ssl.mzstatic.com", "is2-ssl.mzstatic.com", "is3-ssl.mzstatic.com", "is4-ssl.mzstatic.com", "is5-ssl.mzstatic.com",  # Apple's covers
-                 "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net")  # Deezer's
+                 "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",  # Deezer's
+                 "resources.tidal.com")  # TIDAL's
 LRCLIB = "https://lrclib.net/api/"  # lyrics, synced where it has them; free and keyless
 MUSIC_DIRS = ["/share/music"]  # Lyrion's media folders, as Lyrion has them (asked with each look at the library)
 CAPTURE_DIR = os.environ.get("CAPTURE_DIR", "")  # the turntable's songs, one folder a record (default: "From vinyl" in the music folder, so the library has them)
@@ -3497,10 +3498,8 @@ def share_link(album_id):
     q = next((u for u in urls if u.startswith("qobuz:")), None)
     link = ""
     t = next((u for u in urls if u.startswith("tidal:")), None)
-    if t and not q:  # TIDAL's public page by the album's id, which its song info carries (TRIAL)
-        info = {k: v for d in rpc(PLAYER, "songinfo", "0", "40", f"url:{t}", "tags:e").get("songinfo_loop") or [] for k, v in d.items()}
-        m = re.search(r"tidal:album:(\d+)", str(info.get("extid") or ""))
-        link = f"https://tidal.com/browse/album/{m.group(1)}" if m else ""
+    if t and not q:  # TIDAL's public page for the album
+        link = streaming.by_url(t).link(PLAYER, t)
     if q:
         for row in rpc(PLAYER, "songinfo", "0", "40", f"url:{q}", "tags:K").get("songinfo_loop") or []:
             if row.get("artwork_url"):
@@ -4087,6 +4086,8 @@ def picture(url, width=None):
     """A picture from one of the sites the profiles name, from the cache or fetched into it, at width when asked:
     (bytes, type) or None."""
     host = urllib.parse.urlparse(url).hostname or ""
+    if url.startswith("http://") and host in PICTURE_HOSTS:
+        url = "https://" + url[len("http://"):]  # the same picture over https (TIDAL's plugin names its covers by http)
     if not url.startswith("https://") or host not in PICTURE_HOSTS:
         return None
     path = os.path.join(IMG_CACHE, hashlib.sha1(url.encode()).hexdigest())

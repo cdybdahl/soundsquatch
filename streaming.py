@@ -114,7 +114,7 @@ class Tidal:
     (its songs), tidal_action add|remove type:album id:N (a favourite, which the plugin's library import brings onto
     the shelves). Tracks it streams are tidal://ID.flc (or .mp4)."""
     key, label, scheme = "tidal", "TIDAL", "tidal"
-    SEARCH, S_ARTISTS, S_ALBUMS = 7, 2, 3  # TRIAL: the places of Search and its Artists and Albums, from the plugin's source
+    SEARCH, S_ARTISTS, S_ALBUMS = 7, 2, 3  # the places of Search and its Artists and Albums (plugin 1.10)
 
     def available(self, can):
         return can("tidal_browse", "items")
@@ -144,7 +144,8 @@ class Tidal:
     def _cover(x):
         img = x.get("image") or x.get("icon") or ""
         m = re.match(r"^/imageproxy/([^/]+)/", img)
-        return urllib.parse.unquote(m.group(1)) if m else img if img.startswith("http") else ""
+        url = urllib.parse.unquote(m.group(1)) if m else img if img.startswith("http") else ""
+        return re.sub(r"^http://resources\.tidal\.com/", "https://resources.tidal.com/", url)
 
     def _albums(self, term, player):
         return [x for x in self._items(player, f"{self.SEARCH}.{self.S_ALBUMS}", term, 60) if self._album_id(x)]
@@ -202,7 +203,7 @@ class Tidal:
         rid, album, artist = got
         verb = action[1:] if action in ("aplay", "aqueue", "akeep") else action
         if verb in ("play", "queue"):
-            rpc(player, "tidal_browse", "playlist", "load" if verb == "play" else "add", "type:album", f"id:{rid}")
+            rpc(player, "tidal_browse", "playlist", "play" if verb == "play" else "add", "type:album", f"id:{rid}")
             return {"result": "playing" if verb == "play" else "queued", "album": album, "artist": artist}
         if verb == "keep":
             rpc(player, "tidal_action", "add", "type:album", f"id:{rid}")
@@ -221,9 +222,11 @@ class Tidal:
         a, t = self._name(x)
         songs = rpc(player, "tidal_browse", "items", "0", "200", "type:album", f"id:{rid}").get("loop_loop") or []  # TRIAL
         info = rpc(player, "tidal_info", "items", "0", "50", "type:album", f"id:{rid}", "menu:1").get("item_loop") or []
-        return {"artist": a or artist, "album": t, "cover": self._cover(x), "term": term, "i": best, "details": {},
+        facts = dict((y.get("text") or "").split(": ", 1) for y in info if y.get("type") == "text" and ": " in (y.get("text") or ""))
+        return {"artist": a or artist, "album": t, "cover": self._cover(x), "term": term, "i": best,
+                "details": {k2: facts[k1] for k1, k2 in (("Duration", "length"), ("Year", "released")) if facts.get(k1)},
                 "tracks": [{"n": n + 1, "title": (s.get("name") or "").split("\n")[0], "k": n} for n, s in enumerate(y for y in songs if y.get("isaudio") or y.get("type") == "audio")],
-                "year": "", "kept": any("Remove from TIDAL favorites" in (y.get("text") or "") for y in info)}
+                "year": facts.get("Year", ""), "kept": any("Remove from TIDAL favorites" in (y.get("text") or "") for y in info)}
 
     def play_release(self, term, i, track, how, player):
         found = self._albums(term, player)
@@ -231,31 +234,45 @@ class Tidal:
             return {"error": "TIDAL no longer lists that release"}
         rid = self._album_id(found[i])
         if track is None:
-            rpc(player, "tidal_browse", "playlist", "load" if how == "play" else "insert", "type:album", f"id:{rid}")
-        else:  # TRIAL: one song and on from there: the album loaded, then that song played
-            rpc(player, "tidal_browse", "playlist", "load", "type:album", f"id:{rid}")
+            rpc(player, "tidal_browse", "playlist", how, "type:album", f"id:{rid}")
+        else:  # one song and on from there: the album played, then that song
+            rpc(player, "tidal_browse", "playlist", "play", "type:album", f"id:{rid}")
             rpc(player, "playlist", "index", str(track))
         return {"result": "playing"}
 
-    def keep_track(self, player, url):
-        """The album of a streamed track, kept: its album's id from the track's information (TRIAL)."""
+    def album_of(self, player, url):
+        """The TIDAL album a track is from: (its id, its title), from the track's information menu ("Album: …")."""
         tid = (re.match(r"tidal://(\d+)", url or "") or [None, None])[1]
-        t = (rpc("", "songinfo", "0", "50", f"url:{url}", "tags:le").get("songinfo_loop") or []) if tid else []
-        info = {k: v for d in t for k, v in d.items()}
-        out = {"album": info.get("album") or "", "artist": info.get("artist") or ""}
-        m = re.search(r"tidal:album:(\d+)", str(info.get("extid") or ""))
-        if not m:
-            return dict(out, error="TIDAL didn't say which album that track is from")
-        rpc(player, "tidal_action", "add", "type:album", f"id:{m.group(1)}")
+        if not tid:
+            return None, ""
+        for y in rpc(player, "tidal_info", "items", "0", "30", "type:track", f"id:{tid}", "menu:1").get("item_loop") or []:
+            go = ((y.get("actions") or {}).get("go") or {}).get("params") or {}
+            if go.get("type") == "album" and go.get("id"):
+                return str(go["id"]), (y.get("text") or "").split(": ", 1)[-1]
+        return None, ""
+
+    def keep_track(self, player, url):
+        """The album of a streamed track, kept (a TIDAL favourite, which the plugin's import brings onto the shelves)."""
+        rid, album = self.album_of(player, url)
+        if not rid:
+            return {"error": "TIDAL didn't say which album that track is from"}
+        info = rpc(player, "tidal_info", "items", "0", "3", "type:album", f"id:{rid}", "menu:1").get("item_loop") or []
+        if any("Remove from TIDAL favorites" in (y.get("text") or "") for y in info):
+            return {"album": album, "result": "already"}
+        rpc(player, "tidal_action", "add", "type:album", f"id:{rid}")
         rpc("", "rescan", "onlinelibrary")
-        return dict(out, result="added")
+        return {"album": album, "result": "added"}
 
     def unkeep_track(self, player, url):
-        t = rpc("", "songinfo", "0", "50", f"url:{url}", "tags:e").get("songinfo_loop") or []
-        m = re.search(r"tidal:album:(\d+)", str({k: v for d in t for k, v in d.items()}.get("extid") or ""))
-        if m:
-            rpc(player, "tidal_action", "remove", "type:album", f"id:{m.group(1)}")
-        return bool(m)
+        rid, _ = self.album_of(player, url)
+        if rid:
+            rpc(player, "tidal_action", "remove", "type:album", f"id:{rid}")
+        return bool(rid)
+
+    def link(self, player, url):
+        """The album's public page on TIDAL."""
+        rid, _ = self.album_of(player, url)
+        return f"https://tidal.com/browse/album/{rid}" if rid else ""
 
 
 ALL = [Qobuz(), Tidal()]

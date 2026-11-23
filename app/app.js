@@ -294,12 +294,12 @@ function discItems(mine, p) {
   return out;
 }
 // All, Mine, Qobuz: which of the discography shows (this device remembers); only when there are both to choose between
-const DISC_F = [["all", "All"], ["mine", "Mine"], ["qobuz", `On ${SVC()}`]];
+const DISC_F = () => [["all", "All"], ["mine", "Mine"], ["qobuz", `On ${SVC()}`]]; // the service named once the app knows it
 function discBar(items) {
   const all = [].concat.apply([], Object.keys(items).map(k => items[k])), own = all.filter(x => x.a).length, q = all.length - own;
   if (!own || !q) return "";
   const f = device.get("disc", "all"), n = { all: all.length, mine: own, qobuz: q };
-  return `<div class="disc-bar">${DISC_F.map(x => `<button class="${x[0] === f ? "on" : ""}" data-act="discFilter" data-v="${x[0]}">${x[1]} <span>${n[x[0]]}</span></button>`).join("")}</div>`;
+  return `<div class="disc-bar">${DISC_F().map(x => `<button class="${x[0] === f ? "on" : ""}" data-act="discFilter" data-v="${x[0]}">${x[1]} <span>${n[x[0]]}</span></button>`).join("")}</div>`;
 }
 const discF = items => discBar(items) ? device.get("disc", "all") : "all";
 // what each kind holds, for the filter to hide a kind with none of what it shows
