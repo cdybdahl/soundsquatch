@@ -154,7 +154,7 @@ def detect():
     try:
         # CrystalGipsy's plugins: their Material home shelves (flat, playable by item id) and Listen Later's own add command
         HAVE.update(listenlater=can("listenlater", "add"), ll_shelf=can("LLHome", "items"), lbf=can("LBFForYou", "items"),
-                    pfr=can("PFRBnm", "items"))
+                    pfr=can("PFRBnm", "items"), ratings=can("ratingslight", "ratealbum"))  # Ratings Light 3.2 on: track ratings are Lyrion's
         HAVE.update(qobuz=can("qobuz", "items"), archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
                     radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
                     mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
@@ -524,7 +524,7 @@ def settings_for_app():
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"], "discover_order": settings["house"]["discover_order"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
-            "have": {k: v for k, v in HAVE.items()}, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
+            "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()), "token_set": os.path.exists(HA_TOKEN), "checks": checks}
 
 
 def pin_hash(pin):
@@ -1866,6 +1866,58 @@ def away_album(artist, title, player, fresh=False):
             "year": m.group(3) if m else "", "kept": any((x.get("name") or "").startswith("Remove Release ") for x in entries)}
     AWAY[k] = (time.time(), page)
     return page
+
+
+def album_ratings(album_id):
+    """An album's track ratings in Lyrion (Ratings Light keeps them there, 0-100, 20 a star): each rated track's, and
+    their average in stars to the half star (unrated tracks left out of it)."""
+    got = rpc("", "titles", "0", "500", f"album_id:{int(album_id)}", "tags:R").get("titles_loop") or []
+    rated = {t["id"]: int(t.get("rating") or 0) for t in got if int(t.get("rating") or 0) > 0}
+    avg = round(sum(rated.values()) / len(rated) / 10) / 2 if rated else 0
+    return {"tracks": len(got), "rated": len(rated), "stars": avg, "ratings": rated}
+
+
+def rate_album(req):
+    """Every track of the album rated the same, in Lyrion through Ratings Light (stars 0-5, halves allowed; 0 unrates)."""
+    if not HAVE.get("ratings"):
+        return {"error": "Ratings Light isn't installed"}
+    stars = max(0.0, min(5.0, round(float(req.get("stars") or 0) * 2) / 2))
+    got = rpc("", "ratingslight", "ratealbum", str(int(req.get("album_id") or 0)), str(int(stars * 20)))
+    return dict(album_ratings(int(req.get("album_id") or 0)), count=int(got.get("count") or 0), scanning=bool(got.get("scanning")))
+
+
+def ratings_ready():
+    """Album stars are Lyrion's (Ratings Light's) once the house's own have gone over to it, or when there were none."""
+    if kv_get("ratings-carried"):
+        return True
+    with db() as c:
+        return not c.execute("select 1 from marks where kind = 'album' and rating > 0 limit 1").fetchone()
+
+
+def carry_ratings():
+    """Once, when Ratings Light is found: the album stars given in Soundsquatch before it go to those albums' tracks in
+    Lyrion (only tracks not yet rated), so the stars the house gave aren't lost when the albums' stars become Lyrion's."""
+    for _ in range(120):  # the library first (it loads after the start)
+        if library["albums"]:
+            break
+        time.sleep(10)
+    if not HAVE.get("ratings") or kv_get("ratings-carried"):
+        return
+    with db() as c:
+        starred = dict(c.execute("select k, rating from marks where kind = 'album' and rating > 0").fetchall())
+    done = 0
+    with lib_lock:
+        rows = [r for r in library["albums"] if copies(r[2], r[1]) in starred]
+    for r in rows:
+        for aid in [r[0]] + [v[0] for v in (r[10] if len(r) > 10 and r[10] else [])]:
+            if not str(aid).isdigit():
+                continue  # not one of Lyrion's albums
+            try:
+                done += int(rpc("", "ratingslight", "ratealbum", str(int(aid)), str(int(starred[copies(r[2], r[1])]) * 20), "1").get("count") or 0)
+            except Exception as e:
+                note_error(f"carrying ratings: {type(e).__name__}: {e}"[:200])
+                return  # asked again at the next start
+    kv_set("ratings-carried", {"at": time.time(), "albums": len(rows), "tracks": done})
 
 
 def away_play(req):
@@ -5219,6 +5271,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(profile_for_app(qs["name"].strip()[:200]))
             if url.path == "/api/album":
                 return self.reply(album(int(qs.get("id", "0"))))
+            if url.path == "/api/ratings":
+                return self.reply(album_ratings(int(qs.get("album_id", "0"))) if HAVE.get("ratings") else {"error": "no Ratings Light"})
             if url.path == "/api/away":
                 return self.reply(away_album(qs.get("artist", ""), qs.get("album", ""), qs.get("player", ""), fresh=qs.get("again") == "1"))
             if url.path == "/api/review" and qs.get("album"):  # a record off the shelves, by its names
@@ -5319,7 +5373,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({"error": "pin", "pin": True}, status=403)
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
-                  "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
+                  "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
                   "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}

@@ -1593,3 +1593,9 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .trk-credits .tc span { width: 130px; flex: none; color: var(--dim); text-transform: capitalize; }
 .trk-credits .pname { color: var(--ink); }
 .trk-credits .pname.own { color: var(--accent); }
+
+/* an album's stars from Lyrion's track ratings (Ratings Light), with what they average */
+.lr-stars { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lr-stars .lr-in { display: inline-flex; }
+.lr-stars .star.half .ic { opacity: .5; }
+.lr-note { font: 12px var(--sans); color: var(--dim); }

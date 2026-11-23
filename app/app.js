@@ -363,6 +363,20 @@ function hearted(text, heart, open, close) {
   const head = cut > 0 ? t.slice(0, cut + 1) : "", last = cut > 0 ? t.slice(cut + 1) : t;
   return `${head ? open + esc(head) + close : ""}<span class="nw">${open}${esc(last)}${close}${heart}</span>`;
 }
+// an album's stars when Ratings Light is installed: Lyrion's, the average of its tracks' ratings, and a star tapped rates
+// every track (asked first); without it, the house's own album stars
+const lyrionRates = () => !!(A.cfg && A.cfg.have && A.cfg.have.ratings);
+const albumStars = a => lyrionRates() ? `<span class="lr-stars" data-album="${a[0]}"><span class="lr-in">${lrInner(0)}</span><span class="lr-note"></span></span>` : mk("album", albumKey(a), "stars");
+const lrInner = st => [1, 2, 3, 4, 5].map(n => `<button class="star ${n <= st ? "on" : n - 0.5 === st ? "on half" : ""}" data-act="lrRate" data-v="${n}" aria-label="${n} stars">${icon(n - 0.5 <= st ? "star_on" : "star")}</button>`).join("");
+function lrPaint(box, r) {
+  box.lr = r;
+  $(".lr-in", box).innerHTML = lrInner(r.stars);
+  $(".lr-note", box).textContent = !r.rated ? "No tracks rated yet" : r.rated === r.tracks ? `Its ${r.tracks} tracks, on average` : `${r.rated} of its ${r.tracks} tracks rated, on average`;
+}
+function lrFill(el, id) {
+  if (!lyrionRates()) return;
+  api("/api/ratings?album_id=" + id).then(r => { if (!r.error) el.querySelectorAll(`.lr-stars[data-album="${id}"]`).forEach(b => lrPaint(b, r)); }).catch(() => {});
+}
 const markAt = t => { const el = t.closest(".mk"), i = el.dataset.mark.indexOf("|"); return [el.dataset.mark.slice(0, i), el.dataset.mark.slice(i + 1)]; };
 
 /* ───────────────────────── pieces ───────────────────────── */
@@ -1185,7 +1199,7 @@ MAG.album = function (el, id) {
           <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Add it to the queue">${icon("queue")}<span>Add to Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>${A.cfg && A.cfg.have && A.cfg.have.listenlater ? `<button data-act="listenLater" data-v="${a[0]}" aria-label="Save to Listen Later">${icon("clock")}<span>Listen Later</span></button>` : ""}
           <span class="mag-share"></span>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
         <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
-          ${title ? `<div><dt>Your marks</dt><dd class="al-marks-in">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}</dl></div>
+          ${title ? `<div><dt>Your marks</dt><dd class="al-marks-in">${albumStars(a)}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}</dl></div>
     </div>
     <div class="al-body"><div class="al-main">
     <nav class="mag-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"]].filter(t => t[0] !== "credits" || on("features", "credits")).map(t =>
@@ -1199,6 +1213,7 @@ MAG.album = function (el, id) {
     <div class="al-like"></div>
   </article>`;
   const img = $(".mag-cover img", el); if (img) tint(img, el);
+  if (title) lrFill(el, a[0]);
   if (title) api("/api/share?album_id=" + a[0]).then(r => { const box = $(".mag-share", el); if (r.url && box && el.isConnected) box.outerHTML = `<button data-act="share" data-v="${esc(JSON.stringify({ title: title + " by " + artist, url: r.url }))}" aria-label="Share">${icon("share")}<span>Share</span></button>`; }).catch(() => {});
   profile(artist).then(p => {
     const k = $(".mag-kind", el); if (k && title) k.textContent = { album: "The LP", ep: "The EP", live: "Live", comp: "The compilation" }[kindOf(a, p.rgs)];
@@ -1247,7 +1262,7 @@ VIEWS.album = function (el, id) {
     <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, versionsOf(a).length)}</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
       <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
       ${title ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}${(a[8] || []).length ? `<button class="g-edit" data-act="genreEdit" data-v="${a[0]}" aria-label="Edit genres">${icon("edit")}</button>` : `<button class="g-edit named" data-act="genreEdit" data-v="${a[0]}">${icon("edit")} Add genres</button>`}</div>` : ""}
-      ${title ? `<div class="al-marks">${mk("album", albumKey(a), "stars")}${mk("album", albumKey(a), "tags")}</div>` : ""}
+      ${title ? `<div class="al-marks">${albumStars(a)}${mk("album", albumKey(a), "tags")}</div>` : ""}
       <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button class="btn ghost" data-act="nextAlbum" data-v="${a[0]}">${icon("next_up")} Play Next</button>
       <button class="btn ghost" data-act="queueAlbum" data-v="${a[0]}">${icon("queue")} Add to Queue</button>
       <button class="btn ghost" data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}</button>
@@ -1256,6 +1271,7 @@ VIEWS.album = function (el, id) {
     <div id="al-review"></div><div id="al-credits"></div>
     ${more.length ? section("Also on your shelves", "More by " + esc(artist), shelf(more.map(x => albumCard(x)))) : ""}<div id="al-sim"></div>`;
   const img = $(".album-art img", el); if (img) tint(img, el);
+  if (title) lrFill(el, a[0]);
   const showReview = r => {
     const review = paras(r.review || ""), box = $("#al-review", el); if (!box) return;
     box.outerHTML = `<section class="sec review" id="al-review"><div class="kicker">About the record</div>${review.length ? folded(review, 3, artist) + `<div class="credit">From Wikipedia</div>` : missingNote(r.why, "review", id)}</section>`;
@@ -2565,6 +2581,22 @@ const ACT = {
     }).catch(() => toast("The server didn't answer"));
   },
   banLiftArtist: v => { closeSheet(); api("/api/ban", { kind: "artist", lift: v }).then(() => toast("Off the never-play list")).catch(() => toast("The server didn't answer")); },
+  lrRate: (v, t) => { // a star on an album rated through Ratings Light: every track gets it, once the house says so
+    const box = t.closest(".lr-stars"), r = box.lr || { tracks: 0, rated: 0, stars: 0 }, id = box.dataset.album, n = +v === r.stars && r.rated === r.tracks ? 0 : +v;
+    const word = n ? `${n} ${n === 1 ? "star" : "stars"}` : "no stars";
+    openSheet(`<div class="kicker">Ratings Light</div><h3>${n ? `Rate every track ${"\u2605".repeat(n)}?` : "Clear every track's rating?"}</h3>
+      <div class="dim">${r.tracks ? `All ${r.tracks} tracks` : "Every track"} of this album get ${word} in Lyrion${r.rated ? `, in place of the ${r.rated === 1 ? "rating" : r.rated + " ratings"} already there` : ""}.</div>
+      <div class="acts col"><button class="btn" data-act="lrRateDo" data-v="${id}:${n}">${n ? (r.tracks ? `Rate all ${r.tracks} tracks` : "Rate them") : "Clear them"}</button><button class="btn ghost" data-act="closeSheet">Leave them</button></div>`);
+  },
+  lrRateDo: v => {
+    const id = v.split(":")[0], n = +v.split(":")[1];
+    closeSheet();
+    api("/api/rate-album", { album_id: +id, stars: n }).then(r => {
+      if (r.error) return toast(r.error);
+      document.querySelectorAll(`.lr-stars[data-album="${id}"]`).forEach(b => lrPaint(b, r));
+      toast(r.scanning ? "Lyrion is scanning: try again once it's done" : n ? `${r.count} tracks rated` : `${r.count} tracks cleared`);
+    }).catch(() => toast("Lyrion didn't answer"));
+  },
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;
     if (open && open.classList.contains("trk-credits")) { open.remove(); t.classList.remove("on"); return; }
