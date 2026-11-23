@@ -64,6 +64,10 @@ import lms_keep_album  # noqa: E402
 import lms_qobuz  # noqa: E402
 import streaming  # noqa: E402
 from library import copies, quality  # noqa: E402
+
+# the titles and names Discover matches again and again, each worked out once (a Raspberry Pi took 16 s over them)
+copies = __import__("functools").lru_cache(maxsize=200000)(copies)
+lms_qobuz.plain = __import__("functools").lru_cache(maxsize=200000)(lms_qobuz.plain)
 import genres as house_genres  # noqa: E402
 import turntable  # noqa: E402
 from PIL import Image  # noqa: E402  (python3-pil, already on the server)
@@ -88,7 +92,8 @@ RETRY = 86400  # a profile missing a part tries for it again after a day
 PICTURE_HOSTS = ("archive.org", "static.qobuz.com", "upload.wikimedia.org", "thumb.wikimedia.org", "i.discogs.com", "img.discogs.com", "coverartarchive.org",
                  "is1-ssl.mzstatic.com", "is2-ssl.mzstatic.com", "is3-ssl.mzstatic.com", "is4-ssl.mzstatic.com", "is5-ssl.mzstatic.com",  # Apple's covers
                  "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",  # Deezer's
-                 "resources.tidal.com")  # TIDAL's
+                 "resources.tidal.com",  # TIDAL's
+                 "lastfm-img.freetls.fastly.net", "lastfm.freetls.fastly.net")  # Last.fm's, as Music & Artist Information names them
 LRCLIB = "https://lrclib.net/api/"  # lyrics, synced where it has them; free and keyless
 MUSIC_DIRS = ["/share/music"]  # Lyrion's media folders, as Lyrion has them (asked with each look at the library)
 CAPTURE_DIR = os.environ.get("CAPTURE_DIR", "")  # the turntable's songs, one folder a record (default: "From vinyl" in the music folder, so the library has them)
@@ -172,6 +177,23 @@ def detect():
 def svc():
     """The streaming service Lyrion has a plugin for (Qobuz first, when it has both), or None."""
     return next((x for x in streaming.ALL if HAVE.get(x.key)), None)
+
+
+def lapsed_local_artwork():
+    """Once: profiles built before Lyrion's local artwork was kept on arrival hold addresses that have lapsed (they last an
+    hour); their photographs part is dropped so the crawler asks again."""
+    if kv_get("local-artwork-refetched"):
+        return
+    n = 0
+    with db_lock, db() as c:
+        for k, (d, f, comp) in list(profiles.items()):
+            ph = (d or {}).get("photos") or []
+            if any("://" not in p["url"] and not have_picture(p["url"]) for p in ph):
+                d = {x: v for x, v in d.items() if x not in ("photos", "_photos_at")}
+                profiles[k] = (d, f, 0)
+                c.execute("update artists set data = ?, complete = 0 where k = ?", (json.dumps(d, ensure_ascii=False), k))
+                n += 1
+    kv_set("local-artwork-refetched", {"at": time.time(), "profiles": n})
 
 
 def qobuz_arrived():
@@ -1000,7 +1022,7 @@ def artist_photo_choices(name):
     """The pictures of an artist Soundsquatch has (Wikipedia's, Qobuz's, Discogs's) and whether one was chosen by hand."""
     d = get_profile(name)[0] or {}
     w, q = d.get("wiki") or {}, (d.get("qobuz") or {}).get("photo") or ""
-    urls = [w.get("image", "").split("?")[0], q] + [p["url"] for p in d.get("photos") or []]
+    urls = [w.get("image", "").split("?")[0], q] + [p["url"] for p in d.get("photos") or [] if "://" in p["url"] or have_picture(p["url"])]
     return {"choices": [u for u in dict.fromkeys(urls) if u], "chosen": chosen_photos.get(key(name)), "now": pick_photo(dict(d, name=name))}
 
 
@@ -1016,8 +1038,10 @@ def artist_photo_edit(req):
         chosen_photos.pop(k, None)
     elif req.get("url"):
         url = str(req["url"])
-        if not url.startswith("https://") or (urllib.parse.urlparse(url).hostname or "") not in PICTURE_HOSTS:
+        if "://" in url and (not url.startswith("https://") or (urllib.parse.urlparse(url).hostname or "") not in PICTURE_HOSTS):
             return {"error": "not a picture from a known site"}
+        if "://" not in url and not picture(url):
+            return {"error": "Lyrion no longer has that picture"}
         chosen_photos[k] = {"url": url}
     elif req.get("data"):
         import base64
@@ -1456,6 +1480,9 @@ def build(name, only=None):
                 got = part_rgs(d.get("mb")) if "mb" in d else None
             else:
                 got = part_photos(name, d.get("mb"))
+                for ph in got or []:  # Lyrion's local artwork lasts an hour at its address: kept now, while it answers
+                    if "://" not in ph["url"]:
+                        picture(ph["url"])
                 d["_photos_at"] = time.time()
             if got is not None:
                 d[p] = got
@@ -1499,9 +1526,12 @@ def pick_photo(d, size="hero"):
         return mine["url"]
     w = d.get("wiki") or {}
     q = (d.get("qobuz") or {}).get("photo") or ""
-    photos = [] if shared_name(d.get("name") or "") else d.get("photos") or []
+    photos = [p for p in d.get("photos") or [] if "://" in p["url"] or have_picture(p["url"])]  # Lyrion's local artwork: while it's kept
+    if shared_name(d.get("name") or ""):  # a namesake's photographs left out; the house's own (local artwork) are theirs for certain
+        photos = [p for p in photos if "://" not in p["url"]]
+    lyrion = lyrion_pics.get(key(d.get("name") or "")) or ""  # Lyrion's own picture of them, when it has one
     if size == "thumb":
-        return q or w.get("thumb") or (photos[0]["url"] if photos else "")
+        return q or w.get("thumb") or (photos[0]["url"] if photos else "") or lyrion
     if w.get("image") and w.get("w", 0) >= 500:
         img = w["image"].split("?")[0]
         if w.get("w", 0) > 1800:  # Wikipedia's own resizer, at 1920 pixels (one of the widths it keeps): …/thumb/a/ab/F.jpg/3840px-F.jpg, or made so from the original
@@ -1511,7 +1541,56 @@ def pick_photo(d, size="hero"):
                 img = img.replace("/commons/", "/commons/thumb/", 1) + "/1920px-" + img.rsplit("/", 1)[1]
         return img
     big = [p for p in photos if p["w"] >= 500]
-    return q or (big[0]["url"] if big else "") or w.get("image") or (photos[0]["url"] if photos else "")
+    return q or (big[0]["url"] if big else "") or w.get("image") or (photos[0]["url"] if photos else "") or lyrion
+
+
+def have_picture(url):
+    """Whether the picture cache holds this one (Lyrion's own addresses can't be asked again once they've lapsed)."""
+    if "://" not in url:
+        url = LMS + "/" + url.lstrip("/")
+    return os.path.exists(os.path.join(IMG_CACHE, hashlib.sha1(url.encode()).hexdigest()))
+
+
+lyrion_pics = {}  # key(artist) → Lyrion's own picture of them (its address), for artists none of the profile's pictures fit
+
+
+def lyrion_pictures_loop():
+    """Lyrion's own picture of each artist on the shelves that has none from the profiles (Music & Artist Information's,
+    by Lyrion's artist id, so the address lasts), asked once in the background and kept. Lyrion answers an artist it has
+    no picture of with the same placeholder every time: the picture that comes back for many artists is that one."""
+    lyrion_pics.update(kv_get("lyrion-pics", {}) or {})
+    time.sleep(240)
+    while True:
+        try:
+            if HAVE.get("mai"):
+                asked = kv_get("lyrion-pics-asked", {}) or {}
+                with lib_lock:
+                    todo = [(k, a) for k, a in library["artists"].items() if k not in asked or time.time() - asked[k] > 30 * 86400]
+                seen = Counter(kv_get("lyrion-pics-seen", {}) or {})
+                for k, a in todo[:400]:
+                    d = get_profile(a["name"])[0] or {}
+                    asked[k] = time.time()
+                    if pick_photo(dict(d, name=a["name"]), "thumb") and k not in lyrion_pics:
+                        continue  # a picture already
+                    url = f"imageproxy/mai/artist/{a['id']}/image_360x360_m.png"
+                    got = picture(url)
+                    sig = hashlib.sha1(got[0]).hexdigest() if got else ""
+                    if sig:
+                        seen[sig] += 1
+                    if got and seen[sig] < 3:
+                        lyrion_pics[k] = url
+                    else:
+                        lyrion_pics.pop(k, None)
+                    time.sleep(0.2)
+                placeholder = {s for s, n in seen.items() if n >= 3}  # the placeholder: not anyone's picture
+                for k in [k for k, u in lyrion_pics.items() if have_picture(u) and hashlib.sha1(picture(u)[0]).hexdigest() in placeholder]:
+                    lyrion_pics.pop(k)
+                kv_set("lyrion-pics", lyrion_pics), kv_set("lyrion-pics-asked", asked), kv_set("lyrion-pics-seen", dict(seen))
+                if todo:
+                    payload["version"] += 1  # the Artists page shows them
+        except Exception as e:
+            note_error(f"Lyrion's artist pictures: {type(e).__name__}: {e}"[:200])
+        time.sleep(3600)
 
 
 def heard(name):
@@ -2857,6 +2936,55 @@ def morning_loop():
             note_error(f"morning: {type(e).__name__}: {e}"[:200])
 
 
+HOME = {"day": "", "at": 0, "body": None, "building": False}
+home_lock = threading.Lock()
+
+
+def home_kept():
+    """Discover's makings, kept: the last one answered at once (each day's picks are seeded by the date, so they hold
+    all day), made again in the background when it's ten minutes old; the day's first visit, or the first after a
+    start, waits for one to be made (and anyone else asking meanwhile waits for that same one)."""
+    today = time.strftime("%Y-%m-%d")
+    if HOME["body"] is not None and HOME["day"] == today:
+        if time.time() - HOME["at"] > 600 and not HOME["building"]:
+            HOME["building"] = True
+            threading.Thread(target=make_home, name="home", daemon=True).start()
+        return HOME["body"]
+    return make_home()
+
+
+def make_home(force=False):
+    with home_lock:
+        today = time.strftime("%Y-%m-%d")
+        try:
+            if not force and HOME["body"] is not None and HOME["day"] == today and time.time() - HOME["at"] < 60:
+                return HOME["body"]  # made while this one waited its turn
+            body = dict(home(), new=new_releases())
+            with lib_lock:
+                loaded = bool(library["albums"])
+            if loaded:  # one made while the library is still coming in isn't kept
+                HOME.update(day=today, at=time.time(), body=body)
+            return body
+        finally:
+            HOME["building"] = False
+
+
+def home_loop():
+    """Discover made ahead: as soon as the library is in after a start (the first visit after an update shouldn't wait),
+    then every half hour."""
+    while True:
+        try:
+            with lib_lock:
+                loaded = bool(library["albums"])
+            if loaded:
+                make_home(force=True)
+                time.sleep(1800)
+                continue
+        except Exception as e:
+            note_error(f"Discover made ahead: {type(e).__name__}: {e}"[:200])
+        time.sleep(15)
+
+
 def warm_the_day():
     """What the front page asks for, done ahead: the cover stories (their text looked up), Discover's makings, the new
     releases, and the pictures shown at the sizes the page asks for (the stories', the artist of the day's, the faces on
@@ -4121,10 +4249,13 @@ def shrink(data, width):
 def picture(url, width=None):
     """A picture from one of the sites the profiles name, from the cache or fetched into it, at width when asked:
     (bytes, type) or None."""
+    if url and "://" not in url:  # a picture in Lyrion itself: Music & Artist Information's local artwork, Lyrion's artist pictures
+        url = LMS + "/" + url.lstrip("/")
+    own = url.startswith(LMS + "/")
     host = urllib.parse.urlparse(url).hostname or ""
     if url.startswith("http://") and host in PICTURE_HOSTS:
         url = "https://" + url[len("http://"):]  # the same picture over https (TIDAL's plugin names its covers by http)
-    if not url.startswith("https://") or host not in PICTURE_HOSTS:
+    if not own and (not url.startswith("https://") or host not in PICTURE_HOSTS):
         return None
     path = os.path.join(IMG_CACHE, hashlib.sha1(url.encode()).hexdigest())
     if width:
@@ -4144,10 +4275,14 @@ def picture(url, width=None):
         except OSError:
             pass
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=AGENT), timeout=20) as r:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=AGENT), timeout=5 if own else 20) as r:
                 data = r.read(15 * 1024 * 1024)
         except urllib.error.HTTPError:  # none there, or the site failing over it (archive.org's thumbnails do): the page goes without
             save(path + ".none", b"")
+            return None
+        except (OSError, ValueError):  # no answer: Lyrion's local-artwork addresses last an hour, then hang; a site down just now
+            if own:
+                save(path + ".none", b"")
             return None
         save(path, data)
     if width:
@@ -5367,7 +5502,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/cover":
                 return self.reply(cover_stories())
             if url.path == "/api/home":
-                return self.reply(dict(home(), new=new_releases()))
+                return self.reply(home_kept())
             if url.path == "/api/marks":
                 return self.reply(marks())
             if url.path == "/api/lyrics":
@@ -5543,7 +5678,8 @@ if __name__ == "__main__":
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
     start_turntable()
-    for job in (carry_ratings, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
+    lapsed_local_artwork()
+    for job in (carry_ratings, lyrion_pictures_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does

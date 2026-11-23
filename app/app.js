@@ -431,7 +431,8 @@ function face(name, image, sub, cls) {
   // someone on the shelves wears their own picture (the one chosen for them), whatever another list offers: Qobuz's
   // similar artists can name a namesake ("LUNA", a singer, for Luna the band)
   const info = A.artistInfo.get(ak(name)), img = (info && info[3]) || image || "";
-  const inner = img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 320))}" alt="">` : `<div class="mono">${esc(name.replace(/^the /i, "").slice(0, 1))}</div>`;
+  const letter = esc(name.replace(/^the /i, "").slice(0, 1)); // a picture that won't load gives way to the letter
+  const inner = img ? `<img loading="lazy" decoding="async" src="${esc(pic(img, 320))}" alt="" data-l="${letter}" onerror="var d=document.createElement('div');d.className='mono';d.textContent=this.getAttribute('data-l');this.parentNode.replaceChild(d,this)">` : `<div class="mono">${letter}</div>`;
   return `<a class="face ${cls || ""} ${info ? "own" : ""}" href="${artistHref(name)}"><div class="ph">${inner}</div>${mk("artist", norm(name), "loved")}<div class="t">${esc(name)}</div>${sub ? `<div class="s">${sub}</div>` : ""}</a>`;
 }
 function section(kicker, title, body, more, cls) {
