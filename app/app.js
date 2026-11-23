@@ -1667,15 +1667,30 @@ const newStationCard = () => `<div class="card q station new-station" data-act="
 const SORTS = { added: ["Recently added", (a, b) => (b[11] || 0) - (a[11] || 0) || a[5] - b[5]], artist: ["Artist", (a, b) => byName(a[2], b[2]) || (a[3] - b[3])], title: ["Title", (a, b) => byName(a[1], b[1])],
   year: ["Year", (a, b) => (b[3] - a[3]) || byName(a[2], b[2])] };
 function byName(a, b) { a = norm(a).replace(/^the /, ""); b = norm(b).replace(/^the /, ""); return a < b ? -1 : a > b ? 1 : 0; }
+/* a library view (Lyrion's Library Views, or the Virtual Library Creator's): chosen per room in Lyrion; when the room on
+   screen has one, the Albums and Artists pages show only what's in it, and say so */
+A.view = null;
+function loadView() {
+  const room = A.room || "";
+  if (!room) { A.view = null; return Promise.resolve(); }
+  return lms(room, ["playerpref", "libraryId", "?"]).then(r => {
+    const id = r._p2 || "";
+    if (!id) { A.view = null; return; }
+    if (A.view && A.view.id === id) return;
+    return lms("", ["albums", 0, 100000, "library_id:" + id]).then(a => { A.view = { id, ids: new Set((a.albums_loop || []).map(x => +x.id)) }; });
+  }).catch(() => { A.view = null; });
+}
+const inView = a => !A.view || A.view.ids.has(+a[0]) || (a[10] || []).some(v => A.view.ids.has(+v[0]));
+const viewChip = () => A.view ? `<span class="view-chip" title="Chosen for this room in Lyrion">${icon("list")} A library view: ${A.view.ids.size.toLocaleString()} albums</span>` : "";
 VIEWS.albums = function (el) {
   const sort = store.get("sq-sort", "added"), genre = store.get("sq-genre", "");
   const shows = (genre === "" || genre === "@archive" ? A.archive.map(archRow) : []).concat(genre === "" || genre === "@vinyl" ? A.vinylOnly.map(vinylRow) : []);
   if (!A.heard && focusOn()) loadHeard().then(() => { if (current && current.el === el) VIEWS.albums(el); });
-  const list = (genre === "@archive" ? [] : A.albums.filter(a => albumIn(a, genre))).concat(shows).filter(focusMatch).sort(SORTS[sort][1]);
+  const list = (genre === "@archive" ? [] : A.albums.filter(a => albumIn(a, genre) && inView(a))).concat(shows).filter(focusMatch).sort(SORTS[sort][1]);
   const tags = {}; Object.keys(A.marks.album).forEach(k => A.marks.album[k][2].forEach(t => { tags[t] = 1; }));
   const filters = [["@loved", icon("heart_on") + " Loved"], ["@rated", icon("star_on") + " Four stars and up"]].concat(A.archive.length ? [["@archive", "Live from the Archive"]] : []).concat(A.physical.length ? [["@vinyl", icon("disc") + (A.physWord === "vinyl" ? " On vinyl" : " Physical copies")]] : []).concat(A.albums.some(a => (a[10] || []).length) ? [["@versions", "With other pressings"]] : []).concat(Object.keys(tags).sort().map(t => ["#" + t, "#" + esc(t)]));
   const label = genre === "@vinyl" ? A.physWord + " " : genre === "@versions" ? "multi-pressing " : genre === "@loved" ? "loved " : genre === "@rated" ? "four-star " : genre === "@archive" ? "Archive " : genre ? esc(genre) + " " : "";
-  const countText = `${list.length.toLocaleString()} ${label}albums${focusOn() ? " in the dig" : ""}`;
+  const countText = `${list.length.toLocaleString()} ${label}albums${focusOn() ? " in the dig" : ""}` + (A.view ? " &middot; " + viewChip() : "");
   el.innerHTML = `${pageBar("Albums", ["The library", countText],
       `<button class="pill focus-btn ${focusOn() ? "on" : ""}" data-act="focusOpen">${icon("tag")}<span class="pl">Dig${focusOn() ? ` &middot; ${focusOn()}` : ""}</span></button><div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="sortAlbums" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`, false, "segs grow albums-acts")}
     <div class="toolbar"><div class="chips"><button class="${genre ? "" : "on"}" data-act="genreAlbums" data-v="">Every album</button>${filters.map(f => `<button class="${f[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(f[0])}">${f[1]}</button>`).join("")}${focusSaved().map((f, i) => `<button class="saved-focus" data-act="focusUse" data-v="${i}">${icon("tag")} ${esc(f.name)}</button>`).join("")}<a class="chip-link" href="#/removed">Recently removed</a><span class="chip-gap"></span>${A.genres.map(g => `<button class="${g[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(g[0])}">${esc(g[0])}</button>`).join("")}</div></div>
@@ -1740,13 +1755,13 @@ function albumIn(a, f) {
   return (a[8] || []).indexOf(f) >= 0;
 }
 VIEWS.artists = function (el) {
-  const letters = [];
-  const body = A.artists.map(a => {
+  const letters = [], seen = A.view ? new Set(A.albums.filter(inView).map(a => norm(a[2]))) : null;
+  const body = A.artists.filter(a => !seen || seen.has(norm(a[0]))).map(a => {
     const L = (a[0].replace(/^the /i, "").charAt(0).toUpperCase().match(/[A-Z]/) || ["#"])[0];
     const anchor = letters.indexOf(L) < 0 ? (letters.push(L), ` id="L-${L}"`) : "";
     return `<div${anchor} data-n="${esc(norm(a[0]))}">${face(a[0], a[3], a[2] + (a[2] === 1 ? " album" : " albums"))}</div>`;
   }).join("");
-  el.innerHTML = `${pageBar("Artists", ["The library", `${A.artists.length.toLocaleString()} album artists`])}
+  el.innerHTML = `${pageBar("Artists", ["The library", `${(seen ? A.artists.filter(a => seen.has(norm(a[0]))).length : A.artists.length).toLocaleString()} album artists${A.view ? " &middot; " + viewChip() : ""}`])}
     <div class="letters">${letters.map(L => `<button data-act="letter" data-v="${L}">${L}</button>`).join("")}</div><div class="faces">${body}</div>`;
 
 };
@@ -3152,7 +3167,7 @@ const ACT = {
       ACT.room(v); toast(`Now playing in ${roomName(v)}`);
     }).catch(() => toast("Lyrion didn't answer"));
   },
-  room: v => { A.room = v; store.set("sq-room", v); closeSheet(); A.st = null; A.curKey = "\u0000"; poll(); },
+  room: v => { A.room = v; store.set("sq-room", v); closeSheet(); A.st = null; A.curKey = "\u0000"; poll(); loadView().then(() => { if (current && /^(albums|artists)$/.test(current.kind)) redraw(); }); },
   rooms: () => openRooms(),
   toggle: () => { if (A.st) { A.st.mode = A.st.mode === "play" ? "pause" : "play"; A.st.time = position(); A.stAt = Date.now(); paintPlayer(); } send(["pause"]); },
   next: () => send(["playlist", "index", "+1"]),
@@ -3337,6 +3352,7 @@ function poll() {
   lms(room, room ? ["status", "-", 12, "tags:aAlKcdjJNtyeuoIrTsq"] : ["serverstatus", 0, 0]).then(st => {
     if (room !== A.room) return;
     A.st = room ? st : {}; A.stAt = Date.now(); paintPlayer();
+    if (A.viewFor !== room) { A.viewFor = room; const had = !!A.view; loadView().then(() => { if ((had || A.view) && current && /^(albums|artists)$/.test(current.kind)) redraw(); }); } // the room's library view, once the room is known
     if (/[?&]np\b/.test(location.search) && !A.npOnce) { A.npOnce = true; openNp(); } // ?np opens straight onto Now Playing
     if (/[?&]rooms\b/.test(location.search) && !A.roomsOnce) { A.roomsOnce = true; openRooms(); } // ?rooms, onto the rooms
     A.misses = 0; offline(false);
@@ -3834,7 +3850,7 @@ function start() {
     if (!A.rooms.some(p => p.playerid === A.room) && A.rooms.length) A.room = (A.rooms.find(p => p.playerid === home) || A.rooms.find(p => p.modelname !== "Group") || A.rooms[0]).playerid;
   }).catch(() => {}).then(() => { poll(); ttPoll(); });
   $("#main").addEventListener("scroll", watchHead, { passive: true });
-  Promise.all([loadLibrary(), loadMarks(), loadFocuses(), house, loadArchive(), loadStations().catch(() => null)]).then(() => { applyHouse(); $("#main").innerHTML = ""; route(); window.addEventListener("hashchange", route); })
+  Promise.all([loadLibrary(), loadMarks(), loadFocuses(), house, loadArchive(), loadStations().catch(() => null), loadView()]).then(() => { applyHouse(); $("#main").innerHTML = ""; route(); window.addEventListener("hashchange", route); })
     .catch(firstRun);
 }
 // the shelves didn't come: when it's because Lyrion can't be found (a first start, or it has moved), its address asked for
