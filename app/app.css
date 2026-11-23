@@ -1614,3 +1614,8 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .cap-w { margin-top: 8px; font: 700 10px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
 .cap-w.cap-0 { color: var(--accent); }
 .cap-w + .t { margin-top: 2px; }
+
+/* the Vinyl tab while the signal check has something no one has seen to */
+#rail a[data-tab="vinyl"] { position: relative; }
+#rail a.badged::after { content: ""; position: absolute; top: 8px; left: calc(50% + 9px); width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+.tt-alert-text { margin: 10px 0 8px; font: 16px/1.5 var(--serif); }

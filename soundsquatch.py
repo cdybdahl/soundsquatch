@@ -5004,7 +5004,22 @@ def turntable_state():
             "songs": [[x["title"], x["pos"]] for x in spin["songs"]] if spin else [],
             "side": song.get("side", "") if song and spin else "", "suggest": spin["suggest"] if spin else [], "side_over_at": TT["side_over_at"],
             "unnamed": {"guess": un[1] and {"pos": un[1]["pos"], "title": un[1]["title"]}} if un else None,
-            "room": settings["house"].get("turntable_room", ""), "alert": (kv_get("tt_alerts", []) or [None])[-1]}
+            "room": settings["house"].get("turntable_room", ""), "alert": tt_active_alert()}
+
+
+def tt_active_alert():
+    """The newest thing the signal check raised that no one has dismissed yet, for a month at most (then it's let go)."""
+    done = set(kv_get("tt_alerts_done", []) or [])
+    live = [a for a in kv_get("tt_alerts", []) or [] if a.get("id") not in done and time.time() - a.get("at", 0) < 30 * 86400]
+    return live[-1] if live else None
+
+
+def turntable_dismiss(req):
+    """An alert seen to ("Got it"): not raised on the Vinyl page again."""
+    done = kv_get("tt_alerts_done", []) or []
+    if req.get("id") and req["id"] not in done:
+        kv_set("tt_alerts_done", (done + [str(req["id"])[:80]])[-100:])
+    return {"ok": True, "alert": tt_active_alert()}
 
 
 def tt_next_in_order(spin):
@@ -5420,7 +5435,7 @@ class Handler(BaseHTTPRequestHandler):
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
-                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,
+                  "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/turntable/dismiss": turntable_dismiss, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}
         if self.path in routes:

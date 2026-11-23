@@ -1416,6 +1416,7 @@ VIEWS.vinyl = function (el) {
     ${ttOn() ? ttPanel() : ""}${rows.length ? `${ttOn() ? "" : vinylPull()}<div class="grid">${rows.map(x => capture ? vinylCard(x.vinyl).replace('<div class="t">', `<div class="cap-w cap-${captureRank(x.vinyl)}">${captureWords(x.vinyl)}</div><div class="t">`) : vinylCard(x.vinyl)).join("")}</div>` : `<p class="dim center">None of the records are all of those.</p>`}
     <section class="sec tt-signal" id="tt-signal"></section>`;
   signalCheck(el);
+  setTimeout(ttAlertSheet, 400);
 };
 A.vinylShown = [];
 /* the signal check: what each side recorded says of the chain (the cartridge and stylus, the tonearm, the amplifier, the
@@ -2645,6 +2646,8 @@ const ACT = {
     }).catch(() => toast("Lyrion didn't answer"));
   },
   histOpen: (v, t) => { const list = t.parentNode.querySelector(".hg-list"); list.hidden = !list.hidden; t.classList.toggle("on", !list.hidden); },
+  ttDismiss: v => { closeSheet(); A.ttShowing = ""; api("/api/turntable/dismiss", { id: v }).then(r => { if (A.tt) A.tt.alert = r.alert; ttBadge(); }).catch(() => toast("The server didn't answer")); },
+  ttLater: v => { A.ttLater = v; A.ttShowing = ""; closeSheet(); }, // not again until the app is opened afresh; the dot stays
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;
     if (open && open.classList.contains("trk-credits")) { open.remove(); t.classList.remove("on"); return; }
@@ -3152,12 +3155,27 @@ function ttPoll() {
   api("/api/turntable").then(t => {
     const was = key(A.tt);
     A.tt = t;
+    ttBadge();
     if (key(t) !== was) {
       paintPlayer();
       const ct = curTrack(); if (ct && ct.turntable && !$("#np").hidden) drawNp();
       if (current && current.kind === "vinyl") { const box = $(".tt-panel", current.el); if (box || ttOn()) VIEWS.vinyl(current.el); }
     }
   }).catch(() => {}).then(() => { A.ttT = setTimeout(ttPoll, 3000); });
+}
+// something the signal check raised and no one has seen to: a dot on the Vinyl tab, and said on the Vinyl page
+function ttBadge() {
+  const tab = $('#rail a[data-tab="vinyl"]'), on = !!(A.tt && A.tt.alert);
+  if (tab) tab.classList.toggle("badged", on);
+  if (on && current && current.kind === "vinyl") ttAlertSheet();
+}
+function ttAlertSheet() {
+  const a = A.tt && A.tt.alert;
+  if (!a || A.ttLater === a.id || A.ttShowing === a.id || !$("#sheet") || !$("#sheet").hidden) return;
+  A.ttShowing = a.id;
+  openSheet(`<div class="kicker">${icon("disc")} The signal check</div><h3>${esc(a.title)}</h3><p class="tt-alert-text">${esc(a.text)}</p>
+    <div class="dim">${new Date(a.at * 1000).toLocaleDateString(undefined, { month: "long", day: "numeric" })}</div>
+    <div class="acts col"><button class="btn" data-act="ttDismiss" data-v="${esc(a.id)}">Got it</button><button class="btn ghost" data-act="ttLater" data-v="${esc(a.id)}">Later</button></div>`);
 }
 const ttOn = () => !!(A.tt && A.tt.state !== "idle" && (A.tt.record || A.tt.unnamed));
 const ttLeads = () => ttOn() && !(A.st && A.st.mode === "play");
