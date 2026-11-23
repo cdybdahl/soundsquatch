@@ -577,6 +577,7 @@ function drawDiscover(el) {
   if (on("discover", "fresh")) put("fresh", section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
   if (on("discover", "rediscover") && h.rediscover.length) put("rediscover", section("Not heard lately", "Rediscover", `<div class="mosaic">${h.rediscover.slice(0, 12).map((id, i) => albumCard(A.byId.get(id), i === 0 ? "big" : "")).join("")}</div>`));
   if (on("discover", "connections") && h.connections.length) put("connections", section("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`));
+  if (on("discover", "kexp") && (h.kexp || []).length) put("kexp", section("Live on KEXP", "Your artists in the studio", shelf(h.kexp.map(kexpCard)), "", "kexp"));
   if (on("discover", "beyond") && h.beyond.length) put("beyond", section("Not on your shelves yet", "Beyond the shelves", shelf(h.beyond.map(b => face(b.name, b.image, b.because.length ? "like " + esc(b.because.slice(0, 2).join(", ")) : "", "new"))), "", "beyond"));
   if (on("discover", "archive") && A.archive.length) put("archive", section("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@archive">All of them</a>`));
   const loved = shuffled(A.albums.filter(a => markOf("album", albumKey(a))[0]), seeded(h.date || ""));
@@ -869,7 +870,7 @@ VIEWS.away = function (el, arg) {
 VIEWS.artist = function (el, name) {
   let drawn = "";
   const draw = p => {
-    const sig = JSON.stringify([p.hero, p.qobuz, p.mb, p.wiki, p.photos, p.heard, p.partial, p.rgs]);
+    const sig = JSON.stringify([p.hero, p.qobuz, p.mb, p.wiki, p.photos, p.heard, p.partial, p.rgs, p.kexp]);
     if (sig === drawn) return; // nothing new: the page stays as it is, its pictures and scroll untouched
     drawn = sig;
     const realName = (p.qobuz && p.qobuz.name) || name, mine = albumsBy(name).length ? albumsBy(name) : albumsBy(realName);
@@ -899,6 +900,7 @@ VIEWS.artist = function (el, name) {
         ${p.mb && p.mb.homepage ? `<div class="box"><div class="kicker">Elsewhere</div><div class="dim">${esc(p.mb.homepage.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</div></div>` : ""}</aside></div>
       ${discography(mine, shows, p, realName)}
       <div id="ar-arch">${archShelf(archArtistCache.get(norm(realName)) && archArtistCache.get(norm(realName)).done)}</div>
+      ${(p.kexp || []).length ? section("Live on KEXP", "In the studio", shelf(p.kexp.map(kexpCard))) : ""}
       ${p.qobuz && p.qobuz.similar && p.qobuz.similar.length ? section("If you like " + esc(realName), "Similar artists", shelf(p.qobuz.similar.filter(s => !onShelves(s.name)).map(s => face(s.name, s.image, "new to you", "new")).concat(p.qobuz.similar.filter(s => onShelves(s.name)).map(s => face(s.name, s.image, "on your shelves"))))) : ""}
       ${p.photos && p.photos.length > 1 ? section("Pictures", "In the frame", `<div class="photos">${p.photos.map(x => `<img loading="lazy" decoding="async" src="${esc(pic(x.url, 640))}" alt="">`).join("")}</div>`) : ""}
       ${p.partial ? `<p class="dim center">More is on its way from MusicBrainz and Wikipedia&hellip;</p>` : ""}`;
@@ -919,6 +921,11 @@ VIEWS.artist = function (el, name) {
   }).catch(() => { if (!drawn) el.innerHTML = `${pageBar(esc(name), ["Artist"], "", true)}<div class="empty-state"><h1>${esc(name)}</h1><p>Couldn't reach the artist desk.</p></div>`; });
   load();
 };
+// a Live on KEXP session: its picture, who, when and how long; it opens to its setlist, to play or put next
+function kexpCard(x) {
+  const art = x.image ? `<img loading="lazy" decoding="async" src="${esc(pic(x.image, 320))}" alt="">` : `<div class="noart">${esc((x.artist || "K").slice(0, 1))}</div>`;
+  return `<div class="card q kx" role="button" tabindex="0" data-act="kexpOpen" data-v="${esc(JSON.stringify(x))}"><div class="art">${art}<span class="badge">KEXP</span></div><div class="t">${esc(x.artist)}</div><div class="s">${esc(x.date)}${x.mins ? ` &middot; ${x.mins} min` : ""}</div></div>`;
+}
 function archShelf(shows) {
   return shows && shows.length ? section("The Internet Archive", `Live on the Archive <span class="count-inline">${shows.length}</span>`, shelf(shows.map(x => archCard(x)))) : "";
 }
@@ -973,7 +980,7 @@ VIEWS.mag = function (el, name) {
       : `<li class="d-q"><a class="mag-away" href="${awayHref(x.q.artist || realName, x.q.album, x.q.cover)}">${x.q.cover ? `<img loading="lazy" src="${esc(pic(x.q.cover, 320))}" alt="">` : `<span class="noart"></span>`}<span class="y">${x.y || "&mdash;"}</span><b>${esc(x.q.album)}</b><em class="q-tag">On ${SVC()}</em></a></li>`;
     const guideK = (k, word) => `<div class="disc-k${discHas(items[k])}"><h2>${word} <span>${items[k].length}</span></h2><ol>${items[k].map(entry).join("")}</ol></div>`;
     const recKinds = [["album", "LPs"], ["ep", "EPs & singles"], ["comp", "Compilations"]].filter(k => items[k[0]].length);
-    const studioCount = recKinds.reduce((n, k) => n + items[k[0]].length, 0), liveCount = items.live.length + shows.length;
+    const kx = p.kexp || [], studioCount = recKinds.reduce((n, k) => n + items[k[0]].length, 0), liveCount = items.live.length + shows.length + kx.length;
     const credit = /wikimedia/.test(p.hero || "") ? "Wikimedia Commons" : /qobuz/.test(p.hero || "") ? "Qobuz" : /tidal/.test(p.hero || "") ? "TIDAL" : /discogs/.test(p.hero || "") ? "Discogs" : "";
     const half = Math.ceil(list.length / 2);
     const body = list.slice(0, Math.max(half, 2)).map((x, i) => i === 0 ? `<p class="dc">${linked(x, realName)}</p>` : `<p>${linked(x, realName)}</p>`).join("")
@@ -1011,7 +1018,8 @@ VIEWS.mag = function (el, name) {
       ${recKinds.length ? `<section class="mag-guide disc" data-f="${f}"><div class="mag-dept">Buyer's guide</div>${bar}${recKinds.map(k => guideK(k[0], k[1])).join("")}</section>` : `<p class="dim">None of their studio records on the shelves or on ${SVC()}.</p>`}</div>
       ${liveCount ? `<div class="mag-page" data-tab="live" ${tab === "live" ? "" : "hidden"}><section class="mag-guide"><div class="mag-dept">On stage</div>
         ${items.live.length ? `<div class="disc" data-f="${f}">${items.live.some(x => x.q) ? bar : ""}${guideK("live", "Live records")}</div>` : ""}
-        ${shows.length ? `<h2>From the Internet Archive <span>${shows.length}</span></h2><div class="grid">${shows.map(x => archCard(x)).join("")}</div>` : ""}</section></div>` : ""}
+        ${shows.length ? `<h2>From the Internet Archive <span>${shows.length}</span></h2><div class="grid">${shows.map(x => archCard(x)).join("")}</div>` : ""}
+        ${kx.length ? `<h2>Live on KEXP <span>${kx.length}</span></h2><div class="grid">${kx.map(kexpCard).join("")}</div>` : ""}</section></div>` : ""}
       ${like.length ? `<section class="mag-like"><div class="mag-dept">If you like ${esc(realName)}</div><h2>Kindred spirits <span>${like.filter(x => !onShelves(x.name)).length} new to you</span></h2>
         <div class="faces">${like.map(x => `<div>${onShelves(x.name) ? face(x.name, x.image, "on your shelves") : face(x.name, x.image, "new to you", "new")}</div>`).join("")}</div></section>` : ""}
     </article>`;
@@ -1100,6 +1108,7 @@ VIEWS.front = function (el) {
     const P = {}, D = k => on("discover", k);
     if (D("fresh") && newArrivals(1).length) P.fresh = sec("Just in", `Recently added <a class="fp-all" href="#/albums" data-act="recentAll">All of them</a>`, shelf(newArrivals(20).map(arrivalCard)));
     if (D("vinyl") && physicalShelf()) P.vinyl = sec("Let's get physical", `From the record shelf <a class="fp-all" href="#/vinyl">All of them</a>`, physicalShelf());
+    if (D("kexp") && (h.kexp || []).length) P.kexp = sec("Live on KEXP", "Your artists in the studio", shelf(h.kexp.map(kexpCard)));
     if (D("stations") && st.length) P.stations = sec("On the radio", "Stations", shelf(st.map(stationCard)));
     if (D("spotlight") && h.spotlight) P.spotlight = `<section class="fp-artist" id="fp-artist"><div class="mag-dept">Artist of the day</div></section>`;
     if (D("rotation") && (h.rotation || []).length) P.rotation = sec("What the house is playing", "On rotation", `<div class="fp-faces">${h.rotation.slice(0, 8).map(n => face(n, "", albumsBy(n).length + " on the shelves")).join("")}</div>`);
@@ -1933,6 +1942,7 @@ const FEATS = [["stations", "Stations", "radio seeded from artists you choose"],
   ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"],
   ["prefer_captured", "Your vinyl first", "an album with a take captured from the turntable opens and spins that take; off, the best-sounding copy does"]];
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
+  ["kexp", "KEXP", "your artists' Live on KEXP sessions, on Discover and their pages", 1],
   ["tidal", "TIDAL", "TIDAL's releases and similar artists on artist pages, and search beyond your shelves (with a TIDAL subscription; Qobuz is used when both are installed)", 1],
   ["mai", "Music & Artist Information", "album reviews, artists' longer stories and more of their photographs"],
   ["archive", "ArchiveLMA", "live shows from the Internet Archive: your favourites, each artist's shows, and On this night"],
@@ -1947,8 +1957,8 @@ const PLUGIN_FOR = { archive: "ArchiveLMA", stations: "Don't Stop the Music and 
 /* Discover's order: each look its own until the house drags one into Settings' list, then both follow it (each skipping
    what it doesn't draw); a section added since takes its place after the one it follows in the look's own order.
    The cover stories (the classic page's top, the front's lead) aren't in it: the page starts with them. */
-const DISC_CLASSIC = ["stations", "because", "rotation", "back", "new", "listenlater", "lbfresh", "pitchfork", "spotlight", "vinyl", "fresh", "rediscover", "connections", "beyond", "archive", "loved", "round", "decade", "genre"];
-const DISC_FRONT = ["fresh", "vinyl", "stations", "spotlight", "rotation", "new", "back", "listenlater", "lbfresh", "pitchfork", "round", "because", "archive", "rediscover", "connections", "decade", "genre", "loved", "beyond"];
+const DISC_CLASSIC = ["stations", "because", "rotation", "back", "new", "listenlater", "lbfresh", "pitchfork", "spotlight", "vinyl", "fresh", "rediscover", "connections", "beyond", "archive", "kexp", "loved", "round", "decade", "genre"];
+const DISC_FRONT = ["fresh", "vinyl", "stations", "spotlight", "rotation", "new", "back", "listenlater", "lbfresh", "pitchfork", "round", "because", "archive", "kexp", "rediscover", "connections", "decade", "genre", "loved", "beyond"];
 function discOrder(mag) {
   const base = mag ? DISC_FRONT : DISC_CLASSIC, out = ((A.cfg && A.cfg.discover_order) || []).filter(k => base.indexOf(k) >= 0);
   if (!out.length) return base.slice();
@@ -1957,7 +1967,7 @@ function discOrder(mag) {
 }
 const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", "Kindred spirits"], ["rotation", "On rotation"], ["back", "Back to it"], ["new", "New from your artists"],
   ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
-  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"]];
+  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"], ["kexp", "Live on KEXP"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
 VIEWS.settings = function (el, arg) {
   if (SET_TABS.some(t => t[0] === arg)) device.set("settab", arg);
@@ -2677,6 +2687,20 @@ const ACT = {
   histOpen: (v, t) => { const list = t.parentNode.querySelector(".hg-list"); list.hidden = !list.hidden; t.classList.toggle("on", !list.hidden); },
   ttDismiss: v => { closeSheet(); A.ttShowing = ""; api("/api/turntable/dismiss", { id: v }).then(r => { if (A.tt) A.tt.alert = r.alert; ttBadge(); }).catch(() => toast("The server didn't answer")); },
   ttLater: v => { store.set("sq-tt-later", v); A.ttShowing = ""; closeSheet(); }, // not again on this device for this alert (a new one still says so); the dot stays
+  kexpOpen: v => {
+    const x = A.kx = JSON.parse(v);
+    openSheet(`<div class="kx-sheet">${x.image ? `<img src="${esc(pic(x.image, 640))}" alt="">` : ""}<div><div class="kicker">Live on KEXP</div><h3>${esc(x.artist)}</h3>
+      <div class="dim">${esc(x.date)}${x.mins ? ` &middot; ${x.mins} minutes` : ""}</div>
+      ${(x.setlist || []).length ? `<ol class="kx-set">${x.setlist.map(t => `<li>${esc(t)}</li>`).join("")}</ol>` : ""}
+      <div class="acts"><button class="btn" data-act="kexpPlay" data-v="play">${icon("play")} Play</button><button class="btn ghost" data-act="kexpPlay" data-v="insert">${icon("next_up")} Play Next</button>
+      ${onShelves(x.artist) ? `<a class="btn ghost" href="${artistHref(x.artist)}" data-act="closeSheet">${icon("person")} Their page</a>` : ""}</div></div></div>`);
+  },
+  kexpPlay: v => {
+    const x = A.kx; if (!x) return;
+    closeSheet();
+    inOrder().then(() => api("/api/kexp-play", { url: x.url, title: x.title, how: v, player: A.room }))
+      .then(r => { toast(r.error || (v === "insert" ? "Next up: " + x.artist + " on KEXP" : `Playing in ${roomName(A.room)}`)); setTimeout(poll, 600); }).catch(() => toast("The server didn't answer"));
+  },
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;
     if (open && open.classList.contains("trk-credits")) { open.remove(); t.classList.remove("on"); return; }

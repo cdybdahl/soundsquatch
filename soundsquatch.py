@@ -93,7 +93,8 @@ PICTURE_HOSTS = ("archive.org", "static.qobuz.com", "upload.wikimedia.org", "thu
                  "is1-ssl.mzstatic.com", "is2-ssl.mzstatic.com", "is3-ssl.mzstatic.com", "is4-ssl.mzstatic.com", "is5-ssl.mzstatic.com",  # Apple's covers
                  "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",  # Deezer's
                  "resources.tidal.com",  # TIDAL's
-                 "lastfm-img.freetls.fastly.net", "lastfm.freetls.fastly.net")  # Last.fm's, as Music & Artist Information names them
+                 "lastfm-img.freetls.fastly.net", "lastfm.freetls.fastly.net",
+                 "www.omnycontent.com")  # KEXP's session pictures  # Last.fm's, as Music & Artist Information names them
 LRCLIB = "https://lrclib.net/api/"  # lyrics, synced where it has them; free and keyless
 MUSIC_DIRS = ["/share/music"]  # Lyrion's media folders, as Lyrion has them (asked with each look at the library)
 CAPTURE_DIR = os.environ.get("CAPTURE_DIR", "")  # the turntable's songs, one folder a record (default: "From vinyl" in the music folder, so the library has them)
@@ -109,7 +110,7 @@ NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 
 # ───────────────────────── settings: settings.json beside the script, today's values the defaults ─────────────────────────
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
-DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl"]
+DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp"]
 DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
@@ -164,6 +165,7 @@ def detect():
                     pfr=can("PFRBnm", "items"), ratings=can("ratingslight", "ratealbum"))  # Ratings Light 3.2 on: track ratings are Lyrion's
         asker = PLAYER if lms_qobuz.PLAYER.match(PLAYER or "") else next((p["playerid"] for p in rpc("", "players", "0", "20", timeout=5).get("players_loop") or [] if p.get("connected")), "")
         HAVE.update(**{x.key: bool(x.available(can, asker)) for x in streaming.ALL})  # installed and signed in
+        HAVE.update(kexp=can("kexp", "items"))  # Live on KEXP's sessions, through the KEXP plugin
         HAVE.update(archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
                     radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
                     mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
@@ -1642,6 +1644,7 @@ def profile_for_app(name):
     out["thumb"] = pick_photo(d, "thumb")
     out["partial"] = not all(p in d for p in PARTS) and (key(name) in building or "qobuz" not in d)
     out["heard"] = heard(d.get("qobuz", {}).get("name") or name)
+    out["kexp"] = kexp_of(name) or kexp_of(d.get("qobuz", {}).get("name") or "")
     out["hidden_tags"] = kv_get("hidden-tags", {}).get(key(name), [])
     if shared_name(d.get("name") or name):  # Discogs's pictures, found by name, may be a namesake's: not shown
         out["photos"] = []
@@ -2749,7 +2752,7 @@ def home():
     return {"date": today, "rotation": rotation, "back": back, "rediscover": rediscover, "spotlight": spotlight,
             "connections": [dict(c, beyond=conn_beyond(c, artists), photo=conn_photo(c, profs)) for c in credit_links(albums, artists, profs, links, rng, today)], "beyond": beyond, "round": round_, "decade": decade,
             "decade_albums": [a[0] for a in rng.sample([a for a in albums if a[3] // 10 * 10 == decade and a[4]], min(18, sum(1 for a in albums if a[3] // 10 * 10 == decade and a[4])))] if decade else [],
-            "genre": rng.choice(genres) if genres else ""}
+            "genre": rng.choice(genres) if genres else "", "kexp": kexp_front(rotation, rng)}
 
 
 def qobuz(req):
@@ -2983,6 +2986,97 @@ def home_loop():
         except Exception as e:
             note_error(f"Discover made ahead: {type(e).__name__}: {e}"[:200])
         time.sleep(15)
+
+
+# ───────────────────────── Live on KEXP: the sessions of the artists on the shelves ─────────────────────────
+# Through the KEXP plugin's menus: Live on KEXP (2), its Search Artists (2.1) by a name; each session found opens to
+# "Play Session" (its stream's own address, which lasts, in its favourites address) and its setlist. Its search matches
+# within names ("Low" finds Slowdive), so only sessions by the artist themselves are kept ("Calexico and Iron & Wine"
+# counts for both). Each artist asked once a month; kept in kv "kexp": {artist key: {"at", "sessions"}}.
+KEXP = {}
+
+
+def kexp_performer_matches(performer, name):
+    performer = re.sub(r"\s*\[[^\]]*\]\s*$", "", performer or "").strip()
+    if lms_qobuz.same_name(performer, name):
+        return True
+    return any(lms_qobuz.same_name(part, name) for part in re.split(r"\s+(?:and|with|\+|x|feat\.?|featuring)\s+|\s*,\s*", performer, flags=re.I) if part)
+
+
+def kexp_find(name):
+    """An artist's Live on KEXP sessions: [{"artist", "date", "mins", "url", "image", "setlist", "title"}], newest first."""
+    found = rpc(PLAYER, "kexp", "items", "0", "40", "item_id:2.1", f"search:{name}", "menu:1").get("item_loop") or []
+    out, dates = [], set()
+    for i, x in enumerate(found):
+        lines = (x.get("text") or "").split("\n")
+        performer, when = lines[0], lines[1] if len(lines) > 1 else ""
+        if not kexp_performer_matches(performer, name):
+            continue
+        date, _, mins = when.partition(" \u00b7 ")
+        if date in dates and "[" in performer:
+            continue  # the same day's "Performance & Interview Only" cut: the full one is kept
+        sub = rpc(PLAYER, "kexp", "items", "0", "60", f"item_id:2.1.{i}", f"search:{name}", "menu:1").get("item_loop") or []
+        play = next((y for y in sub if y.get("type") == "audio"), None)
+        pp = (play or {}).get("presetParams") or {}
+        if not pp.get("favorites_url"):
+            continue
+        dates.add(date)
+        out.append({"artist": re.sub(r"\s*\[[^\]]*\]\s*$", "", performer).strip(), "date": date, "mins": re.sub(r"\D", "", mins),
+                    "url": pp["favorites_url"], "title": pp.get("favorites_title") or f"{performer} - Live on KEXP ({date})", "image": pp.get("icon") or "",
+                    "setlist": [re.sub(r"^\d+\.\s*", "", (y.get("text") or "")) for y in sub if re.match(r"^\d+\.\s", y.get("text") or "")]})
+    return out
+
+
+def kexp_of(name):
+    hit = KEXP.get(key(name or ""))
+    return hit["sessions"] if hit else []
+
+
+def kexp_front(rotation, rng):
+    """Discover's Live on KEXP: sessions of the artists in rotation first, then the newest of the rest; a dozen."""
+    when = lambda s: time.mktime(time.strptime(s["date"], "%b %d, %Y")) if re.match(r"^[A-Z][a-z]{2} \d{1,2}, \d{4}$", s.get("date") or "") else 0
+    spun = {key(n) for n in rotation}
+    every = [s for k, v in KEXP.items() for s in v["sessions"]]
+    first = sorted((s for k, v in KEXP.items() if k in spun for s in v["sessions"][:1]), key=when, reverse=True)
+    rest = sorted((s for s in every if s not in first), key=when, reverse=True)
+    return (first + rest)[:12]
+
+
+def kexp_loop():
+    KEXP.update(kv_get("kexp", {}) or {})
+    time.sleep(300)
+    while True:
+        try:
+            if HAVE.get("kexp") and lms_qobuz.PLAYER.match(PLAYER or ""):
+                with lib_lock:
+                    names = [(k, a["name"]) for k, a in library["artists"].items() if k not in NOT_ARTISTS]
+                n = 0
+                for k, name in names:
+                    if time.time() - (KEXP.get(k) or {}).get("at", 0) < 30 * 86400:
+                        continue
+                    try:
+                        KEXP[k] = {"at": time.time(), "sessions": kexp_find(name)}
+                    except Exception:
+                        continue  # asked again next time round
+                    n += 1
+                    if n % 25 == 0:
+                        kv_set("kexp", KEXP)
+                    time.sleep(1)
+                if n:
+                    kv_set("kexp", KEXP)
+                    payload["version"] += 1
+        except Exception as e:
+            note_error(f"Live on KEXP: {type(e).__name__}: {e}"[:200])
+        time.sleep(6 * 3600)
+
+
+def kexp_play(req):
+    """A session played (or put next) in a room, by its stream's address and title."""
+    player, url = req.get("player") or "", req.get("url") or ""
+    if not lms_qobuz.PLAYER.match(player) or not re.match(r"^https://", url):
+        return {"error": "no such room or session"}
+    rpc(player, "playlist", "insert" if req.get("how") == "insert" else "play", url, (req.get("title") or "Live on KEXP")[:200])
+    return {"ok": True}
 
 
 def warm_the_day():
@@ -5590,7 +5684,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({"error": "pin", "pin": True}, status=403)
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
-                  "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
+                  "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/kexp-play": kexp_play, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
                   "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/turntable/dismiss": turntable_dismiss, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,
                   "/api/restore": lambda r: restore(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/remove": lambda r: remove_album(int(r.get("id") or 0), r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER)}
@@ -5679,7 +5773,7 @@ if __name__ == "__main__":
     start_recorder()
     start_turntable()
     lapsed_local_artwork()
-    for job in (carry_ratings, lyrion_pictures_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
+    for job in (carry_ratings, lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does

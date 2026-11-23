@@ -1630,3 +1630,10 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .al-plays li em { font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
 .al-plays li em.whole { color: var(--accent); }
 @media (max-width: 600px) { .al-plays li { grid-template-columns: minmax(0, 1fr) auto; } .al-plays li span { grid-column: 1; grid-row: 2; } }
+
+/* Live on KEXP: a session's sheet, its picture beside its setlist */
+.card.kx { cursor: pointer; }
+.kx-sheet { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.kx-sheet > img { width: 100%; border-radius: 6px; }
+.kx-set { margin: 12px 0 4px; padding-left: 22px; font: 15px/1.6 var(--serif); color: var(--dim); }
+@media (max-width: 600px) { .kx-sheet { grid-template-columns: minmax(0, 1fr); } .kx-sheet > img { max-width: 220px; } }
