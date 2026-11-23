@@ -2081,6 +2081,7 @@ function drawSettings(el) {
       ${toggle("setDev", "still", device.get("still", false), "Reduce motion", "no slow zooms or shimmer, and the cover stories don't turn by themselves")}
       <div class="set-row"><span><b>Look</b><em>Classic, or set like a printed music magazine</em></span><div class="seg">${[["classic", "Classic"], ["magazine", "Magazine"]].map(l => `<button class="${(magOn() ? "magazine" : "classic") === l[0] ? "on" : ""}" data-act="setLook" data-v="${l[0]}">${l[1]}</button>`).join("")}</div></div>
       ${toggle("setOsk", "", oskOn(), "On-screen keyboard", "for a screen without a keyboard of its own, such as one on a wall")}`))}
+    ${inTab("house", section("For every screen in the house", "Lyrion's own settings", lyrionLinks()))}
     ${inTab("house", section("For every screen in the house", "Connections", `${CONN.map(k => { const good = !!c.checks[k[3]];
         return `<div class="set-field conn ${good ? "" : "open"}" data-k="${k[0]}"><span><b>${k[1]}</b><em>${k[2]}</em></span>
         <span class="conn-now"><span class="check ${good ? "good" : "bad"}">${esc(c.checks[k[0]] || "")}</span><button class="pill" data-act="connEdit">Change</button></span>
@@ -2281,7 +2282,7 @@ VIEWS.lms = function (el, arg) {
       if (o) { box.innerHTML = part("node-" + o.n, "", kids(o.n)) || `<p class="dim">Nothing here.</p>`; return; }
       const home = kids("home").filter(x => !x.isANode && x.id !== "playerpower"), power = menu.filter(x => x.id === "playerpower");
       box.innerHTML = part("mm", "My Music", kids("myMusic")) + part("lh", "Lyrion", home) + part("apps", "Apps", kids("")) + part("radio", "Radio", kids("radios"))
-        + part("set", `Settings for ${roomName(A.room)}`, kids("settings").concat(power)) + part("adv", "Advanced", kids("advancedSettings"));
+        + part("set", `Settings for ${roomName(A.room)}`, kids("settings").concat(power)) + part("adv", "Advanced", kids("advancedSettings")) + `<div class="kicker lm-k2">Lyrion's own pages</div>` + lyrionLinks();
     }).catch(() => { const box = $("#lm-body", el); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer${A.room ? "" : ": choose a room first"}.</p>`; });
     return;
   }
@@ -2316,6 +2317,15 @@ document.addEventListener("submit", e => {
   closeSheet();
   location.hash = lmHref(a.cmd, params, `“${words}”`);
 });
+// Lyrion's own web pages (its server and plugin settings, a room's every setting), at the address this screen reaches it
+// by: Soundsquatch's own setting names Lyrion as the server sees it (often 127.0.0.1), so its host becomes this page's
+function lyrionWeb(path) {
+  let u; try { u = new URL((A.cfg && A.cfg.connections && A.cfg.connections.lms_url) || "http://localhost:9000"); } catch (e) { u = new URL("http://localhost:9000"); }
+  const host = /^(127\.|localhost$|\[?::1)/.test(u.hostname) ? location.hostname : u.hostname;
+  return `${u.protocol}//${host}:${u.port || 9000}${path}`;
+}
+const lyrionLinks = () => `<div class="lm-list lm-web"><a class="lm-row lm-go" href="${esc(lyrionWeb("/settings/index.html?playerid=" + encodeURIComponent(A.room || "")))}" target="_blank" rel="noopener"><span class="lm-noart">${icon("speaker")}</span><span class="lm-w"><b>Every setting for ${esc(roomName(A.room))}</b><em>In Lyrion's own pages: bitrate and sample-rate limits, audio, display…</em></span></a>
+  <a class="lm-row lm-go" href="${esc(lyrionWeb("/settings/index.html"))}" target="_blank" rel="noopener"><span class="lm-noart">${icon("gear")}</span><span class="lm-w"><b>Lyrion's server and plugin settings</b><em>In Lyrion's own pages: the library, plugins and their settings, the network</em></span></a></div>`;
 // the home menu, as Lyrion gives it for the room on screen (a menu of nodes and items), kept a minute
 function lmMenu() {
   const k = A.room || "", hit = A.lmMenu;
@@ -2881,10 +2891,18 @@ const ACT = {
   // Lyrion's own menu for a track or an album (what every plugin adds there: ratings, lyrics, favourites, its biography…)
   lmInfo: v => {
     const k = v.split(":")[0], id = v.slice(k.length + 1), inSheet = $("#lm-sheet");
-    if (!inSheet || k === "album") openSheet(`<div class="kicker">From Lyrion</div><h3>${k === "album" ? esc((A.byId.get(+id) || [])[1] || "The album") : "The track"}</h3><div id="lm-sheet">${gathering("small")}</div>`);
+    if (!inSheet || k !== "track") openSheet(`<div class="kicker">From Lyrion</div><h3>${k === "album" ? esc((A.byId.get(+id) || [])[1] || "The album") : k === "queue" ? esc((((A.st || {}).playlist_loop || []).find(x => +x["playlist index"] === +id) || {}).title || "The song") : "The track"}</h3><div id="lm-sheet">${gathering("small")}</div>`);
     else { inSheet.innerHTML = gathering("small"); const b = $(".lm-more-open"); if (b) b.remove(); }
-    lmItems(k === "album" ? ["albuminfo", "items"] : ["trackinfo", "items"], k === "album" ? { album_id: id } : { track_id: id }, 0, 100)
+    lmItems(k === "album" ? ["albuminfo", "items"] : ["trackinfo", "items"], k === "album" ? { album_id: id } : k === "queue" ? { playlist_index: id } : { track_id: id }, 0, 100)
       .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, ""); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+  },
+  shuffleSet: v => send(["playlist", "shuffle", v]),
+  queueClear: () => openSheet(`<div class="kicker">The queue</div><h3>Clear it?</h3><div class="dim">Everything in ${esc(roomName(A.room))}'s queue goes, the song playing too.</div>
+    <div class="acts col"><button class="btn danger-solid" data-act="queueClearDo">${icon("trash")} Clear the queue</button><button class="btn ghost" data-act="closeSheet">Keep it</button></div>`),
+  queueClearDo: () => { closeSheet(); send(["playlist", "clear"]); toast("Queue cleared"); },
+  queueAll: () => { // the whole queue, not only what Now Playing shows
+    openSheet(`<div class="kicker">The queue</div><h3>${esc(roomName(A.room))}</h3><div class="nx-all">${gathering("small")}</div>`);
+    lms(A.room, ["status", 0, 1000, "tags:aAlKcdjJNtyeu"]).then(st => { const box = $("#sheet .nx-all"); if (box) box.innerHTML = (st.playlist_loop || []).map(x => nxRow(x).replace('class="nx"', `class="nx ${+x["playlist index"] === +st.playlist_cur_index ? "now" : ""}"`)).join(""); }).catch(() => toast("Lyrion didn't answer"));
   },
   lmChoice: v => {
     const p = v.split(":"), j = +p.pop(), got = lmItem(p.join(":")), x = got[0]; if (!x) return;
@@ -3604,10 +3622,13 @@ function whoIs(full) {
   const ask = n => profile(full).then(p => known(p) || !p.partial || n > 8 ? p : new Promise(r => setTimeout(r, 1500)).then(() => ask(n + 1)));
   return ask(0).then(p => known(p) ? [full, p] : profile(first).then(q => [first, q]));
 }
+// a song in the queue: jump to it, drag it, take it out, or Lyrion's own menu for it
+const nxRow = x => `<div class="nx" data-i="${x["playlist index"]}"><span class="grip" aria-label="Drag to reorder">${icon("grip")}</span><button class="nx-go" data-act="jump" data-v="${x["playlist index"]}">${trackArt(x, 100) ? `<img loading="lazy" src="${esc(trackArt(x, 100))}" alt="">` : `<span class="noimg"></span>`}<span><b>${esc(x.title)}</b><em>${esc(x.artist || "")}</em></span></button><button class="nx-x nx-more" data-act="lmInfo" data-v="queue:${x["playlist index"]}" aria-label="More">${icon("more")}</button><button class="nx-x" data-act="drop" data-v="${x["playlist index"]}" aria-label="Remove">${icon("close")}</button></div>`;
 function upNext() {
-  const list = ((A.st && A.st.playlist_loop) || []).slice(1);
-  return list.length ? list.map(x => `<div class="nx" data-i="${x["playlist index"]}"><span class="grip" aria-label="Drag to reorder">${icon("grip")}</span><button class="nx-go" data-act="jump" data-v="${x["playlist index"]}">${trackArt(x, 100) ? `<img loading="lazy" src="${esc(trackArt(x, 100))}" alt="">` : `<span class="noimg"></span>`}<span><b>${esc(x.title)}</b><em>${esc(x.artist || "")}</em></span></button><button class="nx-x" data-act="drop" data-v="${x["playlist index"]}" aria-label="Remove">${icon("close")}</button></div>`).join("")
-    : `<p class="dim">The queue ends here.</p>`;
+  const st = A.st || {}, list = (st.playlist_loop || []).slice(1), total = +st.playlist_tracks || 0, cur = +st.playlist_cur_index || 0, left = Math.max(0, total - cur - 1), sh = +st["playlist shuffle"] || 0;
+  const ctl = total ? `<div class="nx-ctl"><span>${left ? `${left} to come` : "The last song"}</span><span class="seg">${["Off", "Song", "Album"].map((w, i) => `<button class="${sh === i ? "on" : ""}" data-act="shuffleSet" data-v="${i}">${i ? "Shuffle " + w.toLowerCase() + "s" : "In order"}</button>`).join("")}</span>
+    ${left > list.length ? `<button class="pill" data-act="queueAll">All ${left}</button>` : ""}<button class="pill" data-act="queueClear">Clear</button></div>` : "";
+  return ctl + (list.length ? list.map(nxRow).join("") : `<p class="dim">The queue ends here.</p>`);
 }
 // a format in words: DSD by its rate (DSD64 is 64 × 44.1 kHz), lossless by bits and rate, the rest by bitrate
 const LOSSLESS_TYPES = ["flc", "wav", "aif", "alc", "wvp", "ape", "pcm"], DSD_TYPES = ["dsf", "dff", "dsd"];

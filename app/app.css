@@ -1680,3 +1680,10 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .lm-more-open { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 8px 0; color: var(--dim); font: 600 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; }
 .lm-more-open .ic { width: 16px; height: 16px; }
 #lm-sheet .lm-list { max-height: 50vh; overflow-y: auto; }
+/* the queue's own controls: how many to come, shuffle, all of it, clear */
+.nx-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 4px 0 10px; font: 13px var(--sans); color: var(--dim); }
+.nx-ctl > span:first-child { margin-right: auto; }
+.nx-ctl .seg button { font-size: 12px; }
+.nx-more .ic { width: 16px; height: 16px; }
+.nx-all { max-height: 60vh; overflow-y: auto; }
+.nx.now .nx-go b { color: var(--accent); }
