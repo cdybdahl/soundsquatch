@@ -63,6 +63,8 @@ const FORUM = "https://forums.lyrion.org/forum/user-forums/3rd-party-software/18
 
 // the house's settings (/api/settings) and this device's own (localStorage, sq-dev-*)
 // what this Lyrion has (the server asks it): a feature whose plugin is missing is off, whatever the setting
+// the streaming service Lyrion has a plugin for, by its name (Qobuz, TIDAL)
+const SVC = () => (A.cfg && A.cfg.service && A.cfg.service.label) || "Qobuz";
 const has = k => !A.cfg || !A.cfg.have || A.cfg.have[k] !== false;
 const NEEDS = { archive: "archive", stations: "radio" };
 const on = (group, k) => (group !== "features" || !NEEDS[k] || has(NEEDS[k])) && (!A.cfg || !A.cfg[group] || A.cfg[group][k] !== false);
@@ -292,7 +294,7 @@ function discItems(mine, p) {
   return out;
 }
 // All, Mine, Qobuz: which of the discography shows (this device remembers); only when there are both to choose between
-const DISC_F = [["all", "All"], ["mine", "Mine"], ["qobuz", "On Qobuz"]];
+const DISC_F = [["all", "All"], ["mine", "Mine"], ["qobuz", `On ${SVC()}`]];
 function discBar(items) {
   const all = [].concat.apply([], Object.keys(items).map(k => items[k])), own = all.filter(x => x.a).length, q = all.length - own;
   if (!own || !q) return "";
@@ -309,7 +311,7 @@ function discography(mine, shows, p, realName) {
   if (!kinds.length) return "";
   const body = kinds.map(k => section("", k[1], `<div class="grid">${items[k[0]].map(x => mark(card(x), x.a ? "d-own" : "d-q")).join("")}${k[0] === "live" ? shows.map(x => mark(archCard(x), "d-own")).join("") : ""}</div>`,
     "", "disc-k" + discHas(items[k[0]]) + (k[0] === "live" && shows.length ? " k-own" : ""))).join("");
-  return `<div class="disc" data-f="${discF(items)}"><header class="disc-head"><div class="kicker">${mine.length ? "In the library and on Qobuz" : "On Qobuz"}</div><h2>Discography</h2>${discBar(items)}</header>${body}</div>`;
+  return `<div class="disc" data-f="${discF(items)}"><header class="disc-head"><div class="kicker">${mine.length ? `In the library and on ${SVC()}` : `On ${SVC()}`}</div><h2>Discography</h2>${discBar(items)}</header>${body}</div>`;
 }
 // the artist of the page on screen (its tags, its name for the pickers), not the last one drawn
 const pageArtist = () => (current && current.el && current.el.artistTags) || null;
@@ -638,7 +640,7 @@ function newCard(r) {
   const when = new Date(r.date + "T12:00"), soon = when > new Date();
   const date = (soon ? "Out " : "") + when.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return `<a class="card q" href="${awayHref(r.artist, r.title, r.cover)}"><div class="art"><img loading="lazy" decoding="async" src="${esc(pic(r.cover, 320))}" alt="">
-    ${r.owned ? `<span class="badge">On your shelves</span>` : r.qobuz ? `<span class="badge">Qobuz</span>` : ""}${soon ? "" : awayChip(r.artist, r.title)}</div><div class="t">${esc(r.title)}</div><div class="s">${esc(r.artist)} &middot; ${date}</div></a>`;
+    ${r.owned ? `<span class="badge">On your shelves</span>` : r.qobuz ? `<span class="badge">${SVC()}</span>` : ""}${soon ? "" : awayChip(r.artist, r.title)}</div><div class="t">${esc(r.title)}</div><div class="s">${esc(r.artist)} &middot; ${date}</div></a>`;
 }
 /* the cover: the day's stories, a spread each, turning every ten seconds (still while touched; swipe or tap a dot) */
 const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
@@ -843,12 +845,12 @@ VIEWS.away = function (el, arg) {
     el.away = r;
     const t = $(".tracks", el);
     if (r.error || !r.tracks.length) {
-      if (t) t.outerHTML = `<p class="dim">${r.error === "no Qobuz" ? "Not on your shelves, and Lyrion has no Qobuz plugin to find it on." : r.error === "failed" ? "Qobuz didn't answer this time." : "Qobuz doesn't have this one."} <a href="#/search" data-act="findWork" data-v="${esc(artist + " " + title)}">Search for it</a></p>`;
+      if (t) t.outerHTML = `<p class="dim">${r.error === "no Qobuz" ? `Not on your shelves, and Lyrion has no ${SVC()} plugin to find it on.` : r.error === "failed" ? `${SVC()} didn't answer this time.` : `${SVC()} doesn't have this one.`} <a href="#/search" data-act="findWork" data-v="${esc(artist + " " + title)}">Search for it</a></p>`;
       $(".aw-acts", el).hidden = true;
     } else {
       t.outerHTML = `<div class="tracks${mag ? " mag-tracks" : ""}">${r.tracks.map(s => `<div class="trk" data-act="awayTrack" data-v="${s.k}"><span class="n">${s.n}</span><span class="tt">${esc(s.title)}</span></div>`).join("")}</div>`;
       const d = r.details, facts = [d.type && d.type !== "Album" ? d.type : "", r.year, d.label, d.genre, d.length ? d.length.replace(/^0:/, "") : ""].filter(Boolean);
-      const f = $(".aw-facts", el); if (f) f.innerHTML = mag ? facts.filter(v => v !== r.year).map(esc).join(" &middot; ") + " &middot; On Qobuz" : ["Not on your shelves"].concat(facts).map(esc).join(" &middot; ");
+      const f = $(".aw-facts", el); if (f) f.innerHTML = mag ? facts.filter(v => v !== r.year).map(esc).join(" &middot; ") + ` &middot; On ${SVC()}` : ["Not on your shelves"].concat(facts).map(esc).join(" &middot; ");
       const y = $(".aw-year", el); if (y && r.year) y.textContent = ", " + r.year;
       if (r.kept) { const k = $('[data-act="awayAct"][data-v="keep"]', el); if (k) { k.disabled = true; k.lastChild.textContent = mag ? "In your library" : " In your library"; } }
       if (!x[2] && r.cover) $(".album-art", el).innerHTML = art(r.cover);
@@ -859,7 +861,7 @@ VIEWS.away = function (el, arg) {
     const review = paras(rv.review || "");
     if (review.length) box.outerHTML = mag ? `<div class="mag-body mag-review"><div class="mag-dept">The story</div>${folded(review, 3, artist)}<div class="credit">From Wikipedia</div></div>`
       : `<section class="sec review"><div class="kicker">About the record</div>${folded(review, 3, artist)}<div class="credit">From Wikipedia</div></section>`;
-  }).catch(() => { const t = $(".tracks.loading-rows", el); if (t) t.outerHTML = `<p class="dim">Qobuz didn't answer this time.</p>`; });
+  }).catch(() => { const t = $(".tracks.loading-rows", el); if (t) t.outerHTML = `<p class="dim">${SVC()} didn't answer this time.</p>`; });
 };
 /* ───────────────────────── an artist ───────────────────────── */
 VIEWS.artist = function (el, name) {
@@ -920,7 +922,7 @@ function archShelf(shows) {
 }
 function qCard(r) {
   const art = r.cover ? `<img loading="lazy" decoding="async" src="${esc(pic(r.cover, 320))}" alt="">` : `<div class="noart">${esc(r.album.slice(0, 1))}</div>`;
-  return `<a class="card q" href="${awayHref(r.artist, r.album, r.cover)}"><div class="art">${art}<span class="badge">Qobuz</span>${awayChip(r.artist, r.album)}</div><div class="t">${esc(r.album)}</div><div class="s">${esc(r.artist)}</div></a>`;
+  return `<a class="card q" href="${awayHref(r.artist, r.album, r.cover)}"><div class="art">${art}<span class="badge">${SVC()}</span>${awayChip(r.artist, r.album)}</div><div class="t">${esc(r.album)}</div><div class="s">${esc(r.artist)}</div></a>`;
 }
 
 /* ───────────────────────── the magazine (a mock-up, at #/mag/NAME) ─────────────────────────
@@ -966,11 +968,11 @@ VIEWS.mag = function (el, name) {
     // the buyer's guide: the shelves' records and Qobuz's (the ones not on the shelves, marked), each kind in the order they came out
     const items = discItems(mine, p), f = discF(items), bar = discBar(items);
     const entry = x => x.a ? `<li class="d-own"><a href="${albumHref(x.a[0])}"><img loading="lazy" src="${cover(x.a[4], 300)}" alt=""><span class="y">${x.y || "&mdash;"}</span><b>${esc(x.a[1])}</b><em>${[(x.a[8] || [])[0] || "", (x.a[10] || []).length ? (x.a[10].length + 1) + " pressings" : ""].filter(Boolean).join(" &middot; ")}</em></a></li>`
-      : `<li class="d-q"><a class="mag-away" href="${awayHref(x.q.artist || realName, x.q.album, x.q.cover)}">${x.q.cover ? `<img loading="lazy" src="${esc(pic(x.q.cover, 320))}" alt="">` : `<span class="noart"></span>`}<span class="y">${x.y || "&mdash;"}</span><b>${esc(x.q.album)}</b><em class="q-tag">On Qobuz</em></a></li>`;
+      : `<li class="d-q"><a class="mag-away" href="${awayHref(x.q.artist || realName, x.q.album, x.q.cover)}">${x.q.cover ? `<img loading="lazy" src="${esc(pic(x.q.cover, 320))}" alt="">` : `<span class="noart"></span>`}<span class="y">${x.y || "&mdash;"}</span><b>${esc(x.q.album)}</b><em class="q-tag">On ${SVC()}</em></a></li>`;
     const guideK = (k, word) => `<div class="disc-k${discHas(items[k])}"><h2>${word} <span>${items[k].length}</span></h2><ol>${items[k].map(entry).join("")}</ol></div>`;
     const recKinds = [["album", "LPs"], ["ep", "EPs & singles"], ["comp", "Compilations"]].filter(k => items[k[0]].length);
     const studioCount = recKinds.reduce((n, k) => n + items[k[0]].length, 0), liveCount = items.live.length + shows.length;
-    const credit = /wikimedia/.test(p.hero || "") ? "Wikimedia Commons" : /qobuz/.test(p.hero || "") ? "Qobuz" : /discogs/.test(p.hero || "") ? "Discogs" : "";
+    const credit = /wikimedia/.test(p.hero || "") ? "Wikimedia Commons" : /qobuz/.test(p.hero || "") ? "Qobuz" : /tidal/.test(p.hero || "") ? "TIDAL" : /discogs/.test(p.hero || "") ? "Discogs" : "";
     const half = Math.ceil(list.length / 2);
     const body = list.slice(0, Math.max(half, 2)).map((x, i) => i === 0 ? `<p class="dc">${linked(x, realName)}</p>` : `<p>${linked(x, realName)}</p>`).join("")
       + (quote ? `<blockquote class="pull">&ldquo;${esc(quote.replace(/[.]$/, ""))}&rdquo;</blockquote>` : "")
@@ -1004,7 +1006,7 @@ VIEWS.mag = function (el, name) {
           `<a class="mr" href="#/record/${r[0]}">${r[4] ? `<img loading="lazy" src="${esc(pic(r[4], 150))}" alt="">` : `<i class="mr-blank"></i>`}<span class="y">${r[3] || "&mdash;"}</span><b>${esc(r[1])}<em>${esc(r[5] || "")}</em></b></a>`).join("")}</div>` : ""}</aside>
       </div></div>
       <div class="mag-page" data-tab="records" ${tab === "records" ? "" : "hidden"}>
-      ${recKinds.length ? `<section class="mag-guide disc" data-f="${f}"><div class="mag-dept">Buyer's guide</div>${bar}${recKinds.map(k => guideK(k[0], k[1])).join("")}</section>` : `<p class="dim">None of their studio records on the shelves or on Qobuz.</p>`}</div>
+      ${recKinds.length ? `<section class="mag-guide disc" data-f="${f}"><div class="mag-dept">Buyer's guide</div>${bar}${recKinds.map(k => guideK(k[0], k[1])).join("")}</section>` : `<p class="dim">None of their studio records on the shelves or on ${SVC()}.</p>`}</div>
       ${liveCount ? `<div class="mag-page" data-tab="live" ${tab === "live" ? "" : "hidden"}><section class="mag-guide"><div class="mag-dept">On stage</div>
         ${items.live.length ? `<div class="disc" data-f="${f}">${items.live.some(x => x.q) ? bar : ""}${guideK("live", "Live records")}</div>` : ""}
         ${shows.length ? `<h2>From the Internet Archive <span>${shows.length}</span></h2><div class="grid">${shows.map(x => archCard(x)).join("")}</div>` : ""}</section></div>` : ""}
@@ -1157,7 +1159,7 @@ VIEWS.record = function (el, id) {
       <dl class="rec-facts">${[["Year", recordYear(r) && recordYear(r) !== r[3] ? recordYear(r) + " (this pressing " + r[3] + ")" : r[3] || ""], ["Format", r[5] + (d.t ? ", " + Array.from(new Set(d.t.split(/,\s*/))).join(", ") : "")], ["Label", r[6]],
         ["Genre", (d.s || d.g || []).join(", ")], ["Added", r[7] ? new Date(r[7] + "T12:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : ""]]
         .filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join("")}<dt class="rec-more-dt" hidden></dt></dl>
-      <div class="acts">${alb ? `<button class="btn" data-act="playAlbum" data-v="${alb[0]}">${icon("play")} Spin the digital one</button>` : has("qobuz") ? `<a class="btn" href="${awayHref(r[2], title, r[4])}">${icon("play")} The digital one, on Qobuz</a>` : ""}
+      <div class="acts">${alb ? `<button class="btn" data-act="playAlbum" data-v="${alb[0]}">${icon("play")} Spin the digital one</button>` : has("qobuz") ? `<a class="btn" href="${awayHref(r[2], title, r[4])}">${icon("play")} The digital one, on ${SVC()}</a>` : ""}
         ${A.tt && A.tt.record && A.tt.record.id === r[0] ? `<button class="btn ghost" data-act="openNp">${icon("disc")} On the turntable now</button>` : ""}</div>
       <p class="rec-stats dim"></p></div></div>
     <nav class="mag-tabs rec-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"], ["pressing", "The pressing"], ["videos", "Videos"], ["plays", "Plays"]].map(t =>
@@ -1372,7 +1374,7 @@ function digitalOf(r) {
 }
 // To capture: first those Qobuz doesn't have, then the rest with nothing digital, then those only on Qobuz
 const captureRank = r => { const d = digitalOf(r); return d === "qobuz" ? 2 : A.vinylQobuz && A.vinylQobuz[r[0]] === false ? 0 : 1; };
-const captureWords = r => { const d = digitalOf(r); return d === "qobuz" ? "Only on Qobuz" : A.vinylQobuz && A.vinylQobuz[r[0]] === false ? "Not on Qobuz" : "Nothing digital"; };
+const captureWords = r => { const d = digitalOf(r); return d === "qobuz" ? `Only on ${SVC()}` : A.vinylQobuz && A.vinylQobuz[r[0]] === false ? `Not on ${SVC()}` : "Nothing digital"; };
 const VINYL_FACETS = [
   ["digital", "Digital copy", () => [["capture", "To capture"], ["captured", "Captured"]], (r, v) => { const d = digitalOf(r); return v === "capture" ? d === "none" || d === "qobuz" : d === "vinyl"; }],
   ["have", "Shelves", () => [["both", "Also digital"], ["only", A.physWord === "vinyl" ? "Only on vinyl" : "Only physical"]], (r, v) => v === "both" ? !!r[8] : !r[8]],
@@ -1460,8 +1462,8 @@ function vinylPull() {
 }
 // the line on an album's page when the house has it on the shelf too
 // where a version plays from, in words: the turntable's own recording of the record marked as such
-const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "vinyl" ? "Vinyl, captured by Soundsquatch" : "on the shelves";
-const SOURCE = { qobuz: "Qobuz", vinyl: "Vinyl, captured by Soundsquatch", local: "Your files" };
+const sourceWords = s => s === "qobuz" ? "on Qobuz" : s === "tidal" ? "on TIDAL" : s === "vinyl" ? "Vinyl, captured by Soundsquatch" : "on the shelves";
+const SOURCE = { qobuz: "Qobuz", tidal: "TIDAL", vinyl: "Vinyl, captured by Soundsquatch", local: "Your files" };
 // where the song playing comes from, by its address: Qobuz, the house's files, or the turntable's own recording
 function trackSource(t) {
   const u = t.url || "", s = /^qobuz:/.test(u) ? "qobuz" : /^file:/.test(u) ? (/\/From%20vinyl\//.test(u) ? "vinyl" : "local") : "";
@@ -1645,7 +1647,7 @@ const FACETS = [
   ["genre", "Genre", () => genreFamilies().map(f => [f[0], f[0]])],
   ["decade", "Decade", () => Array.from(new Set(A.albums.filter(a => a[3] >= 1900).map(a => a[3] - a[3] % 10))).sort().map(d => [String(d), d + "s"])],
   ["sound", "Sound", () => [["hires", "Hi-res"], ["cd", "CD"], ["lossy", "Lossy"]]],
-  ["source", "Plays from", () => [["local", "The shelves"], ["qobuz", "Qobuz"], ["vinyl", "Your vinyl"], ["archive", "The Archive"]]],
+  ["source", "Plays from", () => [["local", "The shelves"], ["qobuz", "Qobuz"], ["tidal", "TIDAL"], ["vinyl", "Your vinyl"], ["archive", "The Archive"]]],
   ["marks", "Marks", () => [["loved", "Hearted"], ["rated", "Four stars and up"]]],
   ["heard", "Listening", () => [["never", "Never played"], ["year", "Not in a year"], ["lately", "In the last month"]]]];
 const FOCUS_TEST = {
@@ -1884,7 +1886,7 @@ VIEWS.removed = function (el) {
   api("/api/removals").then(r => {
     if (!el.isConnected) return;
     $(".hist", el).innerHTML = r.removals.length ? r.removals.map(x => {
-      const what = [x.qobuz ? "Qobuz favourite" : "", x.files ? `${x.files} ${x.files === 1 ? "file" : "files"} in music-removed` : ""].filter(Boolean).join(" &middot; ");
+      const what = [x.qobuz ? `${SVC()} favourite` : "", x.files ? `${x.files} ${x.files === 1 ? "file" : "files"} in music-removed` : ""].filter(Boolean).join(" &middot; ");
       return `<div class="hrow rm"><span class="ht">${new Date(x.at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
         ${x.art ? `<img loading="lazy" src="${cover(x.art, 150)}" alt="">` : `<span class="noimg"></span>`}<span class="hw"><b>${esc(x.album)}</b><em>${esc(x.artist)} &middot; ${what || "nothing held"}</em></span>
         ${x.restored ? `<span class="ho">back on the shelves</span>` : `<button class="pill" data-act="restore" data-v="${x.id}">Put back</button>`}</div>`;
@@ -1905,6 +1907,7 @@ const FEATS = [["stations", "Stations", "radio seeded from artists you choose"],
   ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"],
   ["prefer_captured", "Your vinyl first", "an album with a take captured from the turntable opens and spins that take; off, the best-sounding copy does"]];
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
+  ["tidal", "TIDAL", "TIDAL's releases and similar artists on artist pages, and search beyond your shelves (with a TIDAL subscription; Qobuz is used when both are installed)", 1],
   ["mai", "Music & Artist Information", "album reviews, artists' longer stories and more of their photographs"],
   ["archive", "ArchiveLMA", "live shows from the Internet Archive: your favourites, each artist's shows, and On this night"],
   ["radio", "Don't Stop the Music, with LastMix", "radio that carries on when a queue runs out, and the stations"],
@@ -2173,7 +2176,7 @@ function noResults(q, n, askedQobuz, askedArchive) {
     "The needle's in the run-out groove.", "Nobody here but the tape hiss.", "This bin's been picked clean."];
   const quip = quips[Array.from(n).reduce((s, c) => s + c.charCodeAt(0), 0) % quips.length]; // the same line for the same search
   return `<div class="no-results"><div class="kicker">Nothing for &ldquo;${esc(q)}&rdquo;</div><h2>${quip}</h2>${nearNames(n)}
-    <p class="dim">Search looks at artists, albums, songs, genres and playlists on your shelves${askedQobuz ? ", and at Qobuz" : has("qobuz") ? "; Qobuz is asked from three letters on" : ""}${askedArchive ? ", and the shows in your Archive collections" : ""}. Check the spelling, or try fewer words.</p></div>`;
+    <p class="dim">Search looks at artists, albums, songs, genres and playlists on your shelves${askedQobuz ? `, and at ${SVC()}` : has("qobuz") ? `; ${SVC()} is asked from three letters on` : ""}${askedArchive ? ", and the shows in your Archive collections" : ""}. Check the spelling, or try fewer words.</p></div>`;
 }
 function runSearch(el, q) {
   lastQ = q; const n = norm(q), box = $("#results", el);
@@ -2218,7 +2221,7 @@ function runSearch(el, q) {
     if (tally.qobuz) b.innerHTML = `<p class="none-line">Nothing on your shelves for &ldquo;${esc(q)}&rdquo;.</p>${nearNames(n)}`;
     else if (!tally.waiting) b.innerHTML = noResults(q, n, asksQobuz, asksArchive);
   };
-  box.innerHTML = (local ? "" : `<div id="s-none"><p class="none-line">Nothing on your shelves by that name. Looking among the songs${asksQobuz ? ", on Qobuz" : ""}${asksArchive ? " and in the Archive" : ""}&hellip;</p></div>`)
+  box.innerHTML = (local ? "" : `<div id="s-none"><p class="none-line">Nothing on your shelves by that name. Looking among the songs${asksQobuz ? `, on ${SVC()}` : ""}${asksArchive ? " and in the Archive" : ""}&hellip;</p></div>`)
     + order.map(k => parts[k]).join("") + `<div id="s-qobuz"></div>`;
   lms("", ["titles", 0, 30, "search:" + q, "tags:alJ"]).then(r => {
     const t = (r.titles_loop || []); const b = $("#s-tracks", el);
@@ -2228,14 +2231,14 @@ function runSearch(el, q) {
   }).catch(() => settle(0));
   if (asksQobuz) qobuzT = setTimeout(() => {
     const b = $("#s-qobuz", el); if (!b) return;
-    b.innerHTML = section("Beyond the shelves", "On Qobuz", `<p class="dim">Asking Qobuz&hellip;</p>`);
+    b.innerHTML = section("Beyond the shelves", `On ${SVC()}`, `<p class="dim">Asking ${SVC()}&hellip;</p>`);
     api("/api/qobuz", { action: "search", term: q, player: A.room }).then(r => {
       if (lastQ !== q) return;
       const rel = r.releases || [];
       const people = (r.artists || []).filter(x => !onShelves(x.name)); // artists not on the shelves (those on them are above)
       settle(people.length + rel.length, true);
-      b.innerHTML = (people.length ? section("Beyond the shelves", "Artists on Qobuz", shelf(people.map(x => face(x.name, x.image, "on Qobuz")))) : "")
-        + (rel.length ? section(people.length ? "" : "Beyond the shelves", "Records on Qobuz", shelf(rel.map(x => qCard({ artist: x.artist, album: x.album, cover: x.cover, i: x.i, term: q })))) : "");
+      b.innerHTML = (people.length ? section("Beyond the shelves", `Artists on ${SVC()}`, shelf(people.map(x => face(x.name, x.image, `on ${SVC()}`)))) : "")
+        + (rel.length ? section(people.length ? "" : "Beyond the shelves", `Records on ${SVC()}`, shelf(rel.map(x => qCard({ artist: x.artist, album: x.album, cover: x.cover, i: x.i, term: q })))) : "");
     }).catch(() => { b.innerHTML = ""; settle(0, true); });
   }, 700);
   // the Archive collections' shows by anyone (the plugin's search: artists and venues; "Spoon 2003" narrows to a year)
@@ -2325,7 +2328,7 @@ const ACT = {
       if (o.error) return toast(o.error);
       toast({ playing: `Spinning ${o.album} in ${roomName(A.room)}`, queued: `${o.album} is queued`, added: `${o.album} joins the library`, already: `${o.album} is in the library already` }[o.result] || "Done");
       setTimeout(poll, 400);
-    }).catch(() => toast("Qobuz didn't answer"));
+    }).catch(() => toast(`${SVC()} didn't answer`));
   },
   closeSheet: (v, t) => { closeSheet(); const h = t && t.getAttribute("href"); if (h && h.charAt(0) === "#") location.hash = h; }, // a link in a sheet still goes where it says
   heart: (v, t) => { const m = markAt(t); setMark(m[0], m[1], { heart: !markOf(m[0], m[1])[0] }); },
@@ -2376,7 +2379,7 @@ const ACT = {
   },
   awayTrack: v => { const r = current && current.el.away; if (!r) return; inOrder().then(() => api("/api/away-play", { term: r.term, index: r.i, track: +v, how: "play", player: A.room })).then(() => { toast(`Playing in ${roomName(A.room)}`); setTimeout(poll, 800); }).catch(() => toast("The server didn't answer")); },
   awayChip: (v, t, e) => { if (e) { e.preventDefault(); e.stopPropagation(); } const x = JSON.parse(v); toast("Starting it…");
-    api("/api/away?" + new URLSearchParams({ artist: x[0], album: x[1], player: A.room || "" })).then(r => r.album_id ? ACT.playAlbum(String(r.album_id)) : r.term ? inOrder().then(() => api("/api/qobuz", { action: "play", term: r.term, index: r.i, player: A.room })).then(() => { toast(`Spinning ${r.album} in ${roomName(A.room)}`); setTimeout(poll, 800); }) : toast("Qobuz doesn't have this one")).catch(() => toast("The server didn't answer")); },
+    api("/api/away?" + new URLSearchParams({ artist: x[0], album: x[1], player: A.room || "" })).then(r => r.album_id ? ACT.playAlbum(String(r.album_id)) : r.term ? inOrder().then(() => api("/api/qobuz", { action: "play", term: r.term, index: r.i, player: A.room })).then(() => { toast(`Spinning ${r.album} in ${roomName(A.room)}`); setTimeout(poll, 800); }) : toast(`${SVC()} doesn't have this one`)).catch(() => toast("The server didn't answer")); },
   newRelease: v => { const r = JSON.parse(v); if (r.qobuz) openQobuz({ artist: r.qobuz.artist, album: r.qobuz.album, cover: r.cover, i: r.qobuz.i, page: r.artist }); else location.hash = artistHref(r.artist); },
   trackMenu: v => openTrackMenu(v),
   // an album's genres, chosen from the house's list: kept here, and written into its files when it has some
@@ -2408,8 +2411,8 @@ const ACT = {
       <p class="plan-note">Your ${s.albums.toLocaleString()} albums are here to play now. What Soundsquatch knows about them comes in the background: each artist's story, photographs, members and kindred spirits; each album's genres, credits and review. It asks MusicBrainz, Wikipedia${has("mai") ? " and Lyrion's Music &amp; Artist Information" : ""} for them, and MusicBrainz answers one question a second.</p>
       <p class="plan-note">For ${s.artists.toLocaleString()} artists that takes <b>about ${timeLeft(s.minutes)}</b>. Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
       <div class="settling settling-in"><span class="settling-t"><b>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists</b><span>genres for ${(s.albums - s.genres_left).toLocaleString()} of ${s.albums.toLocaleString()} albums, credits for ${(s.albums - s.credits_left).toLocaleString()}</span></span></div>
-      ${PLUGINS.some(x => !x[3] && !has(x[0])) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0])).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0])).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
-      <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0])) ? `<a class="btn ghost" href="#/settings/house" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
+      ${PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
+      <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<a class="btn ghost" href="#/settings/house" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
   },
   // the diagnostics a tester pastes: shown to read, copied (the clipboard needs https, so a selection otherwise), and
   // the forum thread opened beside it in the same tap (a link, so no browser stops the new tab)
@@ -2475,7 +2478,7 @@ const ACT = {
     api("/api/art-choices?id=" + v).then(r => {
       const box = $("#sheet .art-picks"); if (!box || A.artFor !== +v) return;
       if (r.error) { box.innerHTML = `<p class="dim">${esc(r.error)}</p>`; return; }
-      if (!r.local) { box.innerHTML = `<p class="dim">This album streams from Qobuz, which keeps its own cover.</p>`; $("#sheet [data-act=artSave]").remove(); $("#sheet .art-own").remove(); return; }
+      if (!r.local) { box.innerHTML = `<p class="dim">This album streams from ${SVC()}, which keeps its own cover.</p>`; $("#sheet [data-act=artSave]").remove(); $("#sheet .art-own").remove(); return; }
       box.innerHTML = r.choices.length ? r.choices.map(c => `<button class="art-pick" data-act="artPick" data-v="${esc(c.full)}" title="${esc(c.source + ": " + c.label)}"><img src="${esc(pic(c.thumb, 300))}" alt="" onerror="this.parentNode.remove()"><span>${esc(c.source)}</span></button>`).join("")
         : `<p class="dim">No covers found for it; a picture of your own will do.</p>`;
       if (r.edited) $("#art-undo").innerHTML = `<button class="btn ghost" data-act="artUndo">Put back the old cover</button>`;
@@ -2762,7 +2765,7 @@ const ACT = {
     api("/api/removal?id=" + v).then(r => {
       if (r.error) { closeSheet(); return toast("Couldn't find that album in Lyrion"); }
       const what = [];
-      if (r.qobuz) what.push(`Takes it out of your Qobuz favourites.`);
+      if (r.qobuz) what.push(`Takes it out of your ${SVC()} favourites.`);
       if (r.files) what.push(`Moves its ${r.files} ${r.files === 1 ? "file" : "files"}${r.copies > 1 ? ` (${r.copies} copies)` : ""} to <b>${esc(r.to)}</b>, out of Lyrion's sight. Nothing is deleted: they can be put back.`);
       if (!what.length) what.push("Lyrion holds nothing for it that this can remove.");
       openSheet(`<div class="kicker">Remove from the library</div><h3>${esc(r.album)}</h3><div class="dim">${esc(r.artist)}</div>
@@ -2776,7 +2779,7 @@ const ACT = {
       if (r.error) return toast("Lyrion wouldn't remove it");
       // the shelves as the server now has them (another version, if any, standing in), every page drawn again when next opened
       loadLibrary().then(() => { Array.from(A.views.keys()).forEach(h => { const view = A.views.get(h); if (view !== current) { view.el.remove(); A.views.delete(h); } }); back(); });
-      toast(`${r.album} is off the shelves` + (r.qobuz ? " and out of your Qobuz favourites" : "") + (r.moved ? `; ${r.moved} ${r.moved === 1 ? "file" : "files"} moved to music-removed` : "") + (r.problems.length ? ` (${r.problems[0]})` : ""));
+      toast(`${r.album} is off the shelves` + (r.qobuz ? ` and out of your ${SVC()} favourites` : "") + (r.moved ? `; ${r.moved} ${r.moved === 1 ? "file" : "files"} moved to music-removed` : "") + (r.problems.length ? ` (${r.problems[0]})` : ""));
     }).catch(() => toast("Lyrion didn't answer"));
   },
   setLook: v => {
@@ -2998,7 +3001,7 @@ function genresDone(v, body) {
 }
 function closeSheet() { const s = $("#sheet"); s.classList.remove("on"); setTimeout(() => { s.hidden = true; s.innerHTML = ""; }, 220); }
 function openQobuz(r) {
-  openSheet(`<div class="qs" data-r="${esc(JSON.stringify(r))}">${r.cover ? `<img src="${esc(pic(r.cover, 640))}" alt="">` : ""}<div><div class="kicker">On Qobuz</div><h3>${esc(r.album)}</h3><div class="dim">${esc(r.artist)}</div>
+  openSheet(`<div class="qs" data-r="${esc(JSON.stringify(r))}">${r.cover ? `<img src="${esc(pic(r.cover, 640))}" alt="">` : ""}<div><div class="kicker">On ${SVC()}</div><h3>${esc(r.album)}</h3><div class="dim">${esc(r.artist)}</div>
     <div class="acts col"><button class="btn" data-act="qobuz" data-v="play">${icon("play")} Spin it in ${esc(roomName(A.room))}</button><button class="btn ghost" data-act="qobuz" data-v="queue">${icon("queue")} Queue it</button>
     <button class="btn ghost" data-act="qobuz" data-v="keep">${icon("heart")} Add to the library</button>${shareBtn(r.album + " by " + r.artist, qobuzLink(r.cover), "wide")}</div></div></div>`);
 }
@@ -3367,7 +3370,7 @@ function openSignalPath() {
   const t = curTrack(), room = A.room; if (!t) return;
   Promise.all([lms("", ["players", 0, 50]), lms(room, ["playerpref", "replayGainMode", "?"])]).then(r => {
     const p = (r[0].players_loop || []).find(x => x.playerid === room) || {}, level = String(r[1]._p2 || "0"), url = t.url || "";
-    const from = /^qobuz:/.test(url) ? "Qobuz" : /archive\.org/.test(url) ? "The Internet Archive" : /^file:/.test(url) ? "A file on the server" : /^https?:/.test(url) ? "A stream" : "Lyrion's library";
+    const from = /^qobuz:/.test(url) ? "Qobuz" : /^tidal:/.test(url) ? "TIDAL" : /archive\.org/.test(url) ? "The Internet Archive" : /^file:/.test(url) ? "A file on the server" : /^https?:/.test(url) ? "A stream" : "Lyrion's library";
     const kind = (t.type || "").toUpperCase(), lossless = ["FLC", "WAV", "AIF", "ALC", "WVP", "APE"].indexOf(kind) >= 0;
     const format = lossless ? `${kind === "FLC" ? "FLAC" : kind}, ${(+t.samplesize || 16)}-bit / ${(+t.samplerate || 44100) / 1000} kHz` : `${kind} ${String(t.bitrate || "").replace(/kbps.*/i, "")} kbps`.trim();
     const bridge = /bridge/i.test(p.modelname || ""), device = bridge ? (/cast/i.test(p.modelname) ? "a Chromecast" : "a UPnP player") : (p.modelname || "the player");

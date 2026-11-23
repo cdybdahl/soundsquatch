@@ -62,6 +62,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(1, os.path.join(HERE, "vendor"))  # mutagen, for genre tags (install.sh puts it there)
 import lms_keep_album  # noqa: E402
 import lms_qobuz  # noqa: E402
+import streaming  # noqa: E402
 from library import copies, quality  # noqa: E402
 import genres as house_genres  # noqa: E402
 import turntable  # noqa: E402
@@ -155,14 +156,20 @@ def detect():
         # CrystalGipsy's plugins: their Material home shelves (flat, playable by item id) and Listen Later's own add command
         HAVE.update(listenlater=can("listenlater", "add"), ll_shelf=can("LLHome", "items"), lbf=can("LBFForYou", "items"),
                     pfr=can("PFRBnm", "items"), ratings=can("ratingslight", "ratealbum"))  # Ratings Light 3.2 on: track ratings are Lyrion's
+        HAVE.update(**{x.key: bool(x.available(can)) for x in streaming.ALL})
         HAVE.update(qobuz=can("qobuz", "items"), archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
                     radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
                     mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
     except Exception:
         pass  # Lyrion not answering: as it was
-    if HAVE.get("qobuz"):
+    if svc():
         qobuz_arrived()
     return HAVE
+
+
+def svc():
+    """The streaming service Lyrion has a plugin for (Qobuz first, when it has both), or None."""
+    return next((x for x in streaming.ALL if HAVE.get(x.key)), None)
 
 
 def qobuz_arrived():
@@ -534,10 +541,10 @@ def qobuz_has(artist, title):
     same_t = lambda t: t == want or (min(len(t), len(want)) > 3 and (t.startswith(want) or want.startswith(t)))
     same_a = lambda a: any(lms_qobuz.same_name(a, n) or (loose_artist(a) and loose_artist(n) and (loose_artist(a) in loose_artist(n) or loose_artist(n) in loose_artist(a))) for n in names)
     try:
-        _, found = lms_qobuz.releases(f"{names[0]} {re.sub(r'[(][^)]*[)]', '', title or '')}".strip()[:120], PLAYER)
+        found = svc().search(f"{names[0]} {re.sub(r'[(][^)]*[)]', '', title or '')}".strip()[:120], PLAYER)
     except Exception:
         return None
-    return any(same_t(tidy(lms_qobuz.split(r[1])[1])) and same_a(lms_qobuz.split(r[1])[0]) for r in found)
+    return any(same_t(tidy(t)) and same_a(a) for a, t, _ in found)
 
 
 def vinyl_qobuz_loop():
@@ -546,7 +553,7 @@ def vinyl_qobuz_loop():
     time.sleep(60)
     while True:
         try:
-            if HAVE.get("qobuz") and lms_qobuz.PLAYER.match(PLAYER or ""):
+            if svc() and lms_qobuz.PLAYER.match(PLAYER or ""):
                 known = kv_get("vinyl-qobuz", {}) or {}
                 stale = lambda k: not k or time.time() - k[1] > 90 * 86400 or (not k[0] and len(k) < 3)  # a "no" before the looser match: asked again
                 for r in [r for r in physical_now()[1] if not r[8] and stale(known.get(str(r[0])))][:300]:
@@ -566,7 +573,8 @@ def settings_for_app():
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"], "discover_order": settings["house"]["discover_order"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
-            "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()), "token_set": os.path.exists(HA_TOKEN), "checks": checks}
+            "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()),
+            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
 
 
 def pin_hash(pin):
@@ -1245,7 +1253,7 @@ def load_library(force=False):
         tracks += got
         if len(got) < step:
             break
-    by_album, streamed, added, captured = {}, set(), {}, set()
+    by_album, streamed, added, captured = {}, {}, {}, set()  # streamed: album → the service it streams from
     cap = urllib.parse.quote(capture_dir())  # the turntable's own recordings: versions of their own ("Your vinyl")
     for t in tracks:
         if cap in (t.get("url") or ""):
@@ -1253,7 +1261,7 @@ def load_library(force=False):
         added[str(t.get("album_id"))] = max(added.get(str(t.get("album_id")), 0), int(float(t.get("addedTime") or 0)))  # when it joined the shelves
         by_album.setdefault(str(t.get("album_id")), Counter())[quality(t)] += 1
         if not (t.get("url") or "").startswith("file:"):
-            streamed.add(str(t.get("album_id")))
+            streamed[str(t.get("album_id"))] = (streaming.by_url(t.get("url")) or streaming.ALL[0]).key
     best, versions, rows = {}, {}, []
     for rank, a in enumerate(found):
         q = by_album.get(str(a["id"]))
@@ -1277,7 +1285,7 @@ def load_library(force=False):
         genres = {k: json.loads(g) for k, g in c.execute("select k, genres from album_genres")}
     for e in albums:
         e.append(genres.get(copies(e[2], e[1]), []))
-        src = lambda i: "vinyl" if str(i) in captured else "qobuz" if str(i) in streamed else "local"
+        src = lambda i: "vinyl" if str(i) in captured else streamed[str(i)] if str(i) in streamed else "local"
         e.append(src(e[0]))  # [9] where it plays from: the shelves, Qobuz, or the turntable's own recording
         k = keys[e[0]]  # [10] its other versions: [id, title, quality, year, art, source], best first
         e.append([[v[0], v[1], v[6], v[3], v[4], src(v[0]), added.get(str(v[0]), 0)]
@@ -1343,12 +1351,14 @@ def get_json(url, timeout=15):
 
 
 def part_qobuz(name):
-    if HAVE.get("qobuz") is False:
-        return {}  # no Qobuz: the profile goes on without it
-    sheet = lms_qobuz.artist_sheet(name, PLAYER)
+    """The artist's sheet on the streaming service (kept as the profile's "qobuz" part, whichever service it is)."""
+    if not svc():
+        return {}  # no service: the profile goes on without it
+    sheet = svc().sheet(name, PLAYER)
     if sheet.get("error"):
         return None
     sheet.pop("heard", None)  # live, from the log, when the app asks
+    sheet["service"] = svc().key
     sheet["photo"] = sheet.get("photo", "").replace("/covers/medium/", "/covers/large/")
     return sheet
 
@@ -1876,36 +1886,18 @@ def away_album(artist, title, player, fresh=False):
         return hit[1]
     out = {"artist": artist, "album": title, "tracks": [], "details": {}, "kept": False}
     player = player if lms_qobuz.PLAYER.match(player or "") else PLAYER  # the plugin answers for a player; any will do to look
-    if HAVE.get("qobuz") is False or not lms_qobuz.PLAYER.match(player or ""):
+    if not svc() or not lms_qobuz.PLAYER.match(player or ""):
         return dict(out, error="no Qobuz")
-    term = f"{artist} {title}".strip()[:120]
+    out["service"] = svc().label
     try:
-        _, found = lms_qobuz.releases(term, player)
-        def fit(r):
-            a, t = lms_qobuz.split(r[1])
-            same_t = lms_qobuz.plain(re.sub(r"\s*[(\[].*$", "", t)) == want
-            return (same_t and (not artist or lms_qobuz.same_name(a, artist) or key(a) == key(artist))) * 2 + same_t
-        best = max(range(len(found)), key=lambda n: fit(found[n]), default=None)
-        if best is None or not fit(found[best]):
-            AWAY[k] = (time.time(), dict(out, error="not on Qobuz"))
-            return AWAY[k][1]
-        item, name, img, path = found[best]
-        a, t = lms_qobuz.split(name)
-        entries = lms_qobuz.rpc(player, "qobuz", "items", "0", "100", f"item_id:{path}", f"search:{term}").get("loop_loop") or []
+        page = svc().release(artist, title, want, player)
     except Exception as e:
-        note_error(f"Qobuz for {artist} - {title}: {type(e).__name__}: {e}")
+        note_error(f"{svc().label} for {artist} - {title}: {type(e).__name__}: {e}")
         return dict(out, error="failed")
-    tracks, details = [], {}
-    for n, x in enumerate(entries):
-        nm = x.get("name") or ""
-        if x.get("isaudio") and " by " in nm:
-            song = nm[:-len(" from " + t)] if nm.endswith(" from " + t) else nm.rsplit(" from ", 1)[0]
-            tracks.append({"n": len(tracks) + 1, "title": song.rsplit(" by ", 1)[0], "k": n})
-        elif ": " in nm and nm.split(": ", 1)[0] in AWAY_DETAILS:
-            details[AWAY_DETAILS[nm.split(": ", 1)[0]]] = nm.split(": ", 1)[1]
-    m = re.match(r"(\d+)/(\d+)/(\d{4})$", details.get("released", ""))
-    page = {"artist": a or artist, "album": t, "cover": lms_qobuz.cover(img), "term": term, "i": best, "tracks": tracks, "details": details,
-            "year": m.group(3) if m else "", "kept": any((x.get("name") or "").startswith("Remove Release ") for x in entries)}
+    if not page:
+        AWAY[k] = (time.time(), dict(out, error="not on Qobuz"))
+        return AWAY[k][1]
+    page["service"] = svc().label
     AWAY[k] = (time.time(), page)
     return page
 
@@ -1967,12 +1959,10 @@ def away_play(req):
     term, player = (req.get("term") or "")[:120], req.get("player") or PLAYER
     if not lms_qobuz.PLAYER.match(player) or not term:
         return {"error": "no such player or record"}
-    _, found = lms_qobuz.releases(term, player)
-    i, k = int(req.get("index") or 0), int(req.get("track") or 0)
-    if i >= len(found):
-        return {"error": "Qobuz no longer lists that release"}
-    lms_qobuz.rpc(player, "qobuz", "playlist", req.get("how") if req.get("how") in ("play", "insert") else "play", f"item_id:{found[i][3]}.{k}" if req.get("track") is not None else f"item_id:{found[i][0]}", f"search:{term}")
-    return {"result": "playing"}
+    if not svc():
+        return {"error": "no streaming service"}
+    return svc().play_release(term, int(req.get("index") or 0), int(req["track"]) if req.get("track") is not None else None,
+                              req.get("how") if req.get("how") in ("play", "insert") else "play", player)
 
 
 def review(album_id, again=False):
@@ -2650,21 +2640,11 @@ def qobuz(req):
     action, term, player = req.get("action"), (req.get("term") or "").strip()[:120], req.get("player") or PLAYER
     if not lms_qobuz.PLAYER.match(player) or not term:
         return {"error": "no such player or nothing to ask"}
-    if HAVE.get("qobuz") is False:
-        return {"error": "Lyrion has no Qobuz plugin", "releases": [], "artists": []}
-    b64 = __import__("base64").b64encode(term.encode()).decode()
-    args = [action, b64, player] + ([str(int(req["index"]))] if req.get("index") is not None else [])
-    if action in ("aplay", "aqueue", "akeep") and req.get("album"):
-        # the profile's numbering may be a month old: find the release by its title on the page as it is now
-        page = lms_qobuz.artist_page(term, player)
-        now = lms_qobuz.artist_releases(term, player, page) if page else []
-        at = next((n for n, r in enumerate(now) if lms_qobuz.split(r[2])[1] == req["album"]), None)
-        if at is None:
-            return {"error": "Qobuz no longer lists that release"}
-        args[3:] = [str(at)]
+    if not svc():
+        return {"error": "Lyrion has no streaming plugin", "releases": [], "artists": []}
     if action not in ("search", "play", "queue", "keep", "aplay", "aqueue", "akeep"):
         return {"error": "unknown action"}
-    return lms_qobuz.main(args)
+    return svc().act(dict(req, term=term), player)
 
 
 # ───────────────────────── marks, lyrics, history, new releases, rooms ─────────────────────────
@@ -2752,7 +2732,7 @@ def history(days):
         a = by_copy.get(copies(artist or "", album or ""))
         out.append({"t": round(started), "room": room or "", "title": title or "", "artist": artist or "", "album": album or "", "outcome": outcome or "",
                     "played": round(played or 0), "duration": round(duration or 0), "who": who or "", "library": lib, "album_id": a[0] if a else None, "art": a[4] if a else "",
-                    "url": url if (url or "").startswith("qobuz:") and not a else ""})  # a Qobuz album not on the shelves: keepable
+                    "url": url if streaming.by_url(url) and not a else ""})  # a Qobuz album not on the shelves: keepable
     return {"plays": out}
 
 
@@ -2816,9 +2796,10 @@ def afterwork_verdict(req):
 def keep_from_log(req):
     """A Qobuz album the log heard, added to the library (a Qobuz favourite), by one of its tracks."""
     url, player = req.get("url") or "", req.get("player") or PLAYER
-    if not re.fullmatch(r"qobuz://\d+\.\w+", url) or not lms_qobuz.PLAYER.match(player):
-        return {"error": "not a Qobuz track"}
-    out = lms_keep_album.keep(player, url)
+    service = streaming.by_url(url)
+    if not service or not re.fullmatch(r"\w+://\d+\.\w+", url) or not lms_qobuz.PLAYER.match(player):
+        return {"error": "not a streamed track"}
+    out = service.keep_track(player, url)
     if out.get("result") == "added":
         for wait in (60, 150):
             threading.Timer(wait, lambda: load_library(force=True)).start()
@@ -3200,7 +3181,7 @@ def removal_plan(album_id):
     a, found = this_version(album_id)
     if not a:
         return {"error": "no such album"}
-    qobuz = sum(1 for _, urls in found if any(u.startswith("qobuz:") for u in urls))
+    qobuz = sum(1 for _, urls in found if any(streaming.by_url(u) for u in urls))
     read_music_dirs()
     files = [f for _, urls in found for f in map(file_path, urls) if f and placed(f)[0]]
     folders = sorted({os.path.dirname(placed(f)[1]) for f in files})
@@ -3228,17 +3209,13 @@ def remove_album(album_id, player):
         return {"error": f"{REMOVED_DIR} isn't on the music's own disk: mount the folder above {MUSIC_DIRS[0]} (or set REMOVED_DIR)"}
     done = {"qobuz": [], "moved": [], "problems": [], "art": a[4], "album_id": a[0], "roots": {}}
     for _, urls in found:
-        q = next((u for u in urls if u.startswith("qobuz:")), None)
+        q = next((u for u in urls if streaming.by_url(u)), None)
         if q:
             try:
-                on = lms_keep_album.find(lms_keep_album.menu(player, q), r"^On Qobuz$")
-                manage = on and lms_keep_album.find(lms_keep_album.menu(player, q, on), r"^Manage Favorites$")
-                drop = manage and lms_keep_album.find(lms_keep_album.menu(player, q, manage), r"^Remove Release ")
-                if drop:
-                    lms_keep_album.menu(player, q, drop)  # opening the entry is what removes it
-                    done["qobuz"].append(q)
+                if streaming.by_url(q).unkeep_track(player, q):
+                    done["qobuz"].append(q)  # the streamed copies let go (kept under "qobuz", whichever service)
                 else:
-                    done["problems"].append("Qobuz offered no Remove Release (not a favourite?)")
+                    done["problems"].append(f"{streaming.by_url(q).label} offered no way to let it go (not a favourite?)")
             except Exception as e:
                 done["problems"].append(f"Qobuz: {type(e).__name__}")
         emptied = set()
@@ -3335,7 +3312,7 @@ def restore(rid, player):
     added = 0
     for q in d.get("qobuz", []):
         try:
-            out = lms_keep_album.keep(player, q)
+            out = (streaming.by_url(q) or streaming.ALL[0]).keep_track(player, q)
             added += out.get("result") in ("added", "already")
         except Exception as e:
             problems.append(f"Qobuz: {type(e).__name__}")
@@ -3519,6 +3496,11 @@ def share_link(album_id):
     urls = [t.get("url") or "" for t in rpc("", "titles", "0", "50", f"album_id:{album_id}", "tags:u").get("titles_loop") or []]
     q = next((u for u in urls if u.startswith("qobuz:")), None)
     link = ""
+    t = next((u for u in urls if u.startswith("tidal:")), None)
+    if t and not q:  # TIDAL's public page by the album's id, which its song info carries (TRIAL)
+        info = {k: v for d in rpc(PLAYER, "songinfo", "0", "40", f"url:{t}", "tags:e").get("songinfo_loop") or [] for k, v in d.items()}
+        m = re.search(r"tidal:album:(\d+)", str(info.get("extid") or ""))
+        link = f"https://tidal.com/browse/album/{m.group(1)}" if m else ""
     if q:
         for row in rpc(PLAYER, "songinfo", "0", "40", f"url:{q}", "tags:K").get("songinfo_loop") or []:
             if row.get("artwork_url"):
