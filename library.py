@@ -5,11 +5,14 @@ import re
 
 
 LOSSLESS = {"flc", "wav", "aif", "alc", "wvp", "ape"}
+DSD = {"dsf", "dff", "dsd"}  # Lyrion's types for DSD files
 
 
 def quality(track):
     """A track's quality, as a key that sorts better copies higher, and in words."""
     kind, bits, rate = track.get("type") or "", int(track.get("samplesize") or 0), int(track.get("samplerate") or 0)
+    if kind in DSD:  # DSD64, DSD128…: by its rate, 64 × 44.1 kHz and up; above any PCM copy
+        return (2, rate, 0), f"DSD{rate // 44100}" if rate >= 2822400 else "DSD"
     if kind in LOSSLESS:
         bits = bits or 16
         words = "CD" if (bits, rate) == (16, 44100) else f"{bits}/{rate / 1000:g}"

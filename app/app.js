@@ -3381,11 +3381,29 @@ function upNext() {
   return list.length ? list.map(x => `<div class="nx" data-i="${x["playlist index"]}"><span class="grip" aria-label="Drag to reorder">${icon("grip")}</span><button class="nx-go" data-act="jump" data-v="${x["playlist index"]}">${trackArt(x, 100) ? `<img loading="lazy" src="${esc(trackArt(x, 100))}" alt="">` : `<span class="noimg"></span>`}<span><b>${esc(x.title)}</b><em>${esc(x.artist || "")}</em></span></button><button class="nx-x" data-act="drop" data-v="${x["playlist index"]}" aria-label="Remove">${icon("close")}</button></div>`).join("")
     : `<p class="dim">The queue ends here.</p>`;
 }
+// a format in words: DSD by its rate (DSD64 is 64 × 44.1 kHz), lossless by bits and rate, the rest by bitrate
+const LOSSLESS_TYPES = ["flc", "wav", "aif", "alc", "wvp", "ape", "pcm"], DSD_TYPES = ["dsf", "dff", "dsd"];
+function formatWords(type, bits, rate, bitrate, short) {
+  const k = String(type || "").toLowerCase(), r = +rate || 0;
+  if (DSD_TYPES.indexOf(k) >= 0) return r >= 2822400 ? "DSD" + Math.round(r / 44100) : "DSD";
+  const name = { flc: "FLAC", alc: "ALAC", wvp: "WavPack", aif: "AIFF", mp4: "AAC", aac: "AAC", pcm: "PCM", ogg: "Ogg", ops: "Opus" }[k] || k.toUpperCase();
+  if (LOSSLESS_TYPES.indexOf(k) >= 0) {
+    const b = +bits || 16, hz = (r || 44100) / 1000;
+    return short ? (b === 16 && hz === 44.1 ? "CD quality" : `${b}-bit / ${hz} kHz`) : `${name}, ${b}-bit / ${hz} kHz`;
+  }
+  const kb = +String(bitrate || "").replace(/kbps.*/i, "").replace(/[^\d.]/g, "") || 0;
+  return (name + (kb ? ` ${kb} kbps` : "") + (!short && r ? `, ${r / 1000} kHz` : "")).trim();
+}
+// what Lyrion sends the player when it isn't the file as it is (Lyrion 9.2 says, in the status's own type and rates)
+function sentAs() {
+  const st = A.st || {};
+  return +st.is_transcoded && st.type ? formatWords(st.type, st.samplesize, st.samplerate, st.bitrate, true) : "";
+}
 function quality(t) {
   if (t.turntable) return `<span class="q hi tt-q">${icon("disc")} Vinyl${t.pos ? " &middot; " + esc(t.pos) : ""}</span>`;
-  const kind = t.type || "", bits = +t.samplesize || 0, rate = +t.samplerate || 0;
-  if (["flc", "wav", "aif", "alc", "wvp", "ape"].indexOf(kind) >= 0) return `<span class="q hi">${(bits || 16) === 16 && rate === 44100 ? "CD quality" : (bits || 16) + "-bit / " + (rate / 1000) + " kHz"}</span>`;
-  return t.bitrate ? `<span class="q">${esc(kind.toUpperCase())} ${esc(String(t.bitrate).replace(/kbps.*/i, ""))} kbps</span>` : "";
+  const kind = String(t.type || "").toLowerCase(), hi = LOSSLESS_TYPES.indexOf(kind) >= 0 || DSD_TYPES.indexOf(kind) >= 0;
+  const words = hi || t.bitrate ? formatWords(kind, t.samplesize, t.samplerate, t.bitrate, true) : "", out = sentAs();
+  return words ? `<span class="q ${hi ? "hi" : ""}">${esc(words)}${out ? ` &rarr; ${esc(out)}` : ""}</span>` : "";
 }
 /* ───────────────────────── the signal path ─────────────────────────
    What is playing, from where it comes to the room it plays in: the source and its format, how Lyrion sends it, the
@@ -3396,13 +3414,16 @@ function openSignalPath() {
   Promise.all([lms("", ["players", 0, 50]), lms(room, ["playerpref", "replayGainMode", "?"])]).then(r => {
     const p = (r[0].players_loop || []).find(x => x.playerid === room) || {}, level = String(r[1]._p2 || "0"), url = t.url || "";
     const from = /^qobuz:/.test(url) ? "Qobuz" : /^tidal:/.test(url) ? "TIDAL" : /archive\.org/.test(url) ? "The Internet Archive" : /^file:/.test(url) ? "A file on the server" : /^https?:/.test(url) ? "A stream" : "Lyrion's library";
-    const kind = (t.type || "").toUpperCase(), lossless = ["FLC", "WAV", "AIF", "ALC", "WVP", "APE"].indexOf(kind) >= 0;
-    const format = lossless ? `${kind === "FLC" ? "FLAC" : kind}, ${(+t.samplesize || 16)}-bit / ${(+t.samplerate || 44100) / 1000} kHz` : `${kind} ${String(t.bitrate || "").replace(/kbps.*/i, "")} kbps`.trim();
+    const kind = String(t.type || "").toLowerCase(), lossless = LOSSLESS_TYPES.indexOf(kind) >= 0 || DSD_TYPES.indexOf(kind) >= 0;
+    const format = formatWords(kind, t.samplesize, t.samplerate, t.bitrate), st = A.st || {};
+    const told = !!st.type, out = told ? formatWords(st.type, st.samplesize, st.samplerate, st.bitrate) : "", changed = told && +st.is_transcoded;
     const bridge = /bridge/i.test(p.modelname || ""), device = bridge ? (/cast/i.test(p.modelname) ? "a Chromecast" : "a UPnP player") : (p.modelname || "the player");
     const step = (title, what, note) => `<div class="sp-step"><i></i><div><div class="kicker">${title}</div><b>${what}</b>${note ? `<em>${note}</em>` : ""}</div></div>`;
     openSheet(`<div class="kicker">Playing through</div><h3>${esc(t.title || "")}</h3><div class="dim">${esc(t.artist || "")}</div>
       <div class="sp">${step("Source", esc(from), esc(format) + (lossless ? " &middot; lossless" : " &middot; compressed"))}
-      ${step("Lyrion", bridge ? "Streams it to a bridge" : "Streams it to the player", bridge ? `The bridge hands it on to ${device} as its plugin is set up; the bridge can change the format on the way` : "The player decodes it itself")}
+      ${step("Lyrion", changed ? `Converts it: sends ${esc(out)}` : told ? "Sends it as it is" : bridge ? "Streams it to a bridge" : "Streams it to the player",
+        [changed ? "Lyrion is transcoding or resampling for this player (its own settings: bitrate limit, sample-rate limit, format)" : "", bridge ? `The bridge hands it on to ${device} as its plugin is set up; the bridge can change the format on the way` : changed ? "" : "The player decodes it itself",
+         told ? "" : "Lyrion 9.2 and later say here exactly what they send"].filter(Boolean).join(". "))}
       ${step("Room", esc(roomName(room)), esc(p.modelname || ""))}</div>
       <div class="kicker sp-h">Volume levelling in ${esc(roomName(room))}</div>
       <div class="seg sp-seg">${LEVELS.map(l => `<button class="${l[0] === level ? "on" : ""}" data-act="levelSet" data-v="${l[0]}">${l[1]}</button>`).join("")}</div>
@@ -3475,7 +3496,9 @@ setInterval(() => {
   if (cur && !cur.classList.contains("now")) {
     const was = box.querySelector("p.now"); if (was) was.classList.remove("now");
     cur.classList.add("now");
-    box.scrollTop = cur.offsetTop - box.clientHeight / 3;
+    // its place within the words' own box (offsetTop counts from further up: the tabs and the song's details above
+    // were counted in, and the line sung ended up scrolled away under them, worst on a tall iPad held upright)
+    box.scrollTop = cur.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - box.clientHeight / 3;
   }
 }, 250);
 // the queue in Now Playing reorders by dragging a row by its grip
