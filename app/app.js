@@ -275,7 +275,9 @@ function kindOf(a, rgs) {
 // own with no date known go last). Items: { a } a record on the shelves, { q } one on Qobuz, with y its year
 function discItems(mine, p) {
   const who = plain((p.qobuz && p.qobuz.name) || p.name || ""), out = { album: [], ep: [], live: [], comp: [] };
-  const same = t => { const k = plain(t); return who && k.length > who.length + 3 && k.indexOf(who) === 0 ? k.slice(who.length) : k; }; // "Mogwai Young Team" is Young Team
+  // one record whatever the edition: "Mogwai Young Team" is Young Team, "Either/Or: Expanded Edition" and "Reckoning - Deluxe Edition" the records themselves
+  const EDITION = /\s*(?:[-\u2013\u2014:\/]|\bthe\b)?\s*(?:\d{2,4}\s*)?(?:(?:super\s+)?deluxe|remaster(?:ed)?|expanded|anniversary|collector'?s|special\\s+edition|legacy\\s+edition|bonus|reissue|definitive)\b.*$/i;
+  const same = t => { const k = plain(String(t).replace(EDITION, "") || t); return who && k.length > who.length + 3 && k.indexOf(who) === 0 ? k.slice(who.length) : k; };
   const seen = new Set(mine.map(a => same(a[1])));
   mine.forEach(a => out[kindOf(a, p.rgs)].push({ a, y: firstYear(a[1], p.rgs) || a[3] || 0 }));
   ((p.qobuz && p.qobuz.releases) || []).forEach(r => {
