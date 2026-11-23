@@ -3090,7 +3090,7 @@ function offline(what) {
   if (!b) { b = document.createElement("div"); b.id = "offline"; document.body.appendChild(b); }
   b.textContent = what + ". Trying again…"; // a restart, an update, the power: it comes back by itself
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); settleScreen(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); ttPoll(); settleScreen(); } });
 // an iPhone's or iPad's home-screen app sometimes opens with the screen measured short (a black band at the foot, taps
 // landing off their buttons) until something makes it measure again: so measure again on opening, coming back and turning
 document.addEventListener("keydown", e => {
@@ -3178,7 +3178,7 @@ function bindVolume(input) {
 A.tt = null;
 function ttPoll() {
   clearTimeout(A.ttT);
-  if (document.hidden) { A.ttT = setTimeout(ttPoll, 5000); return; }
+  if (document.hidden) return; // asked again when the page shows (the room's own poll does the same)
   // the level changes every poll; what's shown changes only with the rest
   const key = t => JSON.stringify(Object.assign({}, t, { level: 0 }));
   api("/api/turntable").then(t => {
@@ -3190,7 +3190,7 @@ function ttPoll() {
       const ct = curTrack(); if (ct && ct.turntable && !$("#np").hidden) drawNp();
       if (current && current.kind === "vinyl") { const box = $(".tt-panel", current.el); if (box || ttOn()) VIEWS.vinyl(current.el); }
     }
-  }).catch(() => {}).then(() => { A.ttT = setTimeout(ttPoll, 3000); });
+  }).catch(() => {}).then(() => { A.ttT = setTimeout(ttPoll, A.tt && A.tt.listener ? 3000 : 60000); }); // a house with no listener on: once a minute, to notice one
 }
 // something the signal check raised and no one has seen to: a dot on the Vinyl tab, and said on the Vinyl page
 function ttBadge() {
