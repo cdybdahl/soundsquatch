@@ -3475,7 +3475,9 @@ setInterval(() => {
   if (cur && !cur.classList.contains("now")) {
     const was = box.querySelector("p.now"); if (was) was.classList.remove("now");
     cur.classList.add("now");
-    box.scrollTop = cur.offsetTop - box.clientHeight / 3;
+    // its place within the words' own box (offsetTop counts from further up: the tabs and the song's details above
+    // were counted in, and the line sung ended up scrolled away under them, worst on a tall iPad held upright)
+    box.scrollTop = cur.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - box.clientHeight / 3;
   }
 }, 250);
 // the queue in Now Playing reorders by dragging a row by its grip
