@@ -1619,3 +1619,14 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 #rail a[data-tab="vinyl"] { position: relative; }
 #rail a.badged::after { content: ""; position: absolute; top: 8px; left: calc(50% + 9px); width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
 .tt-alert-text { margin: 10px 0 8px; font: 16px/1.5 var(--serif); }
+
+/* an album's listening: the line under its title, its listens, each track's count */
+.al-heard { font: 13px var(--sans); color: var(--dim); margin: 6px 0 4px; }
+.al-heard:empty { display: none; }
+.trk-n { flex: none; font: 12px var(--sans); color: var(--faint); font-variant-numeric: tabular-nums; }
+.al-plays { list-style: none; margin: 0; padding: 0; }
+.al-plays li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--rule); font: 14px var(--sans); }
+.al-plays li span { color: var(--dim); font-style: italic; font-family: var(--serif); }
+.al-plays li em { font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.al-plays li em.whole { color: var(--accent); }
+@media (max-width: 600px) { .al-plays li { grid-template-columns: minmax(0, 1fr) auto; } .al-plays li span { grid-column: 1; grid-row: 2; } }

@@ -1206,6 +1206,7 @@ MAG.album = function (el, id) {
         <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
         <div class="mag-by">${[a[6] && a[9] !== "vinyl" ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
+        <div class="al-heard"></div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Play it next">${icon("next_up")}<span>Play Next</span></button>
           <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Add it to the queue">${icon("queue")}<span>Add to Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>${A.cfg && A.cfg.have && A.cfg.have.listenlater ? `<button data-act="listenLater" data-v="${a[0]}" aria-label="Save to Listen Later">${icon("clock")}<span>Listen Later</span></button>` : ""}
           <span class="mag-share"></span>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
@@ -1213,11 +1214,12 @@ MAG.album = function (el, id) {
           ${title ? `<div><dt>Your marks</dt><dd class="al-marks-in">${albumStars(a)}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}</dl></div>
     </div>
     <div class="al-body"><div class="al-main">
-    <nav class="mag-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"]].filter(t => t[0] !== "credits" || on("features", "credits")).map(t =>
+    <nav class="mag-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"], ["plays", "Plays"]].filter(t => (t[0] !== "credits" || on("features", "credits")) && (t[0] !== "plays" || (title && on("features", "history")))).map(t =>
       `<button class="${t[0] === tab ? "on" : ""}" data-act="magTab" data-v="${t[0]}" data-store="sq-mag-album-tab">${t[1]}</button>`).join("")}</nav>
     ${pane("tracks", `<div class="tracks mag-tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div>`)}
     ${pane("story", `<div class="mag-body mag-review"><p class="dim">Looking for its story&hellip;</p></div>`)}
     ${pane("credits", `<div class="mag-credits"><p class="dim">Asking after the credits&hellip;</p></div>`)}
+    ${pane("plays", `<div class="al-plays-box"><p class="dim">Reading the listening log&hellip;</p></div>`)}
     </div>
     <aside class="al-aside">${more.length ? `<div class="mag-recs"><div class="ff-h">More by ${esc(artist)}</div>${more.slice().sort((x, y) => (x[3] || 9999) - (y[3] || 9999)).map(x =>
       `<a class="mr" href="${albumHref(x[0])}"><img loading="lazy" src="${cover(x[4], 150)}" alt=""><span class="y">${x[3] || "&mdash;"}</span><b>${esc(x[1])}</b></a>`).join("")}</div>` : ""}</aside></div>
@@ -1260,6 +1262,7 @@ MAG.album = function (el, id) {
     if (d.review != null) story(d); else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) story(r); }).catch(() => story({ review: "", why: "failed" }));
     if (on("features", "credits")) creditsFor(a[0]).then(c => { const box = $(".mag-credits", el); if (box && el.isConnected) box.innerHTML = creditsHtml(c) || `<p class="dim">No credits known for it.</p>`; }).catch(() => {});
     trackCredits(el, a[0], d, ".mag-tracks");
+    if (title) albumPlays(el, a[0], d, ".mag-tracks");
   }).catch(() => { const t = $(".mag-tracks", el); if (t) t.outerHTML = `<p class="dim">Couldn't load the tracks.</p>`; });
 };
 
@@ -1272,6 +1275,7 @@ VIEWS.album = function (el, id) {
     <div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title ? capSticker(a) : ""}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div>
     <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, versionsOf(a).length)}</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
       <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
+      <div class="al-heard"></div>
       ${title ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}${(a[8] || []).length ? `<button class="g-edit" data-act="genreEdit" data-v="${a[0]}" aria-label="Edit genres">${icon("edit")}</button>` : `<button class="g-edit named" data-act="genreEdit" data-v="${a[0]}">${icon("edit")} Add genres</button>`}</div>` : ""}
       ${title ? `<div class="al-marks">${albumStars(a)}${mk("album", albumKey(a), "tags")}</div>` : ""}
       <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button class="btn ghost" data-act="nextAlbum" data-v="${a[0]}">${icon("next_up")} Play Next</button>
@@ -1279,7 +1283,7 @@ VIEWS.album = function (el, id) {
       <button class="btn ghost" data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}</button>
       ${title ? `<button class="btn ghost" data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
       <div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div></div></div>
-    <div id="al-review"></div><div id="al-credits"></div>
+    <div id="al-review"></div><div id="al-credits"></div><div id="al-plays"></div>
     ${more.length ? section("Also on your shelves", "More by " + esc(artist), shelf(more.map(x => albumCard(x)))) : ""}<div id="al-sim"></div>`;
   const img = $(".album-art img", el); if (img) tint(img, el);
   if (title) lrFill(el, a[0]);
@@ -1303,6 +1307,7 @@ VIEWS.album = function (el, id) {
     if (title) api("/api/share?album_id=" + a[0]).then(r => { const acts = $(".album-head .acts", el); if (r.url && acts && el.isConnected) { const bin = $('[data-act="removeAsk"]', acts); if (bin) bin.insertAdjacentHTML("beforebegin", shareBtn(title + " by " + artist, r.url)); else acts.insertAdjacentHTML("beforeend", shareBtn(title + " by " + artist, r.url)); } }).catch(() => {});
     if (title && on("features", "credits")) creditsFor(a[0]).then(c => { const box = $("#al-credits", el); if (box && el.isConnected) box.outerHTML = creditsHtml(c); }).catch(() => {});
     if (title) trackCredits(el, a[0], d, ".album-head .tracks");
+    if (title) albumPlays(el, a[0], d, ".album-head .tracks");
     if (d.review != null) showReview(d);
     else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) showReview(r); }).catch(() => showReview({ review: "", why: "failed" }));
     profile(by).then(p => {
@@ -1819,6 +1824,25 @@ function trackCredits(el, id, d, sel) {
       const who = trackPeople(c, t, i), row = rows[i], at = row && $(".d", row); // before the length: the lengths stay in line
       if (who.length && at) at.insertAdjacentHTML("beforebegin", `<button class="trk-who" data-act="trackWho" data-v="${esc(JSON.stringify(who))}" aria-label="Who's on it">${icon("person")}</button>`);
     });
+  }).catch(() => {});
+}
+// an album's listening, from the log: how often and when (under the title), each listen (the Plays tab, or a section on
+// Classic), and on each track how often it was heard
+const trackWord = s => String(s || "").toLowerCase().replace(/[(\[].*?[)\]]/g, "").replace(/[^a-z0-9]/g, "");
+function albumPlays(el, id, d, sel) {
+  if (!on("features", "history")) return;
+  api("/api/album-plays?id=" + id).then(r => {
+    if (!el.isConnected || r.error) return;
+    const len = d.tracks.length, whole = r.listens.filter(x => x.n >= len).length;
+    const day = t => new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: new Date(t * 1000).getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+    const line = !r.plays ? "Not played yet" : [`Played ${r.plays === 1 ? "once" : r.plays + " times"}`, "last " + day(r.last), whole ? `${whole === 1 ? "once" : whole === 2 ? "twice" : whole + " times"} the whole way through` : ""].filter(Boolean).join(" &middot; ");
+    el.querySelectorAll(".al-heard").forEach(h => { h.innerHTML = line; });
+    const rows = el.querySelectorAll(sel + " .trk");
+    d.tracks.forEach((t, i) => { const n = r.tracks[trackWord(t.title)], row = rows[i], at = row && $(".trk-who", row) || (row && $(".d", row)); if (n && at && !$(".trk-n", row)) at.insertAdjacentHTML("beforebegin", `<span class="trk-n" title="Heard ${n} ${n === 1 ? "time" : "times"}">${n}&times;</span>`); });
+    const list = r.listens.length ? `<ol class="al-plays">${r.listens.map(x => `<li><b>${new Date(x.t * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", year: new Date(x.t * 1000).getFullYear() === new Date().getFullYear() ? undefined : "numeric", hour: "numeric", minute: "2-digit" })}</b>
+      <span>${esc(roomByName(x.room))}${x.who && x.who !== "household" ? " &middot; " + esc(x.who) : ""}</span><em class="${x.n >= len ? "whole" : ""}">${x.n >= len ? "The whole album" : `${x.n} of ${len} tracks`}</em></li>`).join("")}</ol>` : `<p class="dim">The listening log hasn't heard it yet.</p>`;
+    const box = $(".al-plays-box", el); if (box) box.innerHTML = list;
+    const sec = $("#al-plays", el); if (sec && r.listens.length) sec.outerHTML = section("The listening log", "Plays", list, "", "al-plays-sec");
   }).catch(() => {});
 }
 // the credits of the song playing, for Now Playing's Credits tab: its own, then the record's

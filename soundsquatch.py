@@ -2188,6 +2188,41 @@ def heard_albums():
     return out
 
 
+def album_plays(album_id):
+    """An album's listening, from the log (every pressing of it): each listen, newest first, as History groups them (its
+    tracks one after another in one room, a start again before a track could have run its course joined to it), and how
+    often each track was heard (begun and played past half a minute, or to the end): {listens [{t, room, who, n}],
+    tracks {track word: plays}, plays, last}."""
+    a = album_row(album_id)
+    if not a:
+        return {"error": "no such album"}
+    k = copies(a[2], a[1])
+    try:
+        lc = sqlite3.connect(f"file:{LOG_DB}?mode=ro", uri=True, timeout=5)
+        rows = [r for r in lc.execute("select started, room, title, artist, album, outcome, played, duration, who from plays where lower(album) = lower(?) order by started",
+                                      (a[1],)).fetchall() if copies(r[3] or "", r[4] or "") == k]
+        lc.close()
+    except Exception:
+        return {"listens": [], "tracks": {}, "plays": 0, "last": 0}
+    heard, listens, last = [], [], None
+    for started, room, title, artist, album, outcome, played, duration, who in rows:
+        if last and last[1] == room and track_word(last[2]) == track_word(title) and started - last[0] < (last[7] or 0) + 120:
+            continue  # begun again: the same listen
+        last = (started, room, title, artist, album, outcome, played, duration, who)
+        if outcome == "finished" or (played or 0) >= 30:
+            heard.append(last)
+    tracks = Counter(track_word(r[2]) for r in heard)
+    for r in heard:
+        cur = listens[-1] if listens else None
+        if cur and cur["room"] == (r[1] or "") and r[0] - cur["_end"] < 1800:
+            cur["_titles"].add(track_word(r[2]))
+            cur["_end"] = r[0] + (r[7] or 0)
+        else:
+            listens.append({"t": round(r[0]), "room": r[1] or "", "who": r[8] or "", "_titles": {track_word(r[2])}, "_end": r[0] + (r[7] or 0)})
+    out = [{"t": x["t"], "room": x["room"], "who": x["who"], "n": len(x["_titles"])} for x in reversed(listens)]
+    return {"listens": out[:100], "tracks": dict(tracks), "plays": len(out), "last": out[0]["t"] if out else 0}
+
+
 def play_albums(req):
     """A mix from a set of albums (a Focus): one whole song from each of up to twelve of them, drawn at random, then the
     room's radio carries on."""
@@ -5365,6 +5400,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(share_link(int(qs.get("album_id", "0"))))
             if url.path == "/api/focuses":
                 return self.reply(focuses())
+            if url.path == "/api/album-plays":
+                return self.reply(album_plays(int(qs.get("id") or 0)))
             if url.path == "/api/heard-albums":
                 return self.reply(heard_albums())
             if url.path == "/api/art-choices":
