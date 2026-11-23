@@ -94,7 +94,8 @@ PICTURE_HOSTS = ("archive.org", "static.qobuz.com", "upload.wikimedia.org", "thu
                  "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",  # Deezer's
                  "resources.tidal.com",  # TIDAL's
                  "lastfm-img.freetls.fastly.net", "lastfm.freetls.fastly.net",
-                 "www.omnycontent.com")  # KEXP's session pictures  # Last.fm's, as Music & Artist Information names them
+                 "www.omnycontent.com",  # KEXP's session pictures
+                 "i.scdn.co")  # 1001 Albums' covers (Spotify's)  # Last.fm's, as Music & Artist Information names them
 LRCLIB = "https://lrclib.net/api/"  # lyrics, synced where it has them; free and keyless
 MUSIC_DIRS = ["/share/music"]  # Lyrion's media folders, as Lyrion has them (asked with each look at the library)
 CAPTURE_DIR = os.environ.get("CAPTURE_DIR", "")  # the turntable's songs, one folder a record (default: "From vinyl" in the music folder, so the library has them)
@@ -110,7 +111,7 @@ NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 
 # ───────────────────────── settings: settings.json beside the script, today's values the defaults ─────────────────────────
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
-DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp", "sounds"]
+DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp", "sounds", "a1001"]
 DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
@@ -165,6 +166,7 @@ def detect():
                     pfr=can("PFRBnm", "items"), ratings=can("ratingslight", "ratealbum"))  # Ratings Light 3.2 on: track ratings are Lyrion's
         asker = PLAYER if lms_qobuz.PLAYER.match(PLAYER or "") else next((p["playerid"] for p in rpc("", "players", "0", "20", timeout=5).get("players_loop") or [] if p.get("connected")), "")
         HAVE.update(**{x.key: bool(x.available(can, asker)) for x in streaming.ALL})  # installed and signed in
+        HAVE.update(a1001=can("1001Albums", "items"))  # 1001 Albums: the house's project, one album a day
         HAVE.update(kexp=can("kexp", "items"), bliss=can("blissmixer", "mix"))  # Bliss Mixer: how the house's own files sound  # Live on KEXP's sessions, through the KEXP plugin
         HAVE.update(archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
                     radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
@@ -2755,7 +2757,8 @@ def home():
             "connections": [dict(c, beyond=conn_beyond(c, artists), photo=conn_photo(c, profs)) for c in credit_links(albums, artists, profs, links, rng, today)], "beyond": beyond, "round": round_, "decade": decade,
             "decade_albums": [a[0] for a in rng.sample([a for a in albums if a[3] // 10 * 10 == decade and a[4]], min(18, sum(1 for a in albums if a[3] // 10 * 10 == decade and a[4])))] if decade else [],
             "genre": rng.choice(genres) if genres else "", "kexp": kexp_front(rotation, rng),
-            "sounds": {"seeds": own_heard[:3], "albums": sounds_front(own_heard)} if HAVE.get("bliss") and own_heard else None}
+            "sounds": {"seeds": own_heard[:3], "albums": sounds_front(own_heard)} if HAVE.get("bliss") and own_heard else None,
+            "a1001": album_1001()}
 
 
 def qobuz(req):
@@ -2989,6 +2992,42 @@ def home_loop():
         except Exception as e:
             note_error(f"Discover made ahead: {type(e).__name__}: {e}"[:200])
         time.sleep(15)
+
+
+# ───────────────────────── 1001 Albums: the house's project, the album of the day ─────────────────────────
+# The 1001 Albums plugin holds the house's username (its settings); the project is read where the plugin reads it,
+# 1001albumsgenerator.com's own API, and kept an hour: today's album, how far the project has come, its genres and
+# where to find it. On the shelves already, it opens its own page; else its page from the streaming service.
+A1001 = {"at": 0, "data": None}
+
+
+def album_1001():
+    if not HAVE.get("a1001"):
+        return None
+    if A1001["data"] is not None and time.time() - A1001["at"] < 3600:
+        return A1001["data"]
+    out = None
+    try:
+        user = rpc("", "pref", "plugin.1001albums:username", "?", timeout=5).get("_p2") or ""
+        if user:
+            d = get_json("https://1001albumsgenerator.com/api/v1/projects/" + urllib.parse.quote(user))
+            c = d.get("currentAlbum") or {}
+            if c and not d.get("paused"):
+                imgs = sorted(c.get("images") or [], key=lambda i: -(i.get("height") or 0))
+                want = lms_qobuz.plain(c.get("name") or "")
+                with lib_lock:
+                    own = next((a[0] for a in library["albums"] if lms_qobuz.plain(a[1]) == want and loose_artist(a[2]) == loose_artist(c.get("artist") or "")), None)
+                out = {"artist": c.get("artist") or "", "album": c.get("name") or "", "year": str(c.get("releaseDate") or "")[:4],
+                       "image": (imgs[0].get("url") if imgs else ""), "genres": (c.get("styles") or c.get("genres") or [])[:3],
+                       "day": len(d.get("history") or []) + 1, "album_id": own, "wiki": c.get("wikipediaUrl") or "",
+                       "page": d.get("shareableUrl") or f"https://1001albumsgenerator.com/{urllib.parse.quote(user)}"}
+            elif d.get("paused"):
+                out = {"paused": True, "page": f"https://1001albumsgenerator.com/{urllib.parse.quote(user)}"}
+    except Exception as e:
+        note_error(f"1001 Albums: {type(e).__name__}: {e}"[:200])
+        return A1001["data"]  # the last one, while the site is away
+    A1001.update(at=time.time(), data=out)
+    return out
 
 
 # ───────────────────────── Sounds like: Bliss Mixer's ear for the house's own files ─────────────────────────

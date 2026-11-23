@@ -577,6 +577,7 @@ function drawDiscover(el) {
   if (on("discover", "fresh")) put("fresh", section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
   if (on("discover", "rediscover") && h.rediscover.length) put("rediscover", section("Not heard lately", "Rediscover", `<div class="mosaic">${h.rediscover.slice(0, 12).map((id, i) => albumCard(A.byId.get(id), i === 0 ? "big" : "")).join("")}</div>`));
   if (on("discover", "connections") && h.connections.length) put("connections", section("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`));
+  if (on("discover", "a1001") && h.a1001 && h.a1001.album) put("a1001", section("1001 Albums You Must Hear Before You Die", "Today's album", card1001(h.a1001), "", "a1001-sec"));
   const sounds = (h.sounds && h.sounds.albums || []).map(id => A.byId.get(id)).filter(Boolean);
   if (on("discover", "sounds") && sounds.length) put("sounds", section("By ear", "Sounds like what you've been playing", shelf(sounds.map(a => albumCard(a))), "", "sounds"));
   if (on("discover", "kexp") && (h.kexp || []).length) put("kexp", section("Live on KEXP", "Your artists in the studio", shelf(h.kexp.map(kexpCard)), "", "kexp"));
@@ -923,6 +924,18 @@ VIEWS.artist = function (el, name) {
   }).catch(() => { if (!drawn) el.innerHTML = `${pageBar(esc(name), ["Artist"], "", true)}<div class="empty-state"><h1>${esc(name)}</h1><p>Couldn't reach the artist desk.</p></div>`; });
   load();
 };
+// the house's 1001 Albums project: today's album, large, with how far the project has come; on the shelves it's
+// theirs (its page, played from there), else its page from the streaming service
+function card1001(x) {
+  const open = x.album_id ? albumHref(x.album_id) : awayHref(x.artist, x.album, x.image);
+  const spin = x.album_id ? `<button class="btn" data-act="playAlbum" data-v="${x.album_id}">${icon("play")} Spin it</button>`
+    : `<button class="btn" data-act="awayChip" data-v="${esc(JSON.stringify([x.artist, x.album]))}">${icon("play")} Spin it</button>`;
+  return `<div class="a1001"><a class="a1001-art" href="${open}">${x.image ? `<img loading="lazy" src="${esc(pic(x.image, 640))}" alt="">` : `<div class="noart">${esc(x.album.slice(0, 1))}</div>`}</a>
+    <div class="a1001-text"><div class="kicker">No. ${x.day} of 1001${x.album_id ? " &middot; on your shelves" : ""}</div><h3><a href="${open}">${esc(x.album)}</a></h3>
+      <div class="a1001-by"><a href="${artistHref(x.artist)}">${esc(x.artist)}</a>${x.year ? ", " + esc(x.year) : ""}</div>
+      ${(x.genres || []).length ? `<div class="genres">${x.genres.map(g => `<span>${esc(g)}</span>`).join("")}</div>` : ""}
+      <div class="acts">${spin}<a class="btn ghost" href="${esc(x.page)}" target="_blank" rel="noopener">Your project</a></div></div></div>`;
+}
 // a Live on KEXP session: its picture, who, when and how long; it opens to its setlist, to play or put next
 function kexpCard(x) {
   const art = x.image ? `<img loading="lazy" decoding="async" src="${esc(pic(x.image, 320))}" alt="">` : `<div class="noart">${esc((x.artist || "K").slice(0, 1))}</div>`;
@@ -1110,6 +1123,7 @@ VIEWS.front = function (el) {
     const P = {}, D = k => on("discover", k);
     if (D("fresh") && newArrivals(1).length) P.fresh = sec("Just in", `Recently added <a class="fp-all" href="#/albums" data-act="recentAll">All of them</a>`, shelf(newArrivals(20).map(arrivalCard)));
     if (D("vinyl") && physicalShelf()) P.vinyl = sec("Let's get physical", `From the record shelf <a class="fp-all" href="#/vinyl">All of them</a>`, physicalShelf());
+    if (D("a1001") && h.a1001 && h.a1001.album) P.a1001 = sec("1001 Albums You Must Hear Before You Die", "Today's album", card1001(h.a1001));
     const sounds = (h.sounds && h.sounds.albums || []).map(id => A.byId.get(id)).filter(Boolean);
     if (D("sounds") && sounds.length) P.sounds = sec("By ear", "Sounds like what you've been playing", shelf(sounds.map(a => albumCard(a))));
     if (D("kexp") && (h.kexp || []).length) P.kexp = sec("Live on KEXP", "Your artists in the studio", shelf(h.kexp.map(kexpCard)));
@@ -1958,6 +1972,7 @@ const FEATS = [["stations", "Stations", "radio seeded from artists you choose"],
   ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"],
   ["prefer_captured", "Your vinyl first", "an album with a take captured from the turntable opens and spins that take; off, the best-sounding copy does"]];
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
+  ["a1001", "1001 Albums", "today's album from your 1001albumsgenerator.com project, on Discover (its username in the plugin's settings)", 1],
   ["bliss", "Bliss Mixer", "\"Sounds like this\" on album pages and Discover, from how your own files sound (your files only, not streamed albums)", 1],
   ["kexp", "KEXP", "your artists' Live on KEXP sessions, on Discover and their pages", 1],
   ["tidal", "TIDAL", "TIDAL's releases and similar artists on artist pages, and search beyond your shelves (with a TIDAL subscription; Qobuz is used when both are installed)", 1],
@@ -1974,8 +1989,8 @@ const PLUGIN_FOR = { archive: "ArchiveLMA", stations: "Don't Stop the Music and 
 /* Discover's order: each look its own until the house drags one into Settings' list, then both follow it (each skipping
    what it doesn't draw); a section added since takes its place after the one it follows in the look's own order.
    The cover stories (the classic page's top, the front's lead) aren't in it: the page starts with them. */
-const DISC_CLASSIC = ["stations", "because", "rotation", "back", "new", "listenlater", "lbfresh", "pitchfork", "spotlight", "vinyl", "fresh", "rediscover", "connections", "beyond", "archive", "kexp", "sounds", "loved", "round", "decade", "genre"];
-const DISC_FRONT = ["fresh", "vinyl", "stations", "spotlight", "rotation", "new", "back", "listenlater", "lbfresh", "pitchfork", "round", "because", "sounds", "archive", "kexp", "rediscover", "connections", "decade", "genre", "loved", "beyond"];
+const DISC_CLASSIC = ["a1001", "stations", "because", "rotation", "back", "new", "listenlater", "lbfresh", "pitchfork", "spotlight", "vinyl", "fresh", "rediscover", "connections", "beyond", "archive", "kexp", "sounds", "loved", "round", "decade", "genre"];
+const DISC_FRONT = ["a1001", "fresh", "vinyl", "stations", "spotlight", "rotation", "new", "back", "listenlater", "lbfresh", "pitchfork", "round", "because", "sounds", "archive", "kexp", "rediscover", "connections", "decade", "genre", "loved", "beyond"];
 function discOrder(mag) {
   const base = mag ? DISC_FRONT : DISC_CLASSIC, out = ((A.cfg && A.cfg.discover_order) || []).filter(k => base.indexOf(k) >= 0);
   if (!out.length) return base.slice();
@@ -1984,7 +1999,7 @@ function discOrder(mag) {
 }
 const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", "Kindred spirits"], ["rotation", "On rotation"], ["back", "Back to it"], ["new", "New from your artists"],
   ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
-  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"], ["kexp", "Live on KEXP"], ["sounds", "Sounds like what you've played"]];
+  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"], ["kexp", "Live on KEXP"], ["sounds", "Sounds like what you've played"], ["a1001", "1001 Albums"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
 VIEWS.settings = function (el, arg) {
   if (SET_TABS.some(t => t[0] === arg)) device.set("settab", arg);

@@ -1637,3 +1637,13 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .kx-sheet > img { width: 100%; border-radius: 6px; }
 .kx-set { margin: 12px 0 4px; padding-left: 22px; font: 15px/1.6 var(--serif); color: var(--dim); }
 @media (max-width: 600px) { .kx-sheet { grid-template-columns: minmax(0, 1fr); } .kx-sheet > img { max-width: 220px; } }
+
+/* 1001 Albums: today's album, large, beside what it is */
+.a1001 { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 28px; align-items: center; }
+.a1001-art img, .a1001-art .noart { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; display: block; }
+.a1001-text h3 { margin: 6px 0 4px; font: 700 clamp(28px, 3.4vw, 40px)/1.05 var(--display); }
+.a1001-text h3 a, .a1001-by a { color: inherit; text-decoration: none; }
+.a1001-by { font: italic 19px var(--serif); color: var(--dim); }
+.a1001-text .genres { margin: 12px 0 4px; }
+.a1001-text .acts { margin-top: 16px; }
+@media (max-width: 600px) { .a1001 { grid-template-columns: minmax(0, 1fr); } .a1001-art { max-width: 320px; } }
