@@ -3115,6 +3115,7 @@ def kexp_loop():
                 if n:
                     kv_set("kexp", KEXP)
                     payload["version"] += 1
+                    HOME["at"] = 0  # Discover made again at the next visit, with the sessions in it
         except Exception as e:
             note_error(f"Live on KEXP: {type(e).__name__}: {e}"[:200])
         time.sleep(6 * 3600)
