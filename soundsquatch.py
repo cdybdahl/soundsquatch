@@ -656,8 +656,12 @@ def save_settings(req):
     os.chmod(SETTINGS_FILE + ".tmp", 0o600)
     os.replace(SETTINGS_FILE + ".tmp", SETTINGS_FILE)
     apply_settings()
-    library["scan"] = None
-    threading.Thread(target=lambda: load_library(force=True), daemon=True).start()
+    # the shelves read again only when what they're read from or how they're sorted changed: Lyrion's address or login,
+    # the Discogs collection, which copy leads. A Discover switch doesn't need it, and Lyrion, busy with the whole
+    # library, kept the save's own checks waiting (8 s for a switch)
+    if req.get("connections") or "discogs_token" in req or "prefer_captured" in (req.get("features") or {}):
+        library["scan"] = None
+        threading.Thread(target=lambda: load_library(force=True), daemon=True).start()
     return dict(settings_for_app(), ok=True)
 
 db_lock = threading.Lock()
