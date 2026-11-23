@@ -3121,8 +3121,8 @@ def kexp_find(name):
         if not kexp_performer_matches(performer, name):
             continue
         date, _, mins = when.partition(" \u00b7 ")
-        if date in dates and "[" in performer:
-            continue  # the same day's "Performance & Interview Only" cut: the full one is kept
+        if date in dates:
+            continue  # the same day again: KEXP's "Performance & Interview Only" cut of that visit
         sub = rpc(PLAYER, "kexp", "items", "0", "60", f"item_id:2.1.{i}", f"search:{name}", "menu:1").get("item_loop") or []
         play = next((y for y in sub if y.get("type") == "audio"), None)
         pp = (play or {}).get("presetParams") or {}
@@ -3135,16 +3135,27 @@ def kexp_find(name):
     return out
 
 
+def kexp_one_a_day(sessions):
+    """One session a day an artist played: KEXP also publishes a "Performance & Interview Only" cut of the same visit."""
+    seen, out = set(), []
+    for x in sessions:
+        k = (key(x.get("artist") or ""), x.get("date"))
+        if k not in seen:
+            seen.add(k)
+            out.append(x)
+    return out
+
+
 def kexp_of(name):
     hit = KEXP.get(key(name or ""))
-    return hit["sessions"] if hit else []
+    return kexp_one_a_day(hit["sessions"]) if hit else []
 
 
 def kexp_front(rotation, rng):
     """Discover's Live on KEXP: sessions of the artists in rotation first, then the newest of the rest; a dozen."""
     when = lambda s: time.mktime(time.strptime(s["date"], "%b %d, %Y")) if re.match(r"^[A-Z][a-z]{2} \d{1,2}, \d{4}$", s.get("date") or "") else 0
     spun = {key(n) for n in rotation}
-    every = [s for k, v in KEXP.items() for s in v["sessions"]]
+    every = kexp_one_a_day([s for k, v in KEXP.items() for s in v["sessions"]])
     first = sorted((s for k, v in KEXP.items() if k in spun for s in v["sessions"][:1]), key=when, reverse=True)
     rest = sorted((s for s in every if s not in first), key=when, reverse=True)
     return (first + rest)[:12]
