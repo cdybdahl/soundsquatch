@@ -18,6 +18,7 @@ const fixedVolume = id => !!houseRoom(id).fixed;
 const ICONS = {
   compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  apps: '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><circle cx="16.5" cy="16.5" r="3.5"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
   tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8" r="1.3"/>',
@@ -2207,6 +2208,95 @@ function dayLabel(d) {
   return n === 0 ? "Today" : n === 1 ? "Yesterday" : d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
 
+/* ───────────────────────── Lyrion's own menus: every app and plugin, as Lyrion describes them ─────────────────────────
+   Lyrion hands any app its menus the way its own remotes have them (a command's "items", menu:1): each item says what
+   it does, or borrows the list's own ("base") actions, filled in from the item's params. go opens the next level;
+   play, add (to the end) and add-hold (next) play it; more opens what can be done with it; do runs a command (a
+   setting); a search item asks for words (__TAGGEDINPUT__); checkbox and radio items are switches. One page draws any
+   of it, so every plugin works here, those we've never met among them. A level is #/lms/<its command and params>. */
+const lmEnc = o => encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(o)))));
+const lmDec = s => { try { return JSON.parse(decodeURIComponent(escape(atob(s)))); } catch (e) { return null; } };
+const lmHref = (cmd, params, title) => "#/lms/" + lmEnc({ c: cmd, p: params || {}, t: title || "" });
+function lmAction(item, base, name) {
+  const own = item.actions && item.actions[name];
+  if (own === null || own === 0) return null;
+  if (own) return { cmd: own.cmd, params: Object.assign({}, own.params || {}), next: own.nextWindow || item.nextWindow, player: own.player };
+  const b = base && base.actions && base.actions[name];
+  if (b && b.cmd && (!b.itemsParams || item[b.itemsParams])) return { cmd: b.cmd, params: Object.assign({}, b.params || {}, b.itemsParams ? item[b.itemsParams] : {}), next: b.nextWindow || item.nextWindow };
+  return null;
+}
+const lmArgs = (cmd, params, extra) => { const out = cmd.slice(), p = Object.assign({}, params, extra || {}); Object.keys(p).forEach(k => { if (p[k] != null && k !== "_index" && k !== "_quantity") out.push(k + ":" + p[k]); }); return out; };
+// a list level asked for: its command, then where to start and how many, then its params
+const lmItems = (cmd, params, start, n) => lms(A.room || "", cmd.concat([start || 0, n || 200]).concat(lmArgs([], Object.assign({ menu: 1 }, params))));
+function lmIcon(x) {
+  const pp = x.presetParams || {}, u = x["icon-id"] != null ? String(x["icon-id"]) : x.icon || x.image || pp.icon || "";
+  if (!u) return "";
+  if (/^-?\d+$/.test(u) || /^[0-9a-f]{8}$/i.test(u)) return `/music/${u}/cover_150x150_m`;
+  if (/^https?:/.test(u)) return pic(u, 160);
+  return u.charAt(0) === "/" ? u : "/" + u;
+}
+// one item, drawn: what it is, and what can be done with it here
+function lmRow(x, base, i, where) {
+  const lines = String(x.text || x.name || "").split("\n"), img = lmIcon(x);
+  const go = lmAction(x, base, "go"), play = lmAction(x, base, "play"), more = lmAction(x, base, "more"), doIt = lmAction(x, base, "do");
+  const search = x.input || (go && JSON.stringify(go.params).indexOf("__TAGGEDINPUT__") >= 0) || x.type === "search";
+  const ref = `data-v="${where}:${i}"`;
+  const art = img ? `<img loading="lazy" src="${esc(img)}" alt="" onerror="this.style.visibility='hidden'">` : `<span class="lm-noart">${icon(go ? "list" : "play")}</span>`;
+  const words = `<span class="lm-w"><b>${esc(lines[0])}</b>${lines[1] ? `<em>${esc(lines.slice(1).join(" · "))}</em>` : ""}</span>`;
+  if (search) return `<form class="lm-search" data-act="lmSearch" ${ref}>${icon("search")}<input type="search" placeholder="${esc(lines[0] || "Search")}" autocomplete="off" autocapitalize="off"><button class="pill" type="submit">Search</button></form>`;
+  if (x.checkbox != null) return `<button class="lm-row lm-switch ${+x.checkbox ? "on" : ""}" data-act="lmCheck" ${ref}>${words}<i class="sw"></i></button>`;
+  if (x.radio != null) return `<button class="lm-row lm-radio ${+x.radio ? "on" : ""}" data-act="lmDo" ${ref}>${words}<i class="rd"></i></button>`;
+  if (!go && !play && !doIt) return `<div class="lm-row lm-text">${img ? art : ""}${words}</div>`;
+  const tapPlays = play && (!go || x.goAction === "play" || x.type === "audio" || x.isaudio);
+  const acts = play ? `<span class="lm-acts"><button data-act="lmPlay" ${ref} aria-label="Play">${icon("play")}</button><button data-act="lmNext" ${ref} aria-label="Play next">${icon("next_up")}</button><button data-act="lmAdd" ${ref} aria-label="Add to the queue">${icon("queue")}</button></span>` : "";
+  return `<div class="lm-row"><button class="lm-go" data-act="${tapPlays ? "lmPlay" : doIt && !go ? "lmDo" : "lmGo"}" ${ref}>${art}${words}</button>${acts}${more ? `<button class="lm-more" data-act="lmMore" ${ref} aria-label="More">${icon("more")}</button>` : ""}</div>`;
+}
+const LMV = {}; // the levels on screen and in the sheet: their items and base actions, by where they're drawn
+function lmDraw(box, where, r, title) {
+  LMV[where] = { items: r.item_loop || [], base: r.base || null, title };
+  const text = r.window && r.window.textarea ? `<p class="lm-textarea">${esc(r.window.textarea)}</p>` : "";
+  box.innerHTML = text + (LMV[where].items.length ? `<div class="lm-list">${LMV[where].items.map((x, i) => lmRow(x, r.base, i, where)).join("")}</div>`
+    : text ? "" : `<p class="dim">Nothing here.</p>`) + (+r.count > LMV[where].items.length ? `<p class="dim center">${LMV[where].items.length} of ${r.count}</p>` : "");
+}
+VIEWS.lms = function (el, arg) {
+  const o = arg ? lmDec(arg) : null;
+  if (!o) { // the top: every app, then radio, as Lyrion lists them
+    el.innerHTML = `${pageBar("Apps", ["Lyrion's apps and radio", "&nbsp;"])}<div class="lm-page"><div class="kicker">Apps</div><div id="lm-apps">${gathering("small")}</div><div class="kicker lm-k2">Radio</div><div id="lm-radio"></div></div>`;
+    lms(A.room || "", ["apps", 0, 100, "menu:1"]).then(r => lmDraw($("#lm-apps", el), "apps", r, "Apps")).catch(() => { $("#lm-apps", el).innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+    lms(A.room || "", ["radios", 0, 100, "menu:1"]).then(r => lmDraw($("#lm-radio", el), "radio", r, "Radio")).catch(() => {});
+    return;
+  }
+  el.innerHTML = `${pageBar(esc(o.t || "Apps"), ["Lyrion", "&nbsp;"], "", true)}<div class="lm-page" id="lm-body">${gathering("small")}</div>`;
+  el.lmWhere = "v" + Math.random().toString(36).slice(2, 8);
+  lmItems(o.c, o.p).then(r => { if (el.isConnected) lmDraw($("#lm-body", el), el.lmWhere, r, o.t); })
+    .catch(() => { $("#lm-body", el).innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+};
+function lmRefresh() { // the level on screen drawn again (a setting changed, an item added or removed)
+  closeSheet();
+  if (current && current.kind === "lms") VIEWS.lms(current.el, decodeURIComponent(location.hash.split("/lms/")[1] || ""));
+}
+// a search item: the words put where Lyrion asks for them, and its next level opened
+document.addEventListener("submit", e => {
+  const f = e.target.closest && e.target.closest("form.lm-search"); if (!f) return;
+  e.preventDefault();
+  const words = $("input", f).value.trim(), got = lmItem(f.dataset.v), x = got[0]; if (!words || !x) return;
+  const a = lmAction(x, got[1], "go") || { cmd: [], params: {} }; if (!a.cmd.length) return;
+  const params = {}; Object.keys(a.params).forEach(k => { params[k] = String(a.params[k]).replace("__TAGGEDINPUT__", words); });
+  if (JSON.stringify(a.params).indexOf("__TAGGEDINPUT__") < 0) params.search = words;
+  closeSheet();
+  location.hash = lmHref(a.cmd, params, `“${words}”`);
+});
+const lmItem = v => { const k = v.lastIndexOf(":"), lvl = LMV[v.slice(0, k)]; return lvl ? [lvl.items[+v.slice(k + 1)], lvl.base, lvl] : [null]; };
+function lmRun(v, name, words) {
+  const got = lmItem(v), x = got[0]; if (!x) return;
+  const a = lmAction(x, got[1], name); if (!a) return toast("Lyrion offers nothing for that");
+  const playing = /^(play|add|add-hold)$/.test(name);
+  (playing && A.room ? inOrder() : Promise.resolve()).then(() => lms(A.room || "", lmArgs(a.cmd, a.params))).then(() => {
+    if (words) toast(words);
+    if (playing) setTimeout(poll, 600);
+    if (a.next === "refresh" || a.next === "parent" || name === "do") lmRefresh();
+  }).catch(() => toast("Lyrion didn't answer"));
+}
 /* ───────────────────────── search ───────────────────────── */
 let searchT, qobuzT, archT, lastQ = "";
 VIEWS.search = function (el) {
@@ -2734,6 +2824,29 @@ const ACT = {
     closeSheet();
     inOrder().then(() => api("/api/kexp-play", { url: x.url, title: x.title, how: v, player: A.room }))
       .then(r => { toast(r.error || (v === "insert" ? "Next up: " + x.artist + " on KEXP" : `Playing in ${roomName(A.room)}`)); setTimeout(poll, 600); }).catch(() => toast("The server didn't answer"));
+  },
+  lmGo: v => {
+    const got = lmItem(v), x = got[0]; if (!x) return;
+    const a = lmAction(x, got[1], "go"); if (!a) return;
+    closeSheet();
+    location.hash = lmHref(a.cmd, a.params, String(x.text || x.name || "").split("\n")[0]);
+  },
+  lmPlay: v => lmRun(v, "play", `Playing in ${roomName(A.room)}`),
+  lmNext: v => lmRun(v, "add-hold", "Next up"),
+  lmAdd: v => lmRun(v, "add", "Added to the queue"),
+  lmDo: v => lmRun(v, "do", ""),
+  lmCheck: (v, t) => {
+    const got = lmItem(v), x = got[0]; if (!x) return;
+    const on = !+x.checkbox, a = (x.actions || {})[on ? "on" : "off"]; if (!a) return;
+    x.checkbox = on ? 1 : 0; t.classList.toggle("on", on);
+    lms(A.room || "", lmArgs(a.cmd, a.params)).catch(() => toast("Lyrion didn't answer"));
+  },
+  lmMore: v => {
+    const got = lmItem(v), x = got[0]; if (!x) return;
+    const a = lmAction(x, got[1], "more"); if (!a) return;
+    openSheet(`<div class="kicker">More</div><h3>${esc(String(x.text || "").split("\n")[0])}</h3><div id="lm-sheet">${gathering("small")}</div>`);
+    lmItems(a.cmd, a.params, 0, 100)
+      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, ""); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
   },
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;

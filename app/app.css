@@ -1647,3 +1647,33 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .a1001-text .genres { margin: 12px 0 4px; }
 .a1001-text .acts { margin-top: 16px; }
 @media (max-width: 600px) { .a1001 { grid-template-columns: minmax(0, 1fr); } .a1001-art { max-width: 320px; } }
+
+/* Lyrion's own menus: any app's or plugin's levels as rows */
+.lm-page { padding: 20px var(--gut) 60px; max-width: 980px; }
+.lm-k2 { margin-top: 30px; }
+.lm-list { display: grid; }
+.lm-row { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--rule); min-height: 58px; width: 100%; text-align: left; }
+.lm-go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 8px 0; text-align: left; color: inherit; }
+.lm-go img, .lm-row > img, .lm-noart { width: 44px; height: 44px; flex: none; object-fit: cover; border-radius: 4px; background: var(--bg3); }
+.lm-noart { display: flex; align-items: center; justify-content: center; color: var(--faint); }
+.lm-noart .ic { width: 20px; height: 20px; }
+.lm-w { flex: 1; min-width: 0; }
+.lm-w b { display: block; font: 500 16px/1.3 var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-w em { display: block; font: 13.5px/1.3 var(--sans); font-style: normal; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-text .lm-w b { font-weight: 400; white-space: normal; }
+.lm-acts { display: flex; flex: none; gap: 2px; }
+.lm-acts button, .lm-more { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 19px; color: var(--faint); flex: none; }
+.lm-acts button:hover, .lm-more:hover { color: var(--ink); background: rgba(255, 255, 255, .06); }
+.lm-acts .ic, .lm-more .ic { width: 18px; height: 18px; }
+.lm-switch, .lm-radio { padding: 8px 0; justify-content: space-between; }
+.lm-radio .rd { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--faint); flex: none; }
+.lm-radio.on .rd { border-color: var(--accent); box-shadow: inset 0 0 0 4px var(--bg), inset 0 0 0 9px var(--accent); }
+.lm-search { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.lm-search input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid var(--rule); background: transparent; color: var(--ink); font: 15px var(--sans); }
+.lm-search > .ic { width: 18px; height: 18px; color: var(--faint); flex: none; }
+.lm-textarea { font: 16px/1.6 var(--serif); color: var(--dim); white-space: pre-line; max-width: 68ch; }
+@media (max-width: 600px) { .lm-acts button:not(:first-child) { display: none; } }
+.lm-switch .sw { flex: none; width: 46px; height: 28px; border-radius: 14px; background: rgba(255, 255, 255, .15); position: relative; transition: background .2s; }
+.lm-switch .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 11px; background: var(--ink); transition: transform .2s; }
+.lm-switch.on .sw { background: var(--accent); }
+.lm-switch.on .sw::after { transform: translateX(18px); }

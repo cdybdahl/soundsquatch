@@ -5753,6 +5753,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(stamped_index(), "text/html; charset=utf-8")
             if url.path.startswith("/music/") or url.path.startswith("/imageproxy/"):
                 return self.pass_to_lms("GET")
+            if re.match(r"^/(html/images|plugins/[A-Za-z0-9_]+/html)/[A-Za-z0-9_./-]+\.(png|jpe?g|gif|svg|webp)$", url.path) and ".." not in url.path:
+                return self.pass_to_lms("GET")  # Lyrion's own and its plugins' menu icons (images only: not its web pages)
             if url.path == "/api/turntable":
                 return self.reply(turntable_state())
             if url.path == "/api/screen":
