@@ -39,11 +39,13 @@ import hashlib
 import hmac
 import io
 import json
+import math
 import os
 import random
 import re
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -5128,6 +5130,12 @@ def tt_side(path, s0, s1, gaps):
             songs.insert(0, (s0, None))
         safe = lambda t: re.sub(r'[\\/:*?"<>|]+', "-", t).strip(" .")[:120] or "-"
         lengths = {}
+        try:
+            gain = tt_side_gain(path)
+        except Exception as e:
+            gain = 0.0
+            note_error(f"turntable level: {type(e).__name__}: {e}"[:200])
+        folders = set()
         for n, (start, m) in enumerate(songs):
             end = songs[n + 1][0] if n + 1 < len(songs) else s1
             rec0 = (m or {}).get("rec")
@@ -5157,7 +5165,8 @@ def tt_side(path, s0, s1, gaps):
                 dest = os.path.join(folder, safe(f"{pos + ' ' if pos else ''}{title} (take {k})") + ".flac")
                 k += 1
             tmp = dest + ".part"
-            subprocess.run(["ffmpeg", "-v", "quiet", "-y", "-ss", f"{start - s0:.3f}", "-to", f"{end - s0:.3f}", "-i", path, "-c:a", "flac", "-f", "flac", tmp], timeout=600)
+            subprocess.run(["ffmpeg", "-v", "quiet", "-y", "-ss", f"{start - s0:.3f}", "-to", f"{end - s0:.3f}", "-i", path] + (["-af", f"volume={gain:.2f}dB"] if gain > 0.5 else [])
+                           + ["-c:a", "flac", "-sample_fmt", "s16", "-f", "flac", tmp], timeout=600)
             try:
                 from mutagen.flac import FLAC
                 f = FLAC(tmp)
@@ -5171,9 +5180,15 @@ def tt_side(path, s0, s1, gaps):
             except Exception as e:
                 note_error(f"turntable tags: {e}")
             shutil.move(tmp, dest)  # whole, and only then where Lyrion looks
+            folders.add(folder)
             if rec:
                 record_cover(rec[0], folder)
             TT["captured"] = True
+        for folder in folders:  # the record's songs, its loudness worked out again with the new ones in it
+            try:
+                tag_replaygain(folder)
+            except Exception as e:
+                note_error(f"turntable ReplayGain: {type(e).__name__}: {e}"[:200])
     except Exception as e:
         note_error(f"turntable side: {type(e).__name__}: {e}"[:200])
     finally:
@@ -5182,6 +5197,85 @@ def tt_side(path, s0, s1, gaps):
     if TT.pop("captured", False):
         try:
             rpc("", "rescan")  # the side's songs into the library now, not when the spin ends (a restart before then would lose it)
+        except Exception:
+            pass
+
+
+def tt_side_gain(path):
+    """How much a captured side is raised, in dB: its loudest music (the level only one sample in 20,000 passes, so a
+    click or two doesn't decide it) brought to -1 dBFS, at most +18 dB. The interface records a record-out's line level
+    low (squatch-ear's peaked near -10 dBFS, about 15 dB under the same master on Qobuz), and has no gain of its own.
+    One gain for the whole side: the record's own ups and downs are kept."""
+    import numpy as np
+    p = subprocess.Popen(["ffmpeg", "-v", "quiet", "-i", path, "-f", "s16le", "-ac", "2", "-"], stdout=subprocess.PIPE)
+    counts = np.zeros(32769, dtype=np.int64)
+    while True:
+        buf = p.stdout.read(1 << 20)
+        if not buf:
+            break
+        x = np.abs(np.frombuffer(buf[: len(buf) // 2 * 2], dtype=np.int16).astype(np.int32))
+        counts += np.bincount(np.minimum(x, 32768), minlength=32769)
+    p.wait()
+    total = int(counts.sum())
+    if not total:
+        return 0.0
+    level = int(np.searchsorted(np.cumsum(counts), total * (1 - 1 / 20000)))
+    if level < 30:
+        return 0.0  # silence: nothing to raise
+    return float(max(0.0, min(18.0, 20 * math.log10(32767 * 10 ** (-1 / 20) / level))))
+
+
+def loudness(path):
+    """A file's loudness (EBU R128, LUFS), its sample peak (1.0 the most a file holds) and its length in seconds."""
+    out = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af", "ebur128=peak=sample", "-f", "null", "-"],
+                         capture_output=True, text=True, timeout=600).stderr
+    summary = out[out.rfind("Summary:"):]
+    i = re.search(r"I:\s*(-?[\d.]+) LUFS", summary)
+    pk = re.search(r"Sample peak:\s*Peak:\s*(-?[\d.inf]+) dBFS", summary.replace("\n", " "))
+    dur = re.search(r"Duration: (\d+):(\d+):([\d.]+)", out)
+    if not i:
+        return None
+    peak = 10 ** (float(pk.group(1)) / 20) if pk and "inf" not in pk.group(1) else 1.0
+    return float(i.group(1)), min(peak, 1.0), (int(dur.group(1)) * 3600 + int(dur.group(2)) * 60 + float(dur.group(3))) if dur else 0.0
+
+
+def tag_replaygain(folder):
+    """ReplayGain for a captured record's songs (each its own, and the record's across them, -18 LUFS the reference),
+    so a room levelling its volume plays the house's captures and the same albums streamed alike. The audio untouched."""
+    from mutagen.flac import FLAC
+    files = sorted(os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".flac"))
+    got = {f: loudness(f) for f in files}
+    got = {f: v for f, v in got.items() if v and v[0] > -70}
+    if not got:
+        return
+    weight = sum(v[2] for v in got.values()) or len(got)
+    album = 10 * math.log10(sum((v[2] or 1) * 10 ** (v[0] / 10) for v in got.values()) / weight)
+    album_peak = max(v[1] for v in got.values())
+    for f, (i, peak, _) in got.items():
+        t = FLAC(f)
+        t.update({"replaygain_track_gain": f"{-18 - i:+.2f} dB", "replaygain_track_peak": f"{peak:.6f}",
+                  "replaygain_album_gain": f"{-18 - album:+.2f} dB", "replaygain_album_peak": f"{album_peak:.6f}"})
+        t.save()
+
+
+def replaygain_captures():
+    """Once: the captures made before ReplayGain was written for them get it (their audio as it was captured)."""
+    if kv_get("captures-replaygain"):
+        return
+    root = capture_dir()
+    done = 0
+    for d in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        folder = os.path.join(root, d)
+        if os.path.isdir(folder) and not d.startswith("."):
+            try:
+                tag_replaygain(folder)
+                done += 1
+            except Exception as e:
+                note_error(f"captures ReplayGain: {d}: {type(e).__name__}: {e}"[:200])
+    kv_set("captures-replaygain", {"at": time.time(), "records": done})
+    if done:
+        try:
+            rpc("", "rescan")  # Lyrion reads the new tags
         except Exception:
             pass
 
@@ -5894,7 +5988,7 @@ if __name__ == "__main__":
     start_recorder()
     start_turntable()
     lapsed_local_artwork()
-    for job in (carry_ratings, lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
+    for job in (replaygain_captures, carry_ratings, lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does
