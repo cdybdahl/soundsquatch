@@ -2050,15 +2050,39 @@ VIEWS.history = function (el) {
     const through = plays.filter(x => x.outcome === "finished").length;
     $(".mast-acts", el).insertAdjacentHTML("afterbegin", plays.length ? `<span class="mast-stat"><b>${plays.length}</b> plays &middot; ${Math.round(through / plays.length * 100)}% heard through</span>` : "");
     if (plays.length) $(".hist", el).insertAdjacentHTML("beforebegin", histStats(plays));
-    let day = "";
-    $(".hist", el).innerHTML = plays.length ? plays.map(x => {
-      const d = new Date(x.t * 1000), label = dayLabel(d), head = label !== day ? `<div class="hist-day">${esc(label)}</div>` : ""; day = label;
+    const time = t => new Date(t * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const row = x => {
       const early = x.outcome === "skipped" && x.played < 45, href = x.album_id ? albumHref(x.album_id) : artistHref(splitArtist(x.artist));
-      return `${head}<a class="hrow ${early ? "skip" : ""}" href="${href}"><span class="ht">${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span>
+      return `<a class="hrow ${early ? "skip" : ""}" href="${href}"><span class="ht">${time(x.t)}</span>
         ${x.art ? `<img loading="lazy" src="${cover(x.art, 150)}" alt="">` : `<span class="noimg"></span>`}<span class="hw"><b>${esc(x.title)}</b><em>${esc(x.artist)}${x.album ? " &middot; " + esc(x.album) : ""}</em></span>
         ${x.url ? `<button class="pill keep-log" data-act="keepLog" data-v="${esc(x.url)}" data-k="${esc(norm(x.artist + "|" + x.album))}" aria-label="Add to the library">${icon("heart")}<span class="pl">Add to library</span></button>` : ""}
         <span class="hr">${esc(roomByName(x.room))}${x.who && x.who !== "household" ? " &middot; " + esc(x.who) : ""}</span><span class="ho">${early ? "skipped at " + mmss(x.played) : x.library || x.album_id ? "" : "beyond the shelves"}</span></a>`;
+    };
+    // an album listened to: four or more of its tracks one after another in the same room is one row (opened, its tracks)
+    const items = [];
+    plays.forEach(x => {
+      const last = items[items.length - 1], k = x.album ? norm(x.artist + "|" + x.album) : "";
+      if (k && last && last.k === k && last.room === x.room && last.list[last.list.length - 1].t - x.t < 1800) last.list.push(x);
+      else items.push({ k, room: x.room, list: [x] });
+    });
+    const group = g => {
+      const x = g.list[0], first = g.list[g.list.length - 1], n = {}; g.list.forEach(p => { n[norm(p.title)] = 1; });
+      const count = Object.keys(n).length, href = x.album_id ? albumHref(x.album_id) : artistHref(splitArtist(x.artist));
+      return `<div class="hgrp" data-album="${x.album_id || ""}" data-n="${count}"><a class="hrow halb" href="${href}"><span class="ht">${time(first.t)}</span>
+        ${x.art ? `<img loading="lazy" src="${cover(x.art, 150)}" alt="">` : `<span class="noimg"></span>`}<span class="hw"><b>${esc(x.album)}</b><em>${esc(x.artist)}</em></span>
+        <span class="hr">${esc(roomByName(x.room))}${x.who && x.who !== "household" ? " &middot; " + esc(x.who) : ""}</span><span class="ho hg-n">${count} tracks</span></a>
+        <button class="hg-open" data-act="histOpen" aria-label="Its tracks">${icon("more")}</button><div class="hg-list" hidden>${g.list.map(row).join("")}</div></div>`;
+    };
+    let day = "";
+    $(".hist", el).innerHTML = plays.length ? items.map(g => {
+      const d = new Date(g.list[0].t * 1000), label = dayLabel(d), head = label !== day ? `<div class="hist-day">${esc(label)}</div>` : ""; day = label;
+      return head + (g.list.length >= 4 ? group(g) : g.list.map(row).join(""));
     }).join("") : `<p class="dim center">Nothing heard ${days === 1 ? "today" : "in that time"}.</p>`;
+    // the whole album, when every one of its tracks was heard (its tracks are kept by the server, so asking is quick)
+    el.querySelectorAll(".hgrp[data-album]").forEach(g => {
+      if (!g.dataset.album) return;
+      albumData(g.dataset.album).then(d => { if (d.tracks && d.tracks.length && +g.dataset.n >= d.tracks.length) $(".hg-n", g).textContent = "The whole album"; else if (d.tracks) $(".hg-n", g).textContent = `${g.dataset.n} of ${d.tracks.length} tracks`; }).catch(() => {});
+    });
   }).catch(() => { $(".hist", el).innerHTML = `<p class="dim center">The listening log isn't answering.</p>`; });
 };
 // what the span's listening comes to: time, plays, artists, tracks, albums, how much came from beyond the shelves, each
@@ -2597,6 +2621,7 @@ const ACT = {
       toast(r.scanning ? "Lyrion is scanning: try again once it's done" : n ? `${r.count} tracks rated` : `${r.count} tracks cleared`);
     }).catch(() => toast("Lyrion didn't answer"));
   },
+  histOpen: (v, t) => { const list = t.parentNode.querySelector(".hg-list"); list.hidden = !list.hidden; t.classList.toggle("on", !list.hidden); },
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;
     if (open && open.classList.contains("trk-credits")) { open.remove(); t.classList.remove("on"); return; }

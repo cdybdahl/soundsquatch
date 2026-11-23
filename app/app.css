@@ -1599,3 +1599,13 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .lr-stars .lr-in { display: inline-flex; }
 .lr-stars .star.half .ic { opacity: .5; }
 .lr-note { font: 12px var(--sans); color: var(--dim); }
+
+/* History: an album listened to, one row; its tracks behind the button */
+.hgrp { position: relative; }
+.hgrp .halb { padding-right: 48px; }
+.hgrp .halb .hw b { font-family: var(--display); font-size: 18px; }
+.hg-n { color: var(--accent); }
+.hg-open { position: absolute; right: 0; top: 14px; width: 40px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--faint); border-radius: 18px; }
+.hg-open.on { color: var(--ink); background: rgba(255, 255, 255, .08); }
+.hg-list { padding-left: 24px; border-left: 2px solid var(--rule); margin-left: 30px; }
+.hgrp .halb .ho { width: 92px; } @media (max-width: 1000px) { .hgrp .halb .ho { width: 62px; } }
