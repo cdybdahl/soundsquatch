@@ -3054,27 +3054,44 @@ def album_1001():
 SOUNDS = {}  # album id → (when, [album ids]), a day
 
 
-def sounds_like(album_ids, n=12, exclude=()):
-    """The albums on the shelves that sound most like these (Bliss Mixer's analysis of the files: the closest tracks,
-    by their albums, in the order they come), less the seeds and what's excluded. Only the house's own files are
-    analysed, so streamed albums are neither seeds nor results."""
+def sounds_like(album_ids, n=12, exclude=(), per_album=5):
+    """The albums on the shelves that sound most like these: Bliss Mixer's nearest tracks (its "list", ranked by how
+    alike they sound; its "mix" is a varied playlist, shuffled, no good for this) to a few songs spread through each,
+    each album scored by how near its tracks came, at most two an artist; less the seeds and what's excluded. Only
+    the house's own files are analysed, so streamed albums are neither seeds nor results."""
     if not HAVE.get("bliss"):
         return []
     with lib_lock:
         by = {copies(a[2], a[1]): a[0] for a in library["albums"]}
+        artist_of = {a[0]: key(a[2]) for a in library["albums"]}
         main = {a[0]: a[0] for a in library["albums"]}
         for a in library["albums"]:
             for v in a[10] or []:
                 main[v[0]] = a[0]
     seeds = {main.get(i, i) for i in album_ids}
-    out = []
+    seed_keys = {k for k, i in by.items() if i in seeds}
+    score = Counter()
     for i in album_ids:
-        got = rpc("", "blissmixer", "mix", f"album_id:{int(i)}", "count:60", timeout=30).get("titles_loop") or []
-        for t in got:
-            a = by.get(copies(t.get("artist") or "", t.get("album") or ""))
-            if a and a not in seeds and a not in exclude and a not in out:
-                out.append(a)
-    return out[:n]
+        tracks = rpc("", "titles", "0", "100", f"album_id:{int(i)}", "tags:t").get("titles_loop") or []
+        if not tracks:
+            continue
+        step = max(1, len(tracks) // per_album)
+        for t in tracks[::step][:per_album]:
+            got = rpc("", "blissmixer", "list", f"track_id:{t['id']}", "count:25", timeout=30).get("titles_loop") or []
+            for rank, x in enumerate(got):
+                k = copies(x.get("artist") or "", x.get("album") or "")
+                a = by.get(k)
+                if a and a not in seeds and a not in exclude and k not in seed_keys:
+                    score[a] += 1 / (rank + 3)
+    out, per_artist = [], Counter()
+    for a, _ in score.most_common():
+        if per_artist[artist_of.get(a)] >= 2:
+            continue
+        per_artist[artist_of.get(a)] += 1
+        out.append(a)
+        if len(out) >= n:
+            break
+    return out
 
 
 def sounds_like_album(album_id):
@@ -3092,7 +3109,7 @@ def sounds_like_album(album_id):
 def sounds_front(albums_heard):
     """Discover's "Sounds like what you've been playing": seeded by the albums of the house's own files heard lately."""
     try:
-        return sounds_like(albums_heard[:3], 12)
+        return sounds_like(albums_heard[:3], 12, per_album=2)
     except Exception:
         return []
 
