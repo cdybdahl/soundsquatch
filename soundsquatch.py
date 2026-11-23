@@ -1269,6 +1269,19 @@ def fold_keys(entries):
     return out
 
 
+def library_ready(wait=20):
+    """Whether the shelves are in, waiting a little for them right after a start: an album asked for before then would be
+    answered as unknown (or a record on the shelves as not on them), and a wall screen reloading after an update asks just then."""
+    end = time.time() + wait
+    while True:
+        with lib_lock:
+            if library["albums"]:
+                return True
+        if time.time() >= end:
+            return False
+        time.sleep(0.25)
+
+
 def load_library(force=False):
     """The shelves, as the Music page has them: one album a title (its best copy), newest first, with the house's genres."""
     status = rpc("", "serverstatus", "0", "0")
@@ -5666,17 +5679,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply_zipped(body, etag)
             if url.path == "/api/artist" and qs.get("name", "").strip():
                 return self.reply(profile_for_app(qs["name"].strip()[:200]))
+            if url.path == "/api/album" and not library_ready():
+                return self.reply({"error": "starting", "starting": True}, status=503)
             if url.path == "/api/album":
                 return self.reply(album(int(qs.get("id", "0"))))
             if url.path == "/api/vinyl-qobuz":  # the shelf's records with nothing digital: whether Qobuz has each
                 return self.reply({k: v[0] for k, v in (kv_get("vinyl-qobuz", {}) or {}).items()})
             if url.path == "/api/ratings":
                 return self.reply(album_ratings(int(qs.get("album_id", "0"))) if HAVE.get("ratings") else {"error": "no Ratings Light"})
+            if url.path == "/api/away" and not library_ready():
+                return self.reply({"error": "starting", "starting": True}, status=503)
             if url.path == "/api/away":
                 return self.reply(away_album(qs.get("artist", ""), qs.get("album", ""), qs.get("player", ""), fresh=qs.get("again") == "1"))
             if url.path == "/api/review" and qs.get("album"):  # a record off the shelves, by its names
                 text, why = review_lookup(qs.get("artist", "")[:200], qs["album"][:200], again=qs.get("again") == "1")
                 return self.reply({"review": text or "", "why": why or "none"}, cache="max-age=86400" if text else "no-store")
+            if url.path == "/api/review" and not library_ready():
+                return self.reply({"error": "starting", "starting": True}, status=503)
             if url.path == "/api/review":
                 got = review(int(qs.get("id", "0")), again=qs.get("again") == "1")
                 return self.reply(got, cache="max-age=86400" if got["review"] else "no-store")  # none: asked again soon
@@ -5691,6 +5710,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(marks())
             if url.path == "/api/lyrics":
                 return self.reply(lyrics(qs.get("artist", "")[:200], qs.get("title", "")[:200], qs.get("album", "")[:200], float(qs.get("duration") or 0)))
+            if url.path == "/api/credits" and not library_ready():
+                return self.reply({"error": "starting", "starting": True}, status=503)
             if url.path == "/api/credits":
                 return self.reply(credits_for(int(qs.get("id", "0"))))
             if url.path == "/api/person":
@@ -5719,8 +5740,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(share_link(int(qs.get("album_id", "0"))))
             if url.path == "/api/focuses":
                 return self.reply(focuses())
+            if url.path == "/api/sounds-like" and not library_ready():
+                return self.reply({"error": "starting", "starting": True}, status=503)
             if url.path == "/api/sounds-like":
                 return self.reply({"albums": sounds_like_album(int(qs.get("id") or 0))})
+            if url.path == "/api/album-plays" and not library_ready():
+                return self.reply({"error": "starting", "starting": True}, status=503)
             if url.path == "/api/album-plays":
                 return self.reply(album_plays(int(qs.get("id") or 0)))
             if url.path == "/api/heard-albums":

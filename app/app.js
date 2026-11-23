@@ -79,6 +79,7 @@ function api(path, body, again) {
   const opts = body ? { method: "POST", headers: headers, body: JSON.stringify(body) } : {};
   return fetch(path, opts).then(r => {
     if (r.status === 403 && body) return askPin(again).then(() => api(path, body, true)); // the house's PIN, asked once on this device
+    if (r.status === 503 && !body && (again || 0) < 6) return new Promise(ok => setTimeout(ok, 3000)).then(() => api(path, body, (again || 0) + 1)); // the server just started: asked again shortly
     if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
 }
 function askPin(wrong) {
@@ -3110,7 +3111,12 @@ function openRooms() {
       const mode = vinylHere ? "the turntable" : s2.mode === "play" ? "playing" : s2.mode === "pause" && +s2.playlist_tracks ? "paused" : !on ? "off" : +s2.playlist_tracks ? "stopped" : "idle";
       const what = vinylHere ? (A.tt.record ? ` &middot; ${esc(A.tt.record.title)} &mdash; ${esc(A.tt.record.artist)}` : "") : (mode === "playing" || mode === "paused") && t.title ? ` &middot; ${esc(t.title)}${t.artist ? " &mdash; " + esc(t.artist) : ""}` : "";
       const label = (me ? "this room, " : joined ? "with this room, " : "") + mode;
-      const members = isGroup(p) ? String(s2.members || "").split(",").filter(m => A.rooms.some(x => x.playerid === m)).map(roomName) : [];
+      // every room in a group, said plainly when one is switched off or not connected (it was left out before, as if not in it)
+      const every = r[0].players_loop || [], nameOf = m => { const x = every.find(y => y.playerid === m); return x ? houseRoom(m).name || x.name || "a room" : ""; };
+      const members = isGroup(p) ? String(s2.members || "").split(",").filter(Boolean).map(m => {
+        const x = every.find(y => y.playerid === m); if (!x) return "";
+        return nameOf(m) + (!x.connected ? " (not connected)" : !x.power ? " (off)" : "");
+      }).filter(Boolean) : [];
       const kind = isGroup(p) ? `<span class="room-group">${members.length ? esc(members.join(" + ")) : "a group"}</span> ` : "";
       return `<div class="room ${me ? "on" : ""} st-${vinylHere ? "playing" : mode}"><button class="room-go" data-act="room" data-v="${p.playerid}">${mode === "playing" || vinylHere ? `<span class="eq"><i></i><i></i><i></i></span>` : icon("speaker")}<span><b>${esc(roomName(p.playerid))}</b><em>${kind}<span class="state">${label}</span>${what}</em></span></button>
         ${me ? "" : `<span class="room-acts">${joined ? `<button data-act="syncLeave" data-v="${p.playerid}" aria-label="Leave">${icon("close")}<span class="lb">Leave</span></button>` : inStep(p) && inStep(here[0]) ? `<button data-act="syncJoin" data-v="${p.playerid}" aria-label="Join">${icon("link")}<span class="lb">Join</span></button>` : ""}
