@@ -1233,6 +1233,7 @@ MAG.album = function (el, id) {
     el.paintReview = story;
     if (d.review != null) story(d); else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) story(r); }).catch(() => story({ review: "", why: "failed" }));
     if (on("features", "credits")) creditsFor(a[0]).then(c => { const box = $(".mag-credits", el); if (box && el.isConnected) box.innerHTML = creditsHtml(c) || `<p class="dim">No credits known for it.</p>`; }).catch(() => {});
+    trackCredits(el, a[0], d, ".mag-tracks");
   }).catch(() => { const t = $(".mag-tracks", el); if (t) t.outerHTML = `<p class="dim">Couldn't load the tracks.</p>`; });
 };
 
@@ -1274,6 +1275,7 @@ VIEWS.album = function (el, id) {
     if (!title) { $(".al-title", el).textContent = d.album; $(".al-by", el).textContent = by; $(".al-by", el).setAttribute("href", artistHref(by)); }
     if (title) api("/api/share?album_id=" + a[0]).then(r => { const acts = $(".album-head .acts", el); if (r.url && acts && el.isConnected) { const bin = $('[data-act="removeAsk"]', acts); if (bin) bin.insertAdjacentHTML("beforebegin", shareBtn(title + " by " + artist, r.url)); else acts.insertAdjacentHTML("beforeend", shareBtn(title + " by " + artist, r.url)); } }).catch(() => {});
     if (title && on("features", "credits")) creditsFor(a[0]).then(c => { const box = $("#al-credits", el); if (box && el.isConnected) box.outerHTML = creditsHtml(c); }).catch(() => {});
+    if (title) trackCredits(el, a[0], d, ".album-head .tracks");
     if (d.review != null) showReview(d);
     else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) showReview(r); }).catch(() => showReview({ review: "", why: "failed" }));
     profile(by).then(p => {
@@ -1755,6 +1757,27 @@ function workCard(w) {
     ${w.cover ? `<img loading="lazy" decoding="async" src="${esc(pic(w.cover, 320))}" alt="" onerror="this.remove()">` : ""}</div>
     <div class="role">${esc(w.roles.join(", "))}</div><div class="t">${esc(w.title)}</div><div class="s">${esc(w.artist || "")}${w.date ? (w.artist ? " &middot; " : "") + w.date.slice(0, 4) : ""}</div></a>`;
 }
+// who is credited on one track: the recording's own credits, and those of the record's that name the track
+// [[name, mbid, role]], in the order a sleeve reads in
+function trackPeople(c, t, i) {
+  const tn = plain(t.title), tr = c.tracks.find(x => plain(x.title) === tn) || c.tracks[i];
+  if (!tr) return [];
+  const out = (tr.people || []).slice();
+  c.people.forEach(p => p.roles.forEach(r => { if (r[1].indexOf(tr.n) >= 0 && !out.some(x => x[1] === p.mbid && x[2] === r[0])) out.push([p.name, p.mbid, r[0]]); }));
+  return out.sort((a, b) => roleRank(a[2]) - roleRank(b[2]));
+}
+// an album page's tracks, each with its own credits behind a small button (the row itself plays the track)
+function trackCredits(el, id, d, sel) {
+  if (!on("features", "credits")) return;
+  creditsFor(id).then(c => {
+    if (!c || !c.tracks || !el.isConnected) return;
+    const rows = el.querySelectorAll(sel + " .trk");
+    d.tracks.forEach((t, i) => {
+      const who = trackPeople(c, t, i), row = rows[i], at = row && $(".d", row); // before the length: the lengths stay in line
+      if (who.length && at) at.insertAdjacentHTML("beforebegin", `<button class="trk-who" data-act="trackWho" data-v="${esc(JSON.stringify(who))}" aria-label="Who's on it">${icon("person")}</button>`);
+    });
+  }).catch(() => {});
+}
 // the credits of the song playing, for Now Playing's Credits tab: its own, then the record's
 function npCredits(t) {
   const a = A.albums.find(x => norm(x[1]) === norm(t.album) && norm(x[2]) === norm(t.artist)) || A.albums.find(x => norm(x[1]) === norm(t.album));
@@ -1762,7 +1785,7 @@ function npCredits(t) {
   return creditsFor(a[0]).then(c => {
     if (!c || !c.people.length) return `<p class="dim">MusicBrainz has no credits for this record.</p>`;
     const tn = plain(t.title), tr = c.tracks.find(x => plain(x.title) === tn);
-    const own = tr ? tr.people : [], whole = [];
+    const own = tr ? trackPeople(c, t, -1) : [], whole = [];
     c.people.forEach(p => p.roles.forEach(r => { if (!r[1].length) whole.push([p.name, p.mbid, r[0]]); }));
     const rows = list => list.map(x => `<div class="npc"><span>${esc(x[2])}</span>${personLink({ name: x[0], mbid: x[1] })}</div>`).join("");
     return (own.length ? `<div class="npc-h">This track</div>${rows(own)}` : "") + (whole.length ? `<div class="npc-h">The record</div>${rows(whole)}` : "") || `<p class="dim">No credits for this track.</p>`;
@@ -2542,6 +2565,13 @@ const ACT = {
     }).catch(() => toast("The server didn't answer"));
   },
   banLiftArtist: v => { closeSheet(); api("/api/ban", { kind: "artist", lift: v }).then(() => toast("Off the never-play list")).catch(() => toast("The server didn't answer")); },
+  trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
+    const row = t.closest(".trk"), open = row.nextElementSibling;
+    if (open && open.classList.contains("trk-credits")) { open.remove(); t.classList.remove("on"); return; }
+    const by = []; JSON.parse(v).forEach(x => { const had = by.find(b => b[1] === x[1]); if (had) had[2].push(x[2]); else by.push([x[0], x[1], [x[2]]]); });
+    row.insertAdjacentHTML("afterend", `<div class="trk-credits">${by.map(b => `<div class="tc"><span>${esc(b[2].join(", "))}</span>${personLink({ name: b[0], mbid: b[1] })}</div>`).join("")}</div>`);
+    t.classList.add("on");
+  },
   discFilter: v => { // the discography's filter, on every page drawn (this device remembers it)
     device.set("disc", v);
     document.querySelectorAll(".disc").forEach(d => { d.dataset.f = v; });
