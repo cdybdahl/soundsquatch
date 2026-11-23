@@ -13,19 +13,22 @@ through, and keeps a profile of every artist on the shelves.
   releases from your artists, rediscoveries, connections, artists beyond the
   shelves, a decade, a genre.
 - **Artists, albums, credits**: Qobuz's and Wikipedia's stories, MusicBrainz's
-  members, bands and per-track credits (every name a link), Wikipedia's album
-  reviews, Qobuz releases not on the shelves, similar artists.
+  members, bands and per-track credits (every name a link; each track's own behind a button on its row), Wikipedia's
+  album reviews, similar artists, and one discography per artist: your records and your streaming service's together,
+  in the order they first came out, with All / Mine / On Qobuz (or TIDAL). Every album opens its page, owned or not.
+- **Listening**: History by day, an album you played through as one row; each album page says how often and when you
+  played it, and each track how often.
 - **The Internet Archive**, through the ArchiveLMA Lyrion plugin: favourites on
   the shelves, each artist's shows, a show page with its setlist and recording notes.
 - **Playing**: rooms (join, leave, move the music), Now Playing with synced lyrics
   (LRCLIB) and credits, queue reordering, playlists, radio (Don't Stop the Music),
   stations seeded like a chill mix.
 - **Marks**: hearts, stars and tags, kept on the server for the household.
-- **Remove from library**: Qobuz favourites un-favourited, files *moved* to
+- **Remove from library**: Qobuz or TIDAL favourites un-favourited, files *moved* to
   `music-removed` (never deleted), with a Recently removed page to put them back.
 - **Your records**, from your Discogs collection: the albums you also have on vinyl (or CD) say so, the records you
-  have only on vinyl are kept beside the digital ones, with filters (format, pressing, genre, decade) and a page for
-  each record (its tracklist by side, credits, the pressing's barcodes and run-out, videos, plays).
+  have only on vinyl are kept beside the digital ones, with filters (format, pressing, genre, decade, and *To capture*:
+  the records with nothing digital, those your streaming service lacks first) and a page for each record (its tracklist by side, credits, the pressing's barcodes and run-out, videos, plays).
 - **The turntable**, with a small listener on your amplifier's record-out: Soundsquatch names what the record player
   plays (from your own files first, then Shazam), shows it as Now Playing, suggests what to play next, keeps count of
   plays (on Discogs too), records each side as tagged songs into your library, streams it live to any room, and
@@ -43,6 +46,9 @@ few more. Expect rough edges, and please say what you find.
 - **Docker** on a machine on the same network (the Lyrion machine itself is fine).
 - Optional Lyrion plugins, each found by itself and left out when it isn't there:
   - **Qobuz**: Qobuz releases, artists' stories and similar artists, search beyond your shelves
+  - **TIDAL**: the same from TIDAL (no artist stories: those come from Wikipedia). With both signed in, Qobuz is used
+  - **Ratings Light** (3.2 or later): album stars become the average of your track ratings in Lyrion, and rating an
+    album rates its tracks
   - **Music & Artist Information**: album reviews, longer stories, more artist photographs
   - **ArchiveLMA**: Internet Archive shows
   - **Don't Stop the Music** with **LastMix**: radio and stations
@@ -50,7 +56,7 @@ few more. Expect rough edges, and please say what you find.
   - **ListenBrainz Fresh Releases**: fresh releases picked for you, on Discover
   - **Pitchfork Reviews**: Best New Music, on Discover
 - A library up to about **10,000 albums**. Bigger ones aren't supported.
-- Lyrion set to **English** if you want to keep or remove Qobuz albums from Soundsquatch. Everything else works in
+- Lyrion set to **English** if you want to keep or remove Qobuz albums from Soundsquatch (TIDAL doesn't need it). Everything else works in
   any language.
 
 ### Install
@@ -234,7 +240,7 @@ password and the PIN.
 ### What leaves the house
 
 Artist names and album titles, sent to MusicBrainz, Wikidata and Wikipedia, LRCLIB (for lyrics), the Cover Art
-Archive, Apple and Deezer (for covers you choose), and to Qobuz and Discogs through Lyrion's own plugins. Nothing about who listens
+Archive, Apple and Deezer (for covers you choose), and to Qobuz, TIDAL and Discogs through Lyrion's own plugins. Nothing about who listens
 or when: the listening log stays in `./data`, unless you connect a scrobble server (Settings, Your records), which
 then gets each play: artist, track, album and when. Once a day it asks GitHub for the newest release number, which sends
 nothing but the question. If you connect Discogs (Settings, Your records), it reads your collection there once a day
@@ -256,6 +262,7 @@ Soundsquatch is for 64-bit machines (x86, or ARM such as a Raspberry Pi on 64-bi
 |---|---|
 | `soundsquatch.py` | the service: app, Lyrion pass-through, crawler, caches (standard library + Pillow) |
 | `app/` | the app itself: plain HTML, CSS and script, no build step, older-Safari safe |
+| `streaming.py` | the streaming services, each through its Lyrion plugin: Qobuz and TIDAL behind the same few doings |
 | `lms_qobuz.py`, `lms_keep_album.py`, `library.py` | helpers for Qobuz (through Lyrion's plugin) and the library's rules |
 | `turntable.py` | the turntable: the stream from the listener, the fingerprints, Shazam, the sides and the signal check |
 | `turntable/` | the listener for the Pi (`listener.sh`) and its installer |
