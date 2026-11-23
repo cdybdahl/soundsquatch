@@ -110,7 +110,7 @@ NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 
 # ───────────────────────── settings: settings.json beside the script, today's values the defaults ─────────────────────────
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
-DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp"]
+DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp", "sounds"]
 DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
@@ -165,7 +165,7 @@ def detect():
                     pfr=can("PFRBnm", "items"), ratings=can("ratingslight", "ratealbum"))  # Ratings Light 3.2 on: track ratings are Lyrion's
         asker = PLAYER if lms_qobuz.PLAYER.match(PLAYER or "") else next((p["playerid"] for p in rpc("", "players", "0", "20", timeout=5).get("players_loop") or [] if p.get("connected")), "")
         HAVE.update(**{x.key: bool(x.available(can, asker)) for x in streaming.ALL})  # installed and signed in
-        HAVE.update(kexp=can("kexp", "items"))  # Live on KEXP's sessions, through the KEXP plugin
+        HAVE.update(kexp=can("kexp", "items"), bliss=can("blissmixer", "mix"))  # Bliss Mixer: how the house's own files sound  # Live on KEXP's sessions, through the KEXP plugin
         HAVE.update(archive=can("archivelma", "items"), mai=can("musicartistinfo", "biography"),
                     radio=plugin("DontStopTheMusic") and plugin("LastMix"), language=rpc("", "pref", "language", "?", timeout=5).get("_p2") or "EN",
                     mai_lang=rpc("", "pref", "plugin.musicartistinfo:preferredLanguage", "?", timeout=5).get("_p2") or "")
@@ -2689,6 +2689,8 @@ def home():
             back.append(hit)
         if len(back) >= 16:
             break
+    local = {a[0] for a in albums if a[9] in ("local", "vinyl")}
+    own_heard = [i for i in back if i in local]  # the house's own files heard lately: what Bliss Mixer can start from
     pool = [a for a in albums if a[4] and a[5] > 60 and copies(a[2], a[1]) not in heard_albums]
     rediscover = [a[0] for a in rng.sample(pool, min(18, len(pool)))]
     profs = {k: v[0] for k, v in list(profiles.items())}
@@ -2752,7 +2754,8 @@ def home():
     return {"date": today, "rotation": rotation, "back": back, "rediscover": rediscover, "spotlight": spotlight,
             "connections": [dict(c, beyond=conn_beyond(c, artists), photo=conn_photo(c, profs)) for c in credit_links(albums, artists, profs, links, rng, today)], "beyond": beyond, "round": round_, "decade": decade,
             "decade_albums": [a[0] for a in rng.sample([a for a in albums if a[3] // 10 * 10 == decade and a[4]], min(18, sum(1 for a in albums if a[3] // 10 * 10 == decade and a[4])))] if decade else [],
-            "genre": rng.choice(genres) if genres else "", "kexp": kexp_front(rotation, rng)}
+            "genre": rng.choice(genres) if genres else "", "kexp": kexp_front(rotation, rng),
+            "sounds": {"seeds": own_heard[:3], "albums": sounds_front(own_heard)} if HAVE.get("bliss") and own_heard else None}
 
 
 def qobuz(req):
@@ -2986,6 +2989,53 @@ def home_loop():
         except Exception as e:
             note_error(f"Discover made ahead: {type(e).__name__}: {e}"[:200])
         time.sleep(15)
+
+
+# ───────────────────────── Sounds like: Bliss Mixer's ear for the house's own files ─────────────────────────
+SOUNDS = {}  # album id → (when, [album ids]), a day
+
+
+def sounds_like(album_ids, n=12, exclude=()):
+    """The albums on the shelves that sound most like these (Bliss Mixer's analysis of the files: the closest tracks,
+    by their albums, in the order they come), less the seeds and what's excluded. Only the house's own files are
+    analysed, so streamed albums are neither seeds nor results."""
+    if not HAVE.get("bliss"):
+        return []
+    with lib_lock:
+        by = {copies(a[2], a[1]): a[0] for a in library["albums"]}
+        main = {a[0]: a[0] for a in library["albums"]}
+        for a in library["albums"]:
+            for v in a[10] or []:
+                main[v[0]] = a[0]
+    seeds = {main.get(i, i) for i in album_ids}
+    out = []
+    for i in album_ids:
+        got = rpc("", "blissmixer", "mix", f"album_id:{int(i)}", "count:60", timeout=30).get("titles_loop") or []
+        for t in got:
+            a = by.get(copies(t.get("artist") or "", t.get("album") or ""))
+            if a and a not in seeds and a not in exclude and a not in out:
+                out.append(a)
+    return out[:n]
+
+
+def sounds_like_album(album_id):
+    hit = SOUNDS.get(album_id)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
+    try:
+        got = sounds_like([album_id])
+    except Exception:
+        return []
+    SOUNDS[album_id] = (time.time(), got)
+    return got
+
+
+def sounds_front(albums_heard):
+    """Discover's "Sounds like what you've been playing": seeded by the albums of the house's own files heard lately."""
+    try:
+        return sounds_like(albums_heard[:3], 12)
+    except Exception:
+        return []
 
 
 # ───────────────────────── Live on KEXP: the sessions of the artists on the shelves ─────────────────────────
@@ -5629,6 +5679,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(share_link(int(qs.get("album_id", "0"))))
             if url.path == "/api/focuses":
                 return self.reply(focuses())
+            if url.path == "/api/sounds-like":
+                return self.reply({"albums": sounds_like_album(int(qs.get("id") or 0))})
             if url.path == "/api/album-plays":
                 return self.reply(album_plays(int(qs.get("id") or 0)))
             if url.path == "/api/heard-albums":

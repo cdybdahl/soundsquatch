@@ -577,6 +577,8 @@ function drawDiscover(el) {
   if (on("discover", "fresh")) put("fresh", section("Just in", "Fresh on the shelves", shelf(newArrivals(20).map(arrivalCard)), `<a class="more" href="#/albums">All albums</a>`));
   if (on("discover", "rediscover") && h.rediscover.length) put("rediscover", section("Not heard lately", "Rediscover", `<div class="mosaic">${h.rediscover.slice(0, 12).map((id, i) => albumCard(A.byId.get(id), i === 0 ? "big" : "")).join("")}</div>`));
   if (on("discover", "connections") && h.connections.length) put("connections", section("Who played with whom", "Connections", `<div class="links">${h.connections.slice(0, 6).map(linkCard).join("")}</div>`));
+  const sounds = (h.sounds && h.sounds.albums || []).map(id => A.byId.get(id)).filter(Boolean);
+  if (on("discover", "sounds") && sounds.length) put("sounds", section("By ear", "Sounds like what you've been playing", shelf(sounds.map(a => albumCard(a))), "", "sounds"));
   if (on("discover", "kexp") && (h.kexp || []).length) put("kexp", section("Live on KEXP", "Your artists in the studio", shelf(h.kexp.map(kexpCard)), "", "kexp"));
   if (on("discover", "beyond") && h.beyond.length) put("beyond", section("Not on your shelves yet", "Beyond the shelves", shelf(h.beyond.map(b => face(b.name, b.image, b.because.length ? "like " + esc(b.because.slice(0, 2).join(", ")) : "", "new"))), "", "beyond"));
   if (on("discover", "archive") && A.archive.length) put("archive", section("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@archive">All of them</a>`));
@@ -1108,6 +1110,8 @@ VIEWS.front = function (el) {
     const P = {}, D = k => on("discover", k);
     if (D("fresh") && newArrivals(1).length) P.fresh = sec("Just in", `Recently added <a class="fp-all" href="#/albums" data-act="recentAll">All of them</a>`, shelf(newArrivals(20).map(arrivalCard)));
     if (D("vinyl") && physicalShelf()) P.vinyl = sec("Let's get physical", `From the record shelf <a class="fp-all" href="#/vinyl">All of them</a>`, physicalShelf());
+    const sounds = (h.sounds && h.sounds.albums || []).map(id => A.byId.get(id)).filter(Boolean);
+    if (D("sounds") && sounds.length) P.sounds = sec("By ear", "Sounds like what you've been playing", shelf(sounds.map(a => albumCard(a))));
     if (D("kexp") && (h.kexp || []).length) P.kexp = sec("Live on KEXP", "Your artists in the studio", shelf(h.kexp.map(kexpCard)));
     if (D("stations") && st.length) P.stations = sec("On the radio", "Stations", shelf(st.map(stationCard)));
     if (D("spotlight") && h.spotlight) P.spotlight = `<section class="fp-artist" id="fp-artist"><div class="mag-dept">Artist of the day</div></section>`;
@@ -1233,7 +1237,7 @@ MAG.album = function (el, id) {
     </div>
     <aside class="al-aside">${more.length ? `<div class="mag-recs"><div class="ff-h">More by ${esc(artist)}</div>${more.slice().sort((x, y) => (x[3] || 9999) - (y[3] || 9999)).map(x =>
       `<a class="mr" href="${albumHref(x[0])}"><img loading="lazy" src="${cover(x[4], 150)}" alt=""><span class="y">${x[3] || "&mdash;"}</span><b>${esc(x[1])}</b></a>`).join("")}</div>` : ""}</aside></div>
-    <div class="al-like"></div>
+    <div class="al-sounds"></div><div class="al-like"></div>
   </article>`;
   const img = $(".mag-cover img", el); if (img) tint(img, el);
   if (title) lrFill(el, a[0]);
@@ -1273,6 +1277,7 @@ MAG.album = function (el, id) {
     if (on("features", "credits")) creditsFor(a[0]).then(c => { const box = $(".mag-credits", el); if (box && el.isConnected) box.innerHTML = creditsHtml(c) || `<p class="dim">No credits known for it.</p>`; }).catch(() => {});
     trackCredits(el, a[0], d, ".mag-tracks");
     if (title) albumPlays(el, a[0], d, ".mag-tracks");
+    if (title) soundsLike(el, a[0], true);
   }).catch(() => { const t = $(".mag-tracks", el); if (t) t.outerHTML = `<p class="dim">Couldn't load the tracks.</p>`; });
 };
 
@@ -1293,7 +1298,7 @@ VIEWS.album = function (el, id) {
       <button class="btn ghost" data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}</button>
       ${title ? `<button class="btn ghost" data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
       <div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div></div></div>
-    <div id="al-review"></div><div id="al-credits"></div><div id="al-plays"></div>
+    <div id="al-review"></div><div id="al-credits"></div><div id="al-plays"></div><div id="al-sounds"></div>
     ${more.length ? section("Also on your shelves", "More by " + esc(artist), shelf(more.map(x => albumCard(x)))) : ""}<div id="al-sim"></div>`;
   const img = $(".album-art img", el); if (img) tint(img, el);
   if (title) lrFill(el, a[0]);
@@ -1318,6 +1323,7 @@ VIEWS.album = function (el, id) {
     if (title && on("features", "credits")) creditsFor(a[0]).then(c => { const box = $("#al-credits", el); if (box && el.isConnected) box.outerHTML = creditsHtml(c); }).catch(() => {});
     if (title) trackCredits(el, a[0], d, ".album-head .tracks");
     if (title) albumPlays(el, a[0], d, ".album-head .tracks");
+    if (title) soundsLike(el, a[0], false);
     if (d.review != null) showReview(d);
     else api("/api/review?id=" + encodeURIComponent(id)).then(r => { if (el.isConnected) showReview(r); }).catch(() => showReview({ review: "", why: "failed" }));
     profile(by).then(p => {
@@ -1836,6 +1842,16 @@ function trackCredits(el, id, d, sel) {
     });
   }).catch(() => {});
 }
+// the albums on the shelves that sound most like this one (Bliss Mixer, from the house's own files)
+function soundsLike(el, id, mag) {
+  if (!(A.cfg && A.cfg.have && A.cfg.have.bliss)) return;
+  api("/api/sounds-like?id=" + id).then(r => {
+    const list = (r.albums || []).map(x => A.byId.get(x)).filter(Boolean), box = $(mag ? ".al-sounds" : "#al-sounds", el);
+    if (!box || !el.isConnected || !list.length) return;
+    box.outerHTML = mag ? `<section class="mag-like al-sounds-sec"><div class="mag-dept">By ear</div><h2>Sounds like this</h2>${shelf(list.map(a => albumCard(a)))}</section>`
+      : section("By ear", "Sounds like this", shelf(list.map(a => albumCard(a))));
+  }).catch(() => {});
+}
 // an album's listening, from the log: how often and when (under the title), each listen (the Plays tab, or a section on
 // Classic), and on each track how often it was heard
 const trackWord = s => String(s || "").toLowerCase().replace(/[(\[].*?[)\]]/g, "").replace(/[^a-z0-9]/g, "");
@@ -1942,6 +1958,7 @@ const FEATS = [["stations", "Stations", "radio seeded from artists you choose"],
   ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"],
   ["prefer_captured", "Your vinyl first", "an album with a take captured from the turntable opens and spins that take; off, the best-sounding copy does"]];
 const PLUGINS = [["qobuz", "Qobuz", "Qobuz's releases and similar artists on artist pages, artists' short biographies, and search beyond your shelves (with a Qobuz subscription)"],
+  ["bliss", "Bliss Mixer", "\"Sounds like this\" on album pages and Discover, from how your own files sound (your files only, not streamed albums)", 1],
   ["kexp", "KEXP", "your artists' Live on KEXP sessions, on Discover and their pages", 1],
   ["tidal", "TIDAL", "TIDAL's releases and similar artists on artist pages, and search beyond your shelves (with a TIDAL subscription; Qobuz is used when both are installed)", 1],
   ["mai", "Music & Artist Information", "album reviews, artists' longer stories and more of their photographs"],
@@ -1957,8 +1974,8 @@ const PLUGIN_FOR = { archive: "ArchiveLMA", stations: "Don't Stop the Music and 
 /* Discover's order: each look its own until the house drags one into Settings' list, then both follow it (each skipping
    what it doesn't draw); a section added since takes its place after the one it follows in the look's own order.
    The cover stories (the classic page's top, the front's lead) aren't in it: the page starts with them. */
-const DISC_CLASSIC = ["stations", "because", "rotation", "back", "new", "listenlater", "lbfresh", "pitchfork", "spotlight", "vinyl", "fresh", "rediscover", "connections", "beyond", "archive", "kexp", "loved", "round", "decade", "genre"];
-const DISC_FRONT = ["fresh", "vinyl", "stations", "spotlight", "rotation", "new", "back", "listenlater", "lbfresh", "pitchfork", "round", "because", "archive", "kexp", "rediscover", "connections", "decade", "genre", "loved", "beyond"];
+const DISC_CLASSIC = ["stations", "because", "rotation", "back", "new", "listenlater", "lbfresh", "pitchfork", "spotlight", "vinyl", "fresh", "rediscover", "connections", "beyond", "archive", "kexp", "sounds", "loved", "round", "decade", "genre"];
+const DISC_FRONT = ["fresh", "vinyl", "stations", "spotlight", "rotation", "new", "back", "listenlater", "lbfresh", "pitchfork", "round", "because", "sounds", "archive", "kexp", "rediscover", "connections", "decade", "genre", "loved", "beyond"];
 function discOrder(mag) {
   const base = mag ? DISC_FRONT : DISC_CLASSIC, out = ((A.cfg && A.cfg.discover_order) || []).filter(k => base.indexOf(k) >= 0);
   if (!out.length) return base.slice();
@@ -1967,7 +1984,7 @@ function discOrder(mag) {
 }
 const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", "Kindred spirits"], ["rotation", "On rotation"], ["back", "Back to it"], ["new", "New from your artists"],
   ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
-  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"], ["kexp", "Live on KEXP"]];
+  ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"], ["kexp", "Live on KEXP"], ["sounds", "Sounds like what you've played"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
 VIEWS.settings = function (el, arg) {
   if (SET_TABS.some(t => t[0] === arg)) device.set("settab", arg);
