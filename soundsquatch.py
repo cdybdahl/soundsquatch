@@ -5461,7 +5461,7 @@ if __name__ == "__main__":
     chosen_photos.update(kv_get("artist-photos", {}))
     start_recorder()
     start_turntable()
-    for job in (library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop):
+    for job in (carry_ratings, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does
