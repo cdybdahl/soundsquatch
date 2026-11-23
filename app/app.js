@@ -1239,7 +1239,7 @@ MAG.album = function (el, id) {
         <div class="al-heard"></div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Play it next">${icon("next_up")}<span>Play Next</span></button>
           <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Add it to the queue">${icon("queue")}<span>Add to Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>${A.cfg && A.cfg.have && A.cfg.have.listenlater ? `<button data-act="listenLater" data-v="${a[0]}" aria-label="Save to Listen Later">${icon("clock")}<span>Listen Later</span></button>` : ""}
-          <span class="mag-share"></span>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
+          <span class="mag-share"></span><button data-act="lmInfo" data-v="album:${a[0]}" aria-label="More from Lyrion">${icon("more")}</button>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
         <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
           ${title ? `<div><dt>Your marks</dt><dd class="al-marks-in">${albumStars(a)}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}</dl></div>
     </div>
@@ -1312,6 +1312,7 @@ VIEWS.album = function (el, id) {
       <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button class="btn ghost" data-act="nextAlbum" data-v="${a[0]}">${icon("next_up")} Play Next</button>
       <button class="btn ghost" data-act="queueAlbum" data-v="${a[0]}">${icon("queue")} Add to Queue</button>
       <button class="btn ghost" data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}</button>
+      <button class="btn ghost" data-act="lmInfo" data-v="album:${a[0]}" aria-label="More from Lyrion">${icon("more")}</button>
       ${title ? `<button class="btn ghost" data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
       <div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div></div></div>
     <div id="al-review"></div><div id="al-credits"></div><div id="al-plays"></div><div id="al-sounds"></div>
@@ -2216,7 +2217,9 @@ function dayLabel(d) {
    of it, so every plugin works here, those we've never met among them. A level is #/lms/<its command and params>. */
 const lmEnc = o => encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(o)))));
 const lmDec = s => { try { return JSON.parse(decodeURIComponent(escape(atob(s)))); } catch (e) { return null; } };
-const lmHref = (cmd, params, title) => "#/lms/" + lmEnc({ c: cmd, p: params || {}, t: title || "" });
+const lmHref = (cmd, params, title, node) => "#/lms/" + lmEnc(node ? { n: node, t: title || "" } : { c: cmd, p: params || {}, t: title || "" });
+// a go that acts rather than opens (Sleep's "15 minutes": a command, then the level drawn again)
+const lmRuns = (x, a) => a && a.cmd && a.cmd.indexOf("items") < 0 && /^(refresh|parent|grandparent|home|nowPlaying)$/.test(x.nextWindow || a.next || "");
 function lmAction(item, base, name) {
   const own = item.actions && item.actions[name];
   if (own === null || own === 0) return null;
@@ -2238,14 +2241,22 @@ function lmIcon(x) {
 // one item, drawn: what it is, and what can be done with it here
 function lmRow(x, base, i, where) {
   const lines = String(x.text || x.name || "").split("\n"), img = lmIcon(x);
-  const go = lmAction(x, base, "go"), play = lmAction(x, base, "play"), more = lmAction(x, base, "more"), doIt = lmAction(x, base, "do");
-  const search = x.input || (go && JSON.stringify(go.params).indexOf("__TAGGEDINPUT__") >= 0) || x.type === "search";
+  const go = lmAction(x, base, "go"), play = lmAction(x, base, "play"), more = lmAction(x, base, "more");
+  const doIt = x.actions && x.actions.do && x.actions.do.choices ? null : lmAction(x, base, "do");
+  const search = !(doIt && x.input) && (x.input || (go && JSON.stringify(go.params).indexOf("__TAGGEDINPUT__") >= 0) || x.type === "search");
   const ref = `data-v="${where}:${i}"`;
   const art = img ? `<img loading="lazy" src="${esc(img)}" alt="" onerror="this.style.visibility='hidden'">` : `<span class="lm-noart">${icon(go ? "list" : "play")}</span>`;
   const words = `<span class="lm-w"><b>${esc(lines[0])}</b>${lines[1] ? `<em>${esc(lines.slice(1).join(" · "))}</em>` : ""}</span>`;
   if (search) return `<form class="lm-search" data-act="lmSearch" ${ref}>${icon("search")}<input type="search" placeholder="${esc(lines[0] || "Search")}" autocomplete="off" autocapitalize="off"><button class="pill" type="submit">Search</button></form>`;
+  if (x.choiceStrings && doIt === null && x.actions && x.actions.do && x.actions.do.choices) // "one of these": the current one marked
+    return `<div class="lm-row lm-choice">${words}<span class="seg">${x.choiceStrings.map((c, j) => `<button class="${+x.selectedIndex === j + 1 ? "on" : ""}" data-act="lmChoice" data-v="${where}:${i}:${j}">${esc(c)}</button>`).join("")}</span></div>`;
+  if (x.input && (doIt || go)) { // a value typed: a name, or a time of day (an alarm)
+    const time = (x.input._inputStyle || "") === "time" || /alarm/i.test(JSON.stringify((doIt || go).cmd));
+    return `<form class="lm-search lm-input" data-act="lmInput" ${ref}><span class="lm-w"><b>${esc(lines[0])}</b></span><input type="${time ? "time" : "text"}" autocomplete="off" ${time ? 'value="07:00"' : `placeholder="${esc(lines[0])}"`}><button class="pill" type="submit">${time ? "Add" : "Set"}</button></form>`;
+  }
   if (x.checkbox != null) return `<button class="lm-row lm-switch ${+x.checkbox ? "on" : ""}" data-act="lmCheck" ${ref}>${words}<i class="sw"></i></button>`;
   if (x.radio != null) return `<button class="lm-row lm-radio ${+x.radio ? "on" : ""}" data-act="lmDo" ${ref}>${words}<i class="rd"></i></button>`;
+  if (x.node !== undefined && x.isANode) return `<a class="lm-row lm-go" href="${lmHref(null, null, lines[0], x.id)}">${img ? art : `<span class="lm-noart">${icon("list")}</span>`}${words}</a>`;
   if (!go && !play && !doIt) return `<div class="lm-row lm-text">${img ? art : ""}${words}</div>`;
   const tapPlays = play && (!go || x.goAction === "play" || x.type === "audio" || x.isaudio);
   const acts = play ? `<span class="lm-acts"><button data-act="lmPlay" ${ref} aria-label="Play">${icon("play")}</button><button data-act="lmNext" ${ref} aria-label="Play next">${icon("next_up")}</button><button data-act="lmAdd" ${ref} aria-label="Add to the queue">${icon("queue")}</button></span>` : "";
@@ -2260,10 +2271,18 @@ function lmDraw(box, where, r, title) {
 }
 VIEWS.lms = function (el, arg) {
   const o = arg ? lmDec(arg) : null;
-  if (!o) { // the top: every app, then radio, as Lyrion lists them
-    el.innerHTML = `${pageBar("Apps", ["Lyrion's apps and radio", "&nbsp;"])}<div class="lm-page"><div class="kicker">Apps</div><div id="lm-apps">${gathering("small")}</div><div class="kicker lm-k2">Radio</div><div id="lm-radio"></div></div>`;
-    lms(A.room || "", ["apps", 0, 100, "menu:1"]).then(r => lmDraw($("#lm-apps", el), "apps", r, "Apps")).catch(() => { $("#lm-apps", el).innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
-    lms(A.room || "", ["radios", 0, 100, "menu:1"]).then(r => lmDraw($("#lm-radio", el), "radio", r, "Radio")).catch(() => {});
+  if (!o || o.n) { // Lyrion's home menu for this room (as a Squeezebox Touch has it): My Music, Favorites, Apps, Radio, Settings
+    el.innerHTML = o ? `${pageBar(esc(o.t || "Lyrion"), ["Lyrion", "&nbsp;"], "", true)}<div class="lm-page" id="lm-body">${gathering("small")}</div>`
+      : `${pageBar("Lyrion", ["Everything Lyrion has", esc(roomName(A.room))])}<div class="lm-page" id="lm-body">${gathering("small")}</div>`;
+    lmMenu().then(menu => {
+      const box = $("#lm-body", el); if (!box || !el.isConnected) return;
+      const kids = n => menu.filter(x => (x.node || "") === n).sort((a, b) => (+a.weight || 0) - (+b.weight || 0));
+      const part = (where, title, list) => { if (!list.length) return ""; LMV[where] = { items: list, base: null, title }; return `${title ? `<div class="kicker lm-k2">${esc(title)}</div>` : ""}<div class="lm-list">${list.map((x, i) => lmRow(x, null, i, where)).join("")}</div>`; };
+      if (o) { box.innerHTML = part("node-" + o.n, "", kids(o.n)) || `<p class="dim">Nothing here.</p>`; return; }
+      const home = kids("home").filter(x => !x.isANode && x.id !== "playerpower"), power = menu.filter(x => x.id === "playerpower");
+      box.innerHTML = part("mm", "My Music", kids("myMusic")) + part("lh", "Lyrion", home) + part("apps", "Apps", kids("")) + part("radio", "Radio", kids("radios"))
+        + part("set", `Settings for ${roomName(A.room)}`, kids("settings").concat(power)) + part("adv", "Advanced", kids("advancedSettings"));
+    }).catch(() => { const box = $("#lm-body", el); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer${A.room ? "" : ": choose a room first"}.</p>`; });
     return;
   }
   el.innerHTML = `${pageBar(esc(o.t || "Apps"), ["Lyrion", "&nbsp;"], "", true)}<div class="lm-page" id="lm-body">${gathering("small")}</div>`;
@@ -2272,12 +2291,23 @@ VIEWS.lms = function (el, arg) {
     .catch(() => { $("#lm-body", el).innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
 };
 function lmRefresh() { // the level on screen drawn again (a setting changed, an item added or removed)
-  closeSheet();
+  closeSheet(); A.lmMenu = null;
   if (current && current.kind === "lms") VIEWS.lms(current.el, decodeURIComponent(location.hash.split("/lms/")[1] || ""));
 }
+// a value typed into a setting: the words (or a time of day, in seconds after midnight) put where Lyrion asks for them
+document.addEventListener("submit", e => {
+  const f = e.target.closest && e.target.closest("form.lm-input"); if (!f) return;
+  e.preventDefault();
+  const inp = $("input", f), got = lmItem(f.dataset.v), x = got[0]; if (!x || !inp.value) return;
+  const a = lmAction(x, got[1], "do") || lmAction(x, got[1], "go"); if (!a) return;
+  const val = inp.type === "time" ? String(+inp.value.split(":")[0] * 3600 + +inp.value.split(":")[1] * 60) : inp.value.trim();
+  const params = {}; Object.keys(a.params).forEach(k => { params[k] = String(a.params[k]).replace("__TAGGEDINPUT__", val).replace("__INPUT__", val); });
+  const cmd = a.cmd.map(c => String(c).replace("__TAGGEDINPUT__", val).replace("__INPUT__", val));
+  lms(A.room || "", lmArgs(cmd, params)).then(() => { toast("Done"); lmRefresh(); }).catch(() => toast("Lyrion didn't answer"));
+}, true);
 // a search item: the words put where Lyrion asks for them, and its next level opened
 document.addEventListener("submit", e => {
-  const f = e.target.closest && e.target.closest("form.lm-search"); if (!f) return;
+  const f = e.target.closest && e.target.closest("form.lm-search"); if (!f || f.classList.contains("lm-input")) return;
   e.preventDefault();
   const words = $("input", f).value.trim(), got = lmItem(f.dataset.v), x = got[0]; if (!words || !x) return;
   const a = lmAction(x, got[1], "go") || { cmd: [], params: {} }; if (!a.cmd.length) return;
@@ -2286,6 +2316,12 @@ document.addEventListener("submit", e => {
   closeSheet();
   location.hash = lmHref(a.cmd, params, `“${words}”`);
 });
+// the home menu, as Lyrion gives it for the room on screen (a menu of nodes and items), kept a minute
+function lmMenu() {
+  const k = A.room || "", hit = A.lmMenu;
+  if (hit && hit.room === k && Date.now() - hit.at < 60000) return Promise.resolve(hit.items);
+  return lms(k, ["menu", 0, 1000, "direct:1"]).then(r => { const items = (r.item_loop || []).map(x => Object.assign({ isANode: !x.actions || !Object.keys(x.actions).length }, x)); A.lmMenu = { room: k, at: Date.now(), items }; return items; });
+}
 const lmItem = v => { const k = v.lastIndexOf(":"), lvl = LMV[v.slice(0, k)]; return lvl ? [lvl.items[+v.slice(k + 1)], lvl.base, lvl] : [null]; };
 function lmRun(v, name, words) {
   const got = lmItem(v), x = got[0]; if (!x) return;
@@ -2294,7 +2330,7 @@ function lmRun(v, name, words) {
   (playing && A.room ? inOrder() : Promise.resolve()).then(() => lms(A.room || "", lmArgs(a.cmd, a.params))).then(() => {
     if (words) toast(words);
     if (playing) setTimeout(poll, 600);
-    if (a.next === "refresh" || a.next === "parent" || name === "do") lmRefresh();
+    if (a.next || x.nextWindow || name === "do" || name === "go") lmRefresh();
   }).catch(() => toast("Lyrion didn't answer"));
 }
 /* ───────────────────────── search ───────────────────────── */
@@ -2828,6 +2864,7 @@ const ACT = {
   lmGo: v => {
     const got = lmItem(v), x = got[0]; if (!x) return;
     const a = lmAction(x, got[1], "go"); if (!a) return;
+    if (lmRuns(x, a)) return lmRun(v, "go", String(x.text || "").split("\n")[0]);
     closeSheet();
     location.hash = lmHref(a.cmd, a.params, String(x.text || x.name || "").split("\n")[0]);
   },
@@ -2840,6 +2877,19 @@ const ACT = {
     const on = !+x.checkbox, a = (x.actions || {})[on ? "on" : "off"]; if (!a) return;
     x.checkbox = on ? 1 : 0; t.classList.toggle("on", on);
     lms(A.room || "", lmArgs(a.cmd, a.params)).catch(() => toast("Lyrion didn't answer"));
+  },
+  // Lyrion's own menu for a track or an album (what every plugin adds there: ratings, lyrics, favourites, its biography…)
+  lmInfo: v => {
+    const k = v.split(":")[0], id = v.slice(k.length + 1), inSheet = $("#lm-sheet");
+    if (!inSheet || k === "album") openSheet(`<div class="kicker">From Lyrion</div><h3>${k === "album" ? esc((A.byId.get(+id) || [])[1] || "The album") : "The track"}</h3><div id="lm-sheet">${gathering("small")}</div>`);
+    else { inSheet.innerHTML = gathering("small"); const b = $(".lm-more-open"); if (b) b.remove(); }
+    lmItems(k === "album" ? ["albuminfo", "items"] : ["trackinfo", "items"], k === "album" ? { album_id: id } : { track_id: id }, 0, 100)
+      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, ""); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+  },
+  lmChoice: v => {
+    const p = v.split(":"), j = +p.pop(), got = lmItem(p.join(":")), x = got[0]; if (!x) return;
+    const c = x.actions.do.choices[j]; if (!c) return;
+    lms(A.room || "", lmArgs(c.cmd, c.params || {})).then(() => { x.selectedIndex = j + 1; lmRefresh(); toast(x.choiceStrings[j]); }).catch(() => toast("Lyrion didn't answer"));
   },
   lmMore: v => {
     const got = lmItem(v), x = got[0]; if (!x) return;
@@ -3134,7 +3184,8 @@ function openTrackMenu(v) {
       <div class="acts col"><button class="btn" data-act="trackDo" data-v="play">${icon("play")} Spin from here</button><button class="btn ghost" data-act="trackDo" data-v="next">${icon("next_up")} Spin it next</button>
       <button class="btn ghost" data-act="trackDo" data-v="queue">${icon("queue")} Add to the queue</button><button class="btn ghost" data-act="addToPlaylist" data-v="track:${t.id}">${icon("list")} Add to a playlist</button>
       <button class="btn ghost" data-act="banDo" data-v="track" data-artist="${esc(t.artist || d.artist)}" data-title="${esc(t.title)}">${icon("ban")} Never play this track</button><button class="btn ghost" data-act="trackDo" data-v="radio">${icon("radio")} Start a radio from it</button>${on("features", "write_files") ? `<button class="btn ghost" data-act="titleEdit" data-v="${t.id}" data-album="${esc(p[0])}">${icon("edit")} Fix the title</button>` : ""}</div>
-      <div class="sheet-mark">${mk("track", trackKey(Object.assign({ album: d.album }, t)), "heart")} <span class="dim">Love this track</span></div></div>`);
+      <div class="sheet-mark">${mk("track", trackKey(Object.assign({ album: d.album }, t)), "heart")} <span class="dim">Love this track</span></div>
+      <button class="lm-more-open" data-act="lmInfo" data-v="track:${t.id}">${icon("more")} More from Lyrion</button><div id="lm-sheet"></div></div>`);
   });
 }
 function openSheet(html) { const s = $("#sheet"); s.innerHTML = `<div class="sheet-bg" data-act="closeSheet"></div><div class="sheet-card">${html}</div>`; s.hidden = false; requestAnimationFrame(() => s.classList.add("on")); }

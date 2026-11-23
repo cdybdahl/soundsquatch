@@ -1677,3 +1677,6 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .lm-switch .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 11px; background: var(--ink); transition: transform .2s; }
 .lm-switch.on .sw { background: var(--accent); }
 .lm-switch.on .sw::after { transform: translateX(18px); }
+.lm-more-open { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 8px 0; color: var(--dim); font: 600 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; }
+.lm-more-open .ic { width: 16px; height: 16px; }
+#lm-sheet .lm-list { max-height: 50vh; overflow-y: auto; }
