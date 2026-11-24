@@ -1971,7 +1971,7 @@ VIEWS.missing = function (el) {
     $(".hist", el).innerHTML = (A.missing || []).length ? `<p class="plan-note">${esc(SVC())} stopped streaming these, so they left your favourites and the shelves. Often the same record is still there in another edition.</p>` + A.missing.map(x =>
       `<div class="hrow rm"><span class="ht">${new Date(x.gone * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
         ${x.art ? `<img loading="lazy" src="${cover(x.art, 150)}" alt="" onerror="this.outerHTML='<span class=noimg></span>'">` : `<span class="noimg"></span>`}<span class="hw"><b>${esc(x.title)}</b><em>${esc(x.artist)}${x.year ? " &middot; " + x.year : ""}</em></span>
-        <button class="pill" data-act="repairFind" data-v="${esc(x.k)}">Find it</button></div>`).join("") : `<p class="dim center">Nothing has gone missing.</p>`;
+        <span class="gone-acts"><button class="pill" data-act="repairFind" data-v="${esc(x.k)}">Find it</button><button class="pill ghost" data-act="repairDrop" data-v="${esc(x.k)}">Drop it</button></span></div>`).join("") : `<p class="dim center">Nothing has gone missing.</p>`;
   });
 };
 VIEWS.removed = function (el) {
@@ -2954,12 +2954,12 @@ const ACT = {
   repairFind: v => {
     const x = (A.missing || []).find(m => m.k === v); if (!x) return;
     openSheet(`<div data-k="${esc(v)}"><div class="kicker">Gone from ${esc(SVC())}</div><h3>${esc(x.title)}</h3><div class="dim">${esc(x.artist)}</div><div class="repair-list">${gathering("small")}</div>
-      <div class="acts col"><button class="btn ghost" data-act="repairDrop" data-v="${esc(v)}">Let it go</button></div></div>`);
+      <div class="acts col"><button class="btn ghost" data-act="repairDrop" data-v="${esc(v)}">Drop it</button></div></div>`);
     api("/api/repair-options", { k: v, player: A.room }).then(r => {
       const box = $("#sheet .repair-list"); if (!box) return;
       box.innerHTML = r.options && r.options.length ? `<p class="plan-note">${esc(SVC())} has it in ${r.options.length === 1 ? "this edition" : "these editions"}:</p>` + r.options.map(o =>
         `<div class="hrow"><img src="${esc(pic(o.cover, 160))}" alt=""><span class="hw"><b>${esc(o.album)}</b><em>${esc(o.artist)}</em></span><button class="pill" data-act="repairDo" data-v="${esc(JSON.stringify(o))}">${icon("plus")} Put back</button></div>`).join("")
-        : `<p class="plan-note">${esc(SVC())} doesn't have it in any edition now. Let it go, or keep it listed here in case it comes back.</p>`;
+        : `<p class="plan-note">${esc(SVC())} doesn't have it in any edition now. Drop it, or keep it listed here in case it comes back.</p>`;
     }).catch(() => { const box = $("#sheet .repair-list"); if (box) box.innerHTML = `<p class="dim">${esc(SVC())} didn't answer.</p>`; });
   },
   repairDo: (v, t) => {
@@ -2974,7 +2974,7 @@ const ACT = {
   },
   repairDrop: v => {
     closeSheet();
-    api("/api/repair", { k: v, dismiss: true }).then(() => { A.missing = (A.missing || []).filter(m => m.k !== v); if (current && current.kind === "missing") VIEWS.missing(current.el); toast("Let go"); }).catch(() => toast("The server didn't answer"));
+    api("/api/repair", { k: v, dismiss: true }).then(() => { A.missing = (A.missing || []).filter(m => m.k !== v); if (current && current.kind === "missing") VIEWS.missing(current.el); toast("Dropped"); }).catch(() => toast("The server didn't answer"));
   },
   addTo: v => addToSheet(JSON.parse(v)),
   moreOf: v => moreOfSheet(JSON.parse(v)),
