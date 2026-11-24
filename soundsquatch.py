@@ -734,6 +734,7 @@ def setup():
         c.execute("create table if not exists lyrics (k text primary key, data text, fetched real)")
         c.execute("create table if not exists credits (k text primary key, data text, fetched real)")  # an album's people, by copies(artist, album)
         c.execute("create table if not exists removals (at real, album text, artist text, data text)")  # what was taken off the shelves, to put back
+        c.execute("create table if not exists shelf_seen (k text primary key, artist text, title text, year integer, art text, source text, last real, gone real, dismissed integer default 0)")  # every streamed album the shelves have held, to notice one that leaves on its own
         c.execute("create table if not exists archive_details (id text primary key, data text, fetched real)")  # archive.org's metadata for a show
         c.execute("create table if not exists archive_seen (identifier text primary key, first_seen real)")  # when an Archive favourite first appeared
         c.execute("create table if not exists persons (mbid text primary key, data text, fetched real)")  # what a person worked on, beyond the shelves
@@ -1426,7 +1427,86 @@ def load_library(force=False):
     with lib_lock:
         library.update(albums=albums, artists=artists, scan=scan, genres=genres, rated=rated)
     restamp()
+    note_shelves(albums)
     crawl_state["total"] = len(artists)
+
+
+# ───────────────────────── albums that leave on their own (a streaming service dropped them) ─────────────────────────
+GONE_AFTER = int(os.environ.get("SOUNDSQUATCH_GONE_AFTER", 6 * 3600))  # off the shelves this long (past a scan's comings and goings) before it counts as gone
+
+
+def note_shelves(albums):
+    """Each streamed album on the shelves noted (its names kept, for when it's gone); one that was here, isn't now in any
+    copy, wasn't taken off from here and has stayed away a while is gone: the service dropped it (Qobuz takes a release it
+    no longer streams out of your favourites, and Lyrion's next look deletes it)."""
+    now = time.time()
+    here = {}
+    for a in albums:
+        here[copies(a[2], a[1])] = a
+        for v in a[10] if len(a) > 10 and a[10] else []:
+            here.setdefault(copies(a[2], v[1]), a)  # its other pressings count as it
+    with db() as c:
+        removed = {copies(r[1] or "", r[0] or "") for r in c.execute("select album, artist from removals")}
+        seen = {r[0]: r for r in c.execute("select k, gone from shelf_seen")}
+    rows = [(k, a[2], a[1], int(a[3] or 0), str(a[4] or ""), a[9], now) for k, a in here.items() if a[9] not in ("local", "vinyl", "joining")]
+    with db_lock, db() as c:
+        c.executemany("insert into shelf_seen (k, artist, title, year, art, source, last, gone) values (?,?,?,?,?,?,?,0) "
+                      "on conflict(k) do update set artist=excluded.artist, title=excluded.title, year=excluded.year, art=excluded.art, "
+                      "source=excluded.source, last=excluded.last, gone=0", rows)
+        for k in set(seen) - set(here):
+            if k in removed:
+                c.execute("delete from shelf_seen where k = ?", (k,))  # taken off from here: not missing
+            elif not seen[k][1]:
+                c.execute("update shelf_seen set gone = ? where k = ?", (now, k))
+
+
+def missing_albums():
+    """Albums the service dropped: [{k, artist, title, year, art, source, gone}], newest loss first."""
+    with db() as c:
+        rows = c.execute("select k, artist, title, year, art, source, gone from shelf_seen where gone > 0 and gone < ? and not dismissed order by gone desc",
+                         (time.time() - GONE_AFTER,)).fetchall()
+    with lib_lock:
+        here = {copies(a[2], a[1]) for a in library["albums"]}
+    return [dict(zip(("k", "artist", "title", "year", "art", "source", "gone"), r)) for r in rows if r[0] not in here]
+
+
+EDITION_WORDS = re.compile(r"\s*(?:[-\u2013\u2014:/]|\bthe\b)?\s*[(\[]?\s*(?:\d{2,4}\s*)?(?:(?:super\s+)?deluxe|remaster(?:ed)?|expanded|anniversary|collector'?s|special|legacy|definitive|bonus|reissue|hi-?res|edition|version)\b.*$", re.I)
+
+
+def repair_options(req):
+    """For a gone album: the same record as the service has it now (another edition: a remaster, a reissue), best first."""
+    k = req.get("k") or ""
+    with db() as c:
+        row = c.execute("select artist, title, year from shelf_seen where k = ?", (k,)).fetchone()
+    if not row or not svc():
+        return {"options": []}
+    artist, title, year = row
+    bare = EDITION_WORDS.sub("", title) or title
+    want, term = lms_qobuz.plain(bare), f"{artist} {bare}".strip()[:120]
+    player = req.get("player") if lms_qobuz.PLAYER.match(req.get("player") or "") else PLAYER
+    out = []
+    for i, (a, t, cover) in enumerate(svc().search(term, player)):
+        if lms_qobuz.plain(EDITION_WORDS.sub("", t) or t) == want and lms_qobuz.same_name(a, artist):
+            out.append({"i": i, "artist": a, "album": t, "cover": cover, "term": term})
+    return {"artist": artist, "title": title, "year": year, "service": svc().label, "options": out[:4]}
+
+
+def repair_do(req):
+    """A gone album put right (the edition chosen added to the library: it joins the shelves at once), or let go."""
+    k = req.get("k") or ""
+    with db() as c:
+        row = c.execute("select artist, title from shelf_seen where k = ?", (k,)).fetchone()
+    if not row:
+        return {"error": "not a missing album"}
+    if req.get("dismiss"):
+        with db_lock, db() as c:
+            c.execute("update shelf_seen set dismissed = 1 where k = ?", (k,))
+        return {"ok": True}
+    out = qobuz({"action": "keep", "term": req.get("term") or "", "index": req.get("i"), "player": req.get("player") or PLAYER, "cover": req.get("cover") or ""})
+    if out.get("result") in ("added", "already"):
+        with db_lock, db() as c:
+            c.execute("delete from shelf_seen where k = ?", (k,))
+    return out
 
 
 def library_payload():
@@ -1812,6 +1892,7 @@ def diagnostics():
              f"Lyrion {st.get('version', st.get('error', '?'))}, language {HAVE.get('language', '?')}, {st.get('player count', '?')} players, login {'yes' if settings['connections']['lms_user'] else 'no'}",
              "Plugins: " + ", ".join(f"{k} {'yes' if v else 'no'}" for k, v in HAVE.items() if k not in ("language", "mai_lang")),
              f"Library: {s['albums']} albums (+{versions} other versions), {s['artists']} artists; profiled {s['profiled']}, genres to find {s['genres_left']}, credits to find {s['credits_left']}",
+             f"Gone from the streaming service (dropped, not removed here): {len(missing_albums())}",
              f"Lyrion counts {st.get('info total albums', '?')} albums, {st.get('info total artists', '?')} artists; group players {groups}",
              f"My Music: {my_music}",
              f"Write-ups: {pieces}; Music & Artist Information asked in {', '.join(mai_langs())}{' (its own setting)' if HAVE.get('mai_lang') else ''}",
@@ -5972,6 +6053,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.wfile.write(body)
             if url.path == "/api/removals":
                 return self.reply(removals())
+            if url.path == "/api/missing":
+                return self.reply({"missing": missing_albums()})
             if url.path == "/api/removal":
                 return self.reply(removal_plan(int(qs.get("id", "0"))))
             if url.path == "/api/playlists":
@@ -6041,7 +6124,7 @@ class Handler(BaseHTTPRequestHandler):
                    "/api/ban", "/api/station-edit", "/api/artist-tags"}  # what changes the house for everyone: settings, files, never-play, stations
         if self.path in guarded and not pin_ok(self.headers.get("X-Soundsquatch-PIN")):
             return self.reply({"error": "pin", "pin": True}, status=403)
-        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
+        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/repair-options": repair_options, "/api/repair": repair_do, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/kexp-play": kexp_play, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
                   "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/turntable/dismiss": turntable_dismiss, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,
