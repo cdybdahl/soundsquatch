@@ -229,6 +229,7 @@ function loadLibrary() {
 }
 function freshShelves() {
   if (document.hidden) return;
+  loadMissing();
   loadLibrary().then(changed => {
     if (!changed) return;
     Array.from(A.views.keys()).forEach(h => { const view = A.views.get(h); if (view !== current) { view.el.remove(); A.views.delete(h); } }); // drawn again when next opened
@@ -1674,6 +1675,7 @@ function loadView() {
 const inView = a => !A.view || A.view.ids.has(+a[0]) || (a[10] || []).some(v => A.view.ids.has(+v[0]));
 const viewChip = () => A.view ? `<span class="view-chip" title="Chosen for this room in Lyrion">${icon("list")} A library view: ${A.view.ids.size.toLocaleString()} albums</span>` : "";
 VIEWS.albums = function (el) {
+  loadMissing(); // what the service dropped, asked again each visit (the link fills in when it answers)
   const sort = store.get("sq-sort", "added"), genre = store.get("sq-genre", "");
   const shows = (genre === "" || genre === "@archive" ? A.archive.map(archRow) : []).concat(genre === "" || genre === "@vinyl" ? A.vinylOnly.map(vinylRow) : []);
   if (!A.heard && focusOn()) loadHeard().then(() => { if (current && current.el === el) VIEWS.albums(el); });
@@ -1684,7 +1686,7 @@ VIEWS.albums = function (el) {
   const countText = `${list.length.toLocaleString()} ${label}albums${focusOn() ? " in the dig" : ""}` + (A.view ? " &middot; " + viewChip() : "");
   el.innerHTML = `${pageBar("Albums", ["The library", countText],
       `<button class="pill focus-btn ${focusOn() ? "on" : ""}" data-act="focusOpen">${icon("tag")}<span class="pl">Dig${focusOn() ? ` &middot; ${focusOn()}` : ""}</span></button><div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="sortAlbums" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`, false, "segs grow albums-acts")}
-    <div class="toolbar"><div class="chips"><button class="${genre ? "" : "on"}" data-act="genreAlbums" data-v="">Every album</button>${filters.map(f => `<button class="${f[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(f[0])}">${f[1]}</button>`).join("")}${focusSaved().map((f, i) => `<button class="saved-focus" data-act="focusUse" data-v="${i}">${icon("tag")} ${esc(f.name)}</button>`).join("")}<a class="chip-link" href="#/removed">Recently removed</a><span class="chip-gap"></span>${A.genres.map(g => `<button class="${g[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(g[0])}">${esc(g[0])}</button>`).join("")}</div></div>
+    <div class="toolbar"><div class="chips"><button class="${genre ? "" : "on"}" data-act="genreAlbums" data-v="">Every album</button>${filters.map(f => `<button class="${f[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(f[0])}">${f[1]}</button>`).join("")}${focusSaved().map((f, i) => `<button class="saved-focus" data-act="focusUse" data-v="${i}">${icon("tag")} ${esc(f.name)}</button>`).join("")}<a class="chip-link" href="#/removed">Recently removed</a><span class="gone-link">${goneLink()}</span><span class="chip-gap"></span>${A.genres.map(g => `<button class="${g[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(g[0])}">${esc(g[0])}</button>`).join("")}</div></div>
     <div class="grid">${list.map(a => albumCard(a)).join("")}</div>`;
 };
 /* ───────────────────────── Focus: the Albums page's filters, combined ─────────────────────────
@@ -1956,6 +1958,22 @@ function openPlaylistPicker(what) {
 }
 
 /* ───────────────────────── recently removed: albums taken off the shelves, and put back ───────────────────────── */
+/* ───────────────────────── gone: albums the streaming service dropped ─────────────────────────
+   A release the service no longer streams leaves your favourites, and Lyrion's next look takes it off the shelves; the
+   server notices one that left without being removed here. Each can be found again (the same record as the service
+   has it now: a remaster, a reissue) and put back in one tap, its rating and history following it, or let go. */
+function loadMissing() { return api("/api/missing").then(r => { A.missing = r.missing || []; document.querySelectorAll(".gone-link").forEach(b => { b.innerHTML = goneLink(); }); }).catch(() => {}); }
+const goneLink = () => (A.missing || []).length ? `<a class="chip-link warn" href="#/missing">Gone from ${esc(SVC())} (${A.missing.length})</a>` : "";
+VIEWS.missing = function (el) {
+  el.innerHTML = `${pageBar("Gone from " + esc(SVC()), ["Off the shelves", "the service stopped streaming them"], "", true)}<div class="hist"><div class="trk ph"></div></div>`;
+  loadMissing().then(() => {
+    if (!el.isConnected) return;
+    $(".hist", el).innerHTML = (A.missing || []).length ? `<p class="plan-note">${esc(SVC())} stopped streaming these, so they left your favourites and the shelves. Often the same record is still there in another edition.</p>` + A.missing.map(x =>
+      `<div class="hrow rm"><span class="ht">${new Date(x.gone * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+        ${x.art ? `<img loading="lazy" src="${cover(x.art, 150)}" alt="" onerror="this.outerHTML='<span class=noimg></span>'">` : `<span class="noimg"></span>`}<span class="hw"><b>${esc(x.title)}</b><em>${esc(x.artist)}${x.year ? " &middot; " + x.year : ""}</em></span>
+        <span class="gone-acts"><button class="pill" data-act="repairFind" data-v="${esc(x.k)}">Find it</button><button class="pill ghost" data-act="repairDrop" data-v="${esc(x.k)}">Drop it</button></span></div>`).join("") : `<p class="dim center">Nothing has gone missing.</p>`;
+  });
+};
 VIEWS.removed = function (el) {
   el.innerHTML = `${pageBar("Recently removed", ["Off the shelves", "files kept in music-removed"], "", true)}<div class="hist"><div class="trk ph"></div></div>`;
   api("/api/removals").then(r => {
@@ -3021,6 +3039,31 @@ const ACT = {
     t.disabled = true; toast(`${e.action_label || "Running"}…`);
     api("/api/ma/config/action", { kind: r.kind, id: r.id, action: e.action }).then(o => { t.disabled = false; toast(o.error ? o.error.replace(/^\w+Error: /, "") : "Done"); }).catch(() => { t.disabled = false; toast("Music Assistant didn't answer"); });
   },
+  repairFind: v => {
+    const x = (A.missing || []).find(m => m.k === v); if (!x) return;
+    openSheet(`<div data-k="${esc(v)}"><div class="kicker">Gone from ${esc(SVC())}</div><h3>${esc(x.title)}</h3><div class="dim">${esc(x.artist)}</div><div class="repair-list">${gathering("small")}</div>
+      <div class="acts col"><button class="btn ghost" data-act="repairDrop" data-v="${esc(v)}">Drop it</button></div></div>`);
+    api("/api/repair-options", { k: v, player: A.room }).then(r => {
+      const box = $("#sheet .repair-list"); if (!box) return;
+      box.innerHTML = r.options && r.options.length ? `<p class="plan-note">${esc(SVC())} has it in ${r.options.length === 1 ? "this edition" : "these editions"}:</p>` + r.options.map(o =>
+        `<div class="hrow"><img src="${esc(pic(o.cover, 160))}" alt=""><span class="hw"><b>${esc(o.album)}</b><em>${esc(o.artist)}</em></span><button class="pill" data-act="repairDo" data-v="${esc(JSON.stringify(o))}">${icon("plus")} Put back</button></div>`).join("")
+        : `<p class="plan-note">${esc(SVC())} doesn't have it in any edition now. Drop it, or keep it listed here in case it comes back.</p>`;
+    }).catch(() => { const box = $("#sheet .repair-list"); if (box) box.innerHTML = `<p class="dim">${esc(SVC())} didn't answer.</p>`; });
+  },
+  repairDo: (v, t) => {
+    const o = JSON.parse(v), k = t.closest("[data-k]").dataset.k;
+    closeSheet(); toast("Putting it back…");
+    api("/api/repair", Object.assign({ k, player: A.room }, o)).then(r => {
+      if (r.error) return toast(r.error);
+      A.missing = (A.missing || []).filter(m => m.k !== k); freshShelves();
+      toast(`${r.album || o.album} is back on the shelves`);
+      if (current && current.kind === "missing") VIEWS.missing(current.el);
+    }).catch(() => toast("The server didn't answer"));
+  },
+  repairDrop: v => {
+    closeSheet();
+    api("/api/repair", { k: v, dismiss: true }).then(() => { A.missing = (A.missing || []).filter(m => m.k !== v); if (current && current.kind === "missing") VIEWS.missing(current.el); toast("Dropped"); }).catch(() => toast("The server didn't answer"));
+  },
   addTo: v => addToSheet(JSON.parse(v)),
   moreOf: v => moreOfSheet(JSON.parse(v)),
   addToDo: (v, t) => {
@@ -3994,7 +4037,7 @@ function start() {
     if (!A.rooms.some(p => p.playerid === A.room) && A.rooms.length) A.room = (A.rooms.find(p => p.playerid === home) || A.rooms.find(p => p.modelname !== "Group") || A.rooms[0]).playerid;
   }).catch(() => {}).then(() => { poll(); ttPoll(); });
   $("#main").addEventListener("scroll", watchHead, { passive: true });
-  Promise.all([loadLibrary(), loadMarks(), loadFocuses(), house, loadArchive(), loadStations().catch(() => null), loadView()]).then(() => { applyHouse(); $("#main").innerHTML = ""; route(); window.addEventListener("hashchange", route); })
+  Promise.all([loadLibrary(), loadMarks(), loadFocuses(), house, loadArchive(), loadStations().catch(() => null), loadView(), loadMissing()]).then(() => { applyHouse(); $("#main").innerHTML = ""; route(); window.addEventListener("hashchange", route); })
     .catch(firstRun);
 }
 // the shelves didn't come: when it's because Lyrion can't be found (a first start, or it has moved), its address asked for

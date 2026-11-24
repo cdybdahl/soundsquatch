@@ -156,7 +156,12 @@ def library_rows():
         albums += got
         if len(got) < step:
             break
-    albums = [a for a in albums if any(m.get("available") for m in a.get("provider_mappings") or [])]  # nothing playable: not on the shelves
+    DEAD.clear()
+    for a in albums:  # nothing playable (the service stopped streaming it): not on the shelves, but listed as gone
+        if not any(m.get("available") for m in a.get("provider_mappings") or []):
+            DEAD.append({"id": a["item_id"], "artist": (a.get("artists") or [{}])[0].get("name", ""), "title": a.get("name") or "",
+                         "year": int(a.get("year") or 0), "art": picture(a), "source": source_of(a)})
+    albums = [a for a in albums if any(m.get("available") for m in a.get("provider_mappings") or [])]
     rows = []
     for rank, a in enumerate(albums):
         first = (a.get("artists") or [{}])[0]  # the album's first artist, as Soundsquatch files albums
@@ -164,6 +169,14 @@ def library_rows():
                      quality_words(best_format(a)), int(first.get("item_id") or 0) if str(first.get("item_id", "")).isdigit() else 0,
                      [], source_of(a), [], 0])  # when added: Music Assistant says only the order (its rank)
     return rows
+
+
+DEAD = []  # the library's albums with no playable copy left: the Gone list's
+
+
+def drop_dead(item_id):
+    """A dead album taken out of Music Assistant's library (once another edition has taken its place, or it is let go)."""
+    client().call("music/library/remove_item", media_type="album", library_item_id=str(item_id))
 
 
 def album_songs(album_id):

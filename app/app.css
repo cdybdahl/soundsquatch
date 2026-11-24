@@ -1716,3 +1716,8 @@ select.ma-in { appearance: none; -webkit-appearance: none; background: var(--bg2
 .ma-multi { flex-wrap: wrap; justify-content: flex-end; }
 .ma-adv summary { cursor: pointer; list-style: none; } .ma-adv summary::-webkit-details-marker { display: none; }
 .ma-adv[open] summary { color: var(--ink); }
+/* albums the service dropped */
+.chip-link.warn { color: var(--accent); }
+.repair-list { margin: 14px 0 6px; }
+.repair-list .hrow img { width: 48px; height: 48px; border-radius: 4px; object-fit: cover; }
+.gone-acts { display: flex; gap: 8px; flex: none; }
