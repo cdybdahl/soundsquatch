@@ -1679,7 +1679,14 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .lm-switch.on .sw::after { transform: translateX(18px); }
 .lm-more-open { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 8px 0; color: var(--dim); font: 600 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; }
 .lm-more-open .ic { width: 16px; height: 16px; }
-#lm-sheet .lm-list { max-height: 50vh; overflow-y: auto; }
+/* rows: a picture only where the item has one; a quiet chevron where it opens further; "Label: value" as a fact */
+.lm-go > .ic, .lm-row.lm-go > .ic { width: 16px; height: 16px; flex: none; color: var(--faint); }
+.lm-row.lm-go { gap: 14px; padding: 8px 0; color: inherit; }
+.lm-fact { min-height: 0; padding: 10px 0; gap: 16px; align-items: baseline; }
+.lm-fl { flex: none; width: 34%; font: 600 11px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.lm-fv { flex: 1; min-width: 0; font: 15px/1.4 var(--sans); color: var(--dim); overflow-wrap: anywhere; }
+#lm-sheet .lm-list { margin-top: 6px; }
+#lm-sheet .lm-row:last-child { border-bottom: 0; }
 /* the queue's own controls: how many to come, shuffle, all of it, clear */
 .nx-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 4px 0 10px; font: 13px var(--sans); color: var(--dim); }
 .nx-ctl > span:first-child { margin-right: auto; }

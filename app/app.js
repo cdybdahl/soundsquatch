@@ -46,6 +46,7 @@ const ICONS = {
   squatch: '<path d="M13.4 1.8L15 2.8 15.7 4.6 15.3 6.2 16.4 7.6 16.8 10.6 16.2 13.2 17.6 16.6 17.7 20.4 19.4 21.2 19.4 22.2 15.8 22.2 15.9 17.4 13.8 15.2 12.2 18.2 10.2 21.2 11.4 22.2 7.8 22.2 8.4 20.6 9.6 17.4 9.8 13.6 9.4 11.6 7.6 14.2 6.4 14.6 6.2 13.6 7.2 11.2 8.6 7.6 10.2 4.8 11.6 2.6Z" stroke-width="1.4"/>',
   squatch_on: '<path d="M13.4 1.8L15 2.8 15.7 4.6 15.3 6.2 16.4 7.6 16.8 10.6 16.2 13.2 17.6 16.6 17.7 20.4 19.4 21.2 19.4 22.2 15.8 22.2 15.9 17.4 13.8 15.2 12.2 18.2 10.2 21.2 11.4 22.2 7.8 22.2 8.4 20.6 9.6 17.4 9.8 13.6 9.4 11.6 7.6 14.2 6.4 14.6 6.2 13.6 7.2 11.2 8.6 7.6 10.2 4.8 11.6 2.6Z" fill="currentColor" stroke-width="1"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  chev: '<path d="M9.5 5.5l6.5 6.5-6.5 6.5"/>',
   star: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
   star_on: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z" fill="currentColor"/>',
   repeat: '<path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3"/>',
@@ -2250,7 +2251,7 @@ function lmRow(x, base, i, where) {
   const doIt = x.actions && x.actions.do && x.actions.do.choices ? null : lmAction(x, base, "do");
   const search = !(doIt && x.input) && (x.input || (go && JSON.stringify(go.params).indexOf("__TAGGEDINPUT__") >= 0) || x.type === "search");
   const ref = `data-v="${where}:${i}"`;
-  const art = img ? `<img loading="lazy" src="${esc(img)}" alt="" onerror="this.style.visibility='hidden'">` : `<span class="lm-noart">${icon(go ? "list" : "play")}</span>`;
+  const art = img ? `<img loading="lazy" src="${esc(img)}" alt="" onerror="this.remove()">` : ""; // a picture only where the item has one
   const words = `<span class="lm-w"><b>${esc(lines[0])}</b>${lines[1] ? `<em>${esc(lines.slice(1).join(" · "))}</em>` : ""}</span>`;
   if (search) return `<form class="lm-search" data-act="lmSearch" ${ref}>${icon("search")}<input type="search" placeholder="${esc(lines[0] || "Search")}" autocomplete="off" autocapitalize="off"><button class="pill" type="submit">Search</button></form>`;
   if (x.choiceStrings && doIt === null && x.actions && x.actions.do && x.actions.do.choices) // "one of these": the current one marked
@@ -2261,14 +2262,24 @@ function lmRow(x, base, i, where) {
   }
   if (x.checkbox != null) return `<button class="lm-row lm-switch ${+x.checkbox ? "on" : ""}" data-act="lmCheck" ${ref}>${words}<i class="sw"></i></button>`;
   if (x.radio != null) return `<button class="lm-row lm-radio ${+x.radio ? "on" : ""}" data-act="lmDo" ${ref}>${words}<i class="rd"></i></button>`;
-  if (x.node !== undefined && x.isANode) return `<a class="lm-row lm-go" href="${lmHref(null, null, lines[0], x.id)}">${img ? art : `<span class="lm-noart">${icon("list")}</span>`}${words}</a>`;
-  if (!go && !play && !doIt) return `<div class="lm-row lm-text">${img ? art : ""}${words}</div>`;
+  if (x.node !== undefined && x.isANode) return `<a class="lm-row lm-go" href="${lmHref(null, null, lines[0], x.id)}">${art}${words}${icon("chev")}</a>`;
+  const fact = !go && !play && !doIt && /^([^:]{2,32}):\s+(.+)$/.exec(lines[0]);
+  if (fact) return `<div class="lm-row lm-fact"><span class="lm-fl">${esc(fact[1])}</span><span class="lm-fv">${esc(fact[2])}</span></div>`;
+  if (!go && !play && !doIt) return `<div class="lm-row lm-text">${art}${words}</div>`;
   const tapPlays = play && (!go || x.goAction === "play" || x.type === "audio" || x.isaudio);
   const acts = play ? `<span class="lm-acts"><button data-act="lmPlay" ${ref} aria-label="Play">${icon("play")}</button><button data-act="lmNext" ${ref} aria-label="Play next">${icon("next_up")}</button><button data-act="lmAdd" ${ref} aria-label="Add to the queue">${icon("queue")}</button></span>` : "";
-  return `<div class="lm-row"><button class="lm-go" data-act="${tapPlays ? "lmPlay" : doIt && !go ? "lmDo" : "lmGo"}" ${ref}>${art}${words}</button>${acts}${more ? `<button class="lm-more" data-act="lmMore" ${ref} aria-label="More">${icon("more")}</button>` : ""}</div>`;
+  return `<div class="lm-row"><button class="lm-go" data-act="${tapPlays ? "lmPlay" : doIt && !go ? "lmDo" : "lmGo"}" ${ref}>${art}${words}${go && !tapPlays && !acts ? icon("chev") : ""}</button>${acts}${more ? `<button class="lm-more" data-act="lmMore" ${ref} aria-label="More">${icon("more")}</button>` : ""}</div>`;
 }
+// a track's or an album's menu from Lyrion carries its whole tag sheet (Album:, Year:, Duration:, External ID:…) and the
+// plain moves (play, queue, favourite, Listen Later); the page shows the one and Add to… does the other, so in those
+// menus only what the plugins add is kept (a bliss mix, an artist's story, its place on Qobuz…)
+const LM_FACT = /^(artist|album ?artist|track ?artist|composer|conductor|band|performer|album|title|year|genre|duration|release ?type|external ?id|(album |track )?volume adjustment|replay ?gain|bit ?rate|sample ?(rate|size)|format|file ?(format|size|type)|type|url|location|path|modified|added|last played|play ?count|track( number)?|disc( number)?|comment|rating|musicbrainz[^:]*|label|bpm|channels|work|grouping)\s*:/i;
+const LM_MOVE = /^(add to end|play next|play|play this (album|song)|add (album|track|song) to (listen later|wish list)|save to favorites|remove from favorites|show artwork|lyrics|comment|rating|more info)\b/i;
+const lmPluginItem = x => { const t = String(x.text || "").split("\n")[0].trim(); return !!t && !LM_FACT.test(t) && !LM_MOVE.test(t); };
 const LMV = {}; // the levels on screen and in the sheet: their items and base actions, by where they're drawn
-function lmDraw(box, where, r, title) {
+function lmDraw(box, where, r, title, info) {
+  if (info) r = Object.assign({}, r, { item_loop: (r.item_loop || []).filter(lmPluginItem), count: 0 });
+  if (info && !r.item_loop.length) { LMV[where] = { items: [], base: null, title }; box.innerHTML = `<p class="dim">Lyrion's plugins add nothing here.</p>`; return; }
   LMV[where] = { items: r.item_loop || [], base: r.base || null, title };
   const text = r.window && r.window.textarea ? `<p class="lm-textarea">${esc(r.window.textarea)}</p>` : "";
   box.innerHTML = text + (LMV[where].items.length ? `<div class="lm-list">${LMV[where].items.map((x, i) => lmRow(x, r.base, i, where)).join("")}</div>`
@@ -2955,7 +2966,7 @@ const ACT = {
     if (!inSheet || k !== "track") openSheet(`<div class="kicker">From Lyrion</div><h3>${k === "album" ? esc((A.byId.get(+id) || [])[1] || "The album") : k === "queue" ? esc((((A.st || {}).playlist_loop || []).find(x => +x["playlist index"] === +id) || {}).title || "The song") : "The track"}</h3><div id="lm-sheet">${gathering("small")}</div>`);
     else { inSheet.innerHTML = gathering("small"); const b = $(".lm-more-open"); if (b) b.remove(); }
     lmItems(k === "album" ? ["albuminfo", "items"] : ["trackinfo", "items"], k === "album" ? { album_id: id } : k === "queue" ? { playlist_index: id } : { track_id: id }, 0, 100)
-      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, ""); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, "", true); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
   },
   roomPower: (v, t) => { const on = t.classList.contains("on"); lms(v, ["power", on ? 0 : 1]).then(() => { t.classList.toggle("on", !on); toast(`${roomName(v)} ${on ? "off" : "on"}`); if (v === A.room) setTimeout(poll, 400); }).catch(() => toast("Lyrion didn't answer")); },
   sleepSheet: () => {
@@ -2987,7 +2998,7 @@ const ACT = {
     const a = lmAction(x, got[1], "more"); if (!a) return;
     openSheet(`<div class="kicker">More</div><h3>${esc(String(x.text || "").split("\n")[0])}</h3><div id="lm-sheet">${gathering("small")}</div>`);
     lmItems(a.cmd, a.params, 0, 100)
-      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, ""); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, "", /^(trackinfo|albuminfo|artistinfo|genreinfo|yearinfo)$/.test(a.cmd[0])); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
   },
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;
