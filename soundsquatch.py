@@ -3448,6 +3448,8 @@ def move_room(src, dst, play=True):
     the track. src stops only once dst holds the whole queue; if anything is short, src plays on and nothing is lost."""
     if not (lms_qobuz.PLAYER.match(src or "") and lms_qobuz.PLAYER.match(dst or "")) or src == dst:
         return {"error": "no such rooms"}
+    if backend_ma.ON:
+        return backend_ma.move_queue(src, dst)
     st = rpc(src, "status", "-", "1")
     if not int(st.get("playlist_tracks") or 0):
         return {"error": "nothing to move"}

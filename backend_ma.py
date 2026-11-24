@@ -203,6 +203,12 @@ def _track_row(item, index=None):
     return row
 
 
+def move_queue(src, dst):
+    """What one room plays, handed to another (Music Assistant moves the whole queue and the place in it)."""
+    client().call("player_queues/transfer", source_queue_id=src, target_queue_id=dst, auto_play=True)
+    return {"ok": True}
+
+
 def players():
     out = []
     for p in client().call("players/all") or []:
@@ -225,6 +231,12 @@ def status(pid, start, count):
           "playlist_tracks": int(q.get("items") or 0), "can_seek": 1}
     if cur is not None:
         st["playlist_cur_index"] = cur
+    members = [m for m in p.get("group_members") or [] if m]
+    if p.get("synced_to"):  # following another room: that room leads
+        lead = _player(p["synced_to"]) or {}
+        members = [p["synced_to"]] + [m for m in lead.get("group_members") or [] if m and m != p["synced_to"]]
+    if len(members) > 1:
+        st["sync_master"], st["sync_slaves"] = members[0], ",".join(members[1:])
     first = cur if start == "-" and cur is not None else int(start) if str(start).isdigit() else 0
     if st["playlist_tracks"]:
         items = client().call("player_queues/items", queue_id=pid, limit=max(1, int(count)), offset=first) or []
@@ -275,6 +287,15 @@ def lms(pid, cmd):
                     c.call("player_queues/play_index", queue_id=pid, index=int(v))
             elif what == "clear":
                 c.call("player_queues/clear", queue_id=pid)
+            elif what == "delete" and len(plain) > 2:
+                c.call("player_queues/delete_item", queue_id=pid, item_id_or_index=int(plain[2]))
+            elif what == "move" and len(plain) > 3:
+                frm, to = int(plain[2]), int(plain[3])
+                item = (c.call("player_queues/items", queue_id=pid, limit=1, offset=frm) or [{}])[0]
+                if item.get("queue_item_id"):
+                    c.call("player_queues/move_item", queue_id=pid, queue_item_id=item["queue_item_id"], pos_shift=to - frm)
+            elif what == "repeat" and len(plain) > 2:
+                c.call("player_queues/repeat", queue_id=pid, repeat_mode={"0": "off", "1": "one", "2": "all"}.get(plain[2], "off"))
             elif what == "shuffle":
                 c.call("player_queues/shuffle", queue_id=pid, shuffle_enabled=(plain[2] if len(plain) > 2 else "1") != "0")
             return {}
@@ -289,6 +310,15 @@ def lms(pid, cmd):
             p = _player(pid) or {}
             level = int(p.get("volume_level") or 0) + int(v) if v[0] in "+-" else int(float(v))
             c.call("players/cmd/volume_set", player_id=pid, volume_level=max(0, min(100, level)))
+            return {}
+        if head == "power" and len(plain) > 1 and plain[1] in ("0", "1"):
+            c.call("players/cmd/power", player_id=pid, powered=plain[1] == "1")
+            return {}
+        if head == "sync" and len(plain) > 1:
+            if plain[1] == "-":  # this room plays on its own again
+                c.call("players/cmd/ungroup", player_id=pid)
+            else:  # the room named joins this one
+                c.call("players/cmd/set_members", target_player=pid, player_ids_to_add=[plain[1]])
             return {}
         if head == "time" and len(plain) > 1 and plain[1] != "?":
             c.call("player_queues/seek", queue_id=pid, position=int(float(plain[1])))
