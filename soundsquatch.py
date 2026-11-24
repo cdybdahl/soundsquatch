@@ -160,6 +160,11 @@ def detect():
     """The Lyrion plugins Soundsquatch leans on, each asked whether it answers; what is missing is left out (the app hides
     it, the crawler doesn't ask it). Also Lyrion's language: the Qobuz plugin's menus are read by position where they can
     be, but keeping and removing Qobuz albums still finds its menu items by their English names."""
+    if backend_ma.ON:  # Music Assistant: none of Lyrion's plugins, but radio of its own (radio mode, Don't Stop the Music)
+        HAVE.clear()
+        HAVE.update(radio=True, language="EN", ma=True)
+        return HAVE
+
     def can(*cmd):
         return bool(int(rpc("", "can", *cmd, "?", timeout=5).get("_can") or 0))
 
@@ -3865,6 +3870,9 @@ def this_version(album_id):
 
 def removal_plan(album_id):
     """What removing an album would do, for the app to say before it is done."""
+    if backend_ma.ON:  # Music Assistant: out of its library (a file-based album's files stay where they are)
+        a = album_row(album_id)
+        return {"album": a[1], "artist": a[2], "ma": True, "local": a[9] == "local", "copies": 1, "qobuz": 0, "files": 0, "folders": [], "to": "", "versions_left": 0} if a else {"error": "no such album"}
     a, found = this_version(album_id)
     if not a:
         return {"error": "no such album"}
@@ -3882,6 +3890,17 @@ def remove_album(album_id, player):
     """Takes an album off the shelves, the version chosen (its other versions stay): a Qobuz favourite is no longer one (the release's own menu, as keeping
     it used), and the files are moved, folder by folder as they were, to REMOVED_DIR, where Lyrion does not look and from
     where they can be put back. Then Lyrion looks again. What was done is written down (removals)."""
+    if backend_ma.ON:  # Music Assistant: out of its library, written down so it can be put back
+        a = album_row(album_id)
+        if not a:
+            return {"error": "no such album"}
+        got = backend_ma.remove_album(album_id)
+        with db_lock, db() as c:
+            c.execute("insert into removals values (?,?,?,?)", (time.time(), a[1], a[2], json.dumps({"ma": got, "moved": [], "qobuz": []}, ensure_ascii=False)))
+        with lib_lock:
+            library["albums"] = [x for x in library["albums"] if x[0] != a[0]]
+        restamp()
+        return {"ok": True, "album": a[1], "qobuz": 0, "moved": 0, "problems": []}
     a, found = this_version(album_id)
     if not a:
         return {"error": "no such album"}
@@ -3967,6 +3986,13 @@ def restore(rid, player):
     if not row:
         return {"error": "no such removal"}
     d = json.loads(row[1])
+    if d.get("ma"):  # Music Assistant: the album added to its library again, from the source it came from
+        backend_ma.restore_album(d["ma"])
+        d["restored"] = time.time()
+        with db_lock, db() as c:
+            c.execute("update removals set data = ? where rowid = ?", (json.dumps(d, ensure_ascii=False), rid))
+        follow_shelves()
+        return {"ok": True, "album": row[0], "files": 0, "qobuz": 1, "kept": 0, "problems": []}
     back, kept, problems = 0, 0, []
     for rel in d.get("moved", []):
         # the folder each file came from: with one media folder its place is as it was; with several, under the folder's name

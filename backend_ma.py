@@ -182,6 +182,27 @@ def damaged():
     return HEALTH["albums"] >= 50 and HEALTH["multi"] > HEALTH["albums"] * 0.25
 
 
+def remove_album(album_id):
+    """An album out of Music Assistant's library: {"uris": where it came from}, kept so it can be added back."""
+    a = client().call("music/albums/get", item_id=str(album_id), provider_instance_id_or_domain="library") or {}
+    uris = [f"{m['provider_instance']}://album/{m['item_id']}" for m in a.get("provider_mappings") or [] if m.get("provider_domain") not in ("library",)]
+    client().call("music/library/remove_item", media_type="album", library_item_id=str(album_id))
+    return {"uris": uris, "name": a.get("name") or ""}
+
+
+def restore_album(ma):
+    """A removed album added back to Music Assistant's library, from the first source that still has it."""
+    for uri in ma.get("uris") or []:
+        try:
+            item = client().call("music/item_by_uri", uri=uri)
+            if item:
+                client().call("music/library/add_item", item=item)
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def drop_dead(item_id):
     """A dead album taken out of Music Assistant's library (once another edition has taken its place, or it is let go)."""
     client().call("music/library/remove_item", media_type="album", library_item_id=str(item_id))
