@@ -2395,10 +2395,10 @@ function lmRun(v, name, words) {
 const isMA = () => !!(A.cfg && A.cfg.backend === "ma");
 const edition = () => isMA() ? "Music Assistant Edition" : "Lyrion Edition"; // on the masthead: which music server this one reads
 function maPage(el) {
-  el.innerHTML = `${pageBar("Music Assistant", ["Its settings", "drawn here"], "")}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
-  api("/api/ma/config").then(r => {
-    const box = $("#ma-body", el); if (!box) return;
-    box.innerHTML = (r.groups || []).map(g => `<div class="kicker lm-k2">${esc(g.title)}</div><div class="lm-list">${g.items.map(i =>
+  el.innerHTML = `${pageBar("Music Assistant", ["Browse every source", "and its settings"], "")}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
+  Promise.all([api("/api/ma/browse"), api("/api/ma/config")]).then(got => {
+    const box = $("#ma-body", el), r = got[1]; if (!box) return;
+    box.innerHTML = `<div class="kicker lm-k2">Browse</div><div class="lm-list">${(got[0].items || []).map(i => `<a class="lm-row lm-go" href="#/mab/${encodeURIComponent(i.path)}"><span class="lm-w"><b>${esc(i.name)}</b></span>${icon("chev")}</a>`).join("")}</div>` + (r.groups || []).map(g => `<div class="kicker lm-k2">${esc(g.title)}</div><div class="lm-list">${g.items.map(i =>
       `<a class="lm-row lm-go" href="#/ma/${i.kind}/${encodeURIComponent(i.id)}"><span class="lm-w"><b>${esc(i.name)}</b>${i.error ? `<em class="ma-err">${esc(i.error)}</em>` : i.enabled === false ? `<em>Switched off</em>` : ""}</span>${icon("chev")}</a>`).join("")}</div>`).join("")
       + `<div class="kicker lm-k2">Music Assistant's own pages</div><div class="lm-list lm-web"><a class="lm-row lm-go" href="${esc(maWeb())}" target="_blank" rel="noopener"><span class="lm-noart">${icon("gear")}</span><span class="lm-w"><b>Adding a source or a sign-in</b><em>In Music Assistant's own pages: new music services and their logins</em></span></a></div>`;
   }).catch(() => { const box = $("#ma-body", el); if (box) box.innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
@@ -2438,6 +2438,22 @@ VIEWS.ma = function (el, arg) {
     const t = $(".mast-name", el); if (t) t.textContent = r.name;
     maDraw(el, r);
   }).catch(() => { $("#ma-body", el).innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
+};
+// a level of a source's tree: folders open the next; artists and albums open Soundsquatch's own pages; songs, playlists
+// and radio play, play next or join the queue
+VIEWS.mab = function (el, path) {
+  el.innerHTML = `${pageBar(esc(path.replace(/^[^:]+:\/\/?/, "").split("/").pop().replace(/^./, c => c.toUpperCase()) || "Browse"), ["Music Assistant", "&nbsp;"], "", true)}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
+  api("/api/ma/browse?" + new URLSearchParams({ path })).then(r => {
+    const box = $("#ma-body", el); if (!box) return;
+    const art = i => i.image ? `<img loading="lazy" src="${esc(pic(i.image, 160))}" alt="" onerror="this.remove()">` : "";
+    const words = i => `<span class="lm-w"><b>${esc(i.name)}</b>${i.sub || i.year ? `<em>${esc([i.sub, i.year || ""].filter(Boolean).join(" · "))}</em>` : ""}</span>`;
+    const plays = i => `<span class="lm-acts"><button data-act="maPlay" data-v="${esc(i.uri)}" data-how="play" aria-label="Play">${icon("play")}</button><button data-act="maPlay" data-v="${esc(i.uri)}" data-how="next" aria-label="Play next">${icon("next_up")}</button><button data-act="maPlay" data-v="${esc(i.uri)}" data-how="add" aria-label="Add to the queue">${icon("queue")}</button></span>`;
+    box.innerHTML = (r.items || []).length ? `<div class="lm-list">${r.items.map(i =>
+      i.kind === "folder" ? `<a class="lm-row lm-go" href="#/mab/${encodeURIComponent(i.path)}">${art(i)}${words(i)}${icon("chev")}</a>`
+      : i.kind === "artist" ? `<a class="lm-row lm-go" href="${artistHref(i.name)}">${art(i)}${words(i)}${icon("chev")}</a>`
+      : i.kind === "album" ? `<div class="lm-row"><a class="lm-go" href="${awayHref(i.sub, i.name, i.image)}">${art(i)}${words(i)}</a>${plays(i)}</div>`
+      : `<div class="lm-row"><button class="lm-go" data-act="maPlay" data-v="${esc(i.uri)}" data-how="play">${art(i)}${words(i)}</button>${plays(i)}</div>`).join("")}</div>` : `<p class="dim">Nothing here.</p>`;
+  }).catch(() => { const box = $("#ma-body", el); if (box) box.innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
 };
 // one setting saved: the page drawn again with it (another may show or hide with it)
 function maSave(el, e, value) {
@@ -3063,6 +3079,10 @@ const ACT = {
   repairDrop: v => {
     closeSheet();
     api("/api/repair", { k: v, dismiss: true }).then(() => { A.missing = (A.missing || []).filter(m => m.k !== v); if (current && current.kind === "missing") VIEWS.missing(current.el); toast("Dropped"); }).catch(() => toast("The server didn't answer"));
+  },
+  maPlay: (v, t) => {
+    const how = t.dataset.how || "play";
+    inOrder().then(() => api("/api/ma/play", { uri: v, how, player: A.room })).then(r => { toast(r.error || { play: `Playing in ${roomName(A.room)}`, next: "Next up", add: "Added to the queue" }[how]); setTimeout(poll, 600); }).catch(() => toast("Music Assistant didn't answer"));
   },
   addTo: v => addToSheet(JSON.parse(v)),
   moreOf: v => moreOfSheet(JSON.parse(v)),

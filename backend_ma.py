@@ -625,6 +625,26 @@ class Service:
 SERVICE = Service()
 
 
+def browse(path=None):
+    """One level of Music Assistant's browse tree (each source's own: Qobuz's Artists, Albums, Playlists…): [{name, kind,
+    path, uri, image, sub}], the way back ("..") left out."""
+    out = []
+    for x in client().call("music/browse", path=path or None) or []:
+        if x.get("name") == ".." or x.get("path") == "root":
+            continue
+        kind = x.get("media_type") or "folder"
+        sub = artist_names(x) if kind in ("album", "track") else (x.get("owner") or "") if kind == "playlist" else ""
+        out.append({"name": x.get("name") or "", "kind": kind, "path": x.get("path") or "", "uri": x.get("uri") or "", "image": picture(x), "sub": sub,
+                    "year": x.get("year") or 0})
+    return out
+
+
+def play_uri(player, uri, how="play"):
+    """Anything Music Assistant can play (a song, a playlist, a radio station), played, next, or at the end."""
+    client().call("player_queues/play_media", queue_id=player, media=uri, option={"play": "replace", "next": "next", "add": "add"}.get(how, "replace"))
+    return {"ok": True}
+
+
 if __name__ == "__main__":  # a look from the command line: python3 backend_ma.py
     rows = library_rows()
     print(len(rows), "albums; newest:", [r[1:4] + [r[6], r[9]] for r in rows[:3]])

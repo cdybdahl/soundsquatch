@@ -6136,6 +6136,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.wfile.write(body)
             if url.path == "/api/ma/config" and backend_ma.ON:
                 return self.reply({"groups": backend_ma.config_overview()})
+            if url.path == "/api/ma/browse" and backend_ma.ON:
+                return self.reply({"items": backend_ma.browse(qs.get("path") or None)})
             if url.path == "/api/ma/config/item" and backend_ma.ON:
                 return self.reply(backend_ma.config_get(qs.get("kind", ""), qs.get("id", "")))
             if url.path == "/api/removals":
@@ -6219,6 +6221,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in guarded and not pin_ok(self.headers.get("X-Soundsquatch-PIN")):
             return self.reply({"error": "pin", "pin": True}, status=403)
         routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/repair-options": repair_options, "/api/repair": repair_do,
+                  "/api/ma/play": lambda r: backend_ma.play_uri(r.get("player"), r.get("uri"), r.get("how")) if backend_ma.ON and lms_qobuz.PLAYER.match(r.get("player") or "") and r.get("uri") else {"error": "nothing to play"},
                   "/api/ma/config/save": lambda r: (backend_ma.config_save(r.get("kind"), r.get("id"), r.get("values") or {}), {"ok": True})[1] if backend_ma.ON else {"error": "not Music Assistant"},
                   "/api/ma/config/action": lambda r: ({"ok": True, "result": backend_ma.config_action(r.get("kind"), r.get("id"), r.get("action"), r.get("values"))}) if backend_ma.ON else {"error": "not Music Assistant"}, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
