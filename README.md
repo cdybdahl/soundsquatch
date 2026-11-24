@@ -271,8 +271,6 @@ Soundsquatch is for 64-bit machines (x86, or ARM such as a Raspberry Pi on 64-bi
 
 Planned, in no promised order, mostly from what testers have asked for:
 
-- **Every artist on an album**: features, collaborations and "A & B" albums counted for each artist, as Lyrion counts
-  them, and an **Appearances** section on artist pages for the records they guest on (Lyrion 9's release types).
 - **Lyrion's My Music settings** respected: the browse menus your house has switched off, off here too.
 - **The turntable**: the track being played picked out on the record's page, and a part-captured record shown with
   the side still to capture.
