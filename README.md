@@ -23,7 +23,14 @@ through, and keeps a profile of every artist on the shelves.
 - **Playing**: rooms (join, leave, move the music), Now Playing with synced lyrics
   (LRCLIB) and credits, queue reordering, playlists, radio (Don't Stop the Music),
   stations seeded like a chill mix.
-- **Marks**: hearts, stars and tags, kept on the server for the household.
+- **Ratings**, shown as squatches (or stars: Settings → Features): Lyrion's own, through Ratings Light, where it's
+  installed, so every Lyrion app sees them; the house's own without it. A *Five squatches* shelf on Discover.
+- **Lyrion, all of it**: the Lyrion page has the room's whole Lyrion menu (My Music, Favorites, every app and plugin,
+  Radio, the room's settings), drawn as each plugin describes it; More from Lyrion on albums and songs; the queue
+  (shuffle, clear, Lyrion's menu on any song), rooms on and off, Sleep, Library Views; links to Lyrion's own settings
+  pages.
+- **Album pages**: Spin it, **Add to…** (your library, the queue, a playlist, a station, Listen Later, Lyrion's
+  Favorites) and **⋯**. An album added to the library is on the shelves at once.
 - **Remove from library**: Qobuz or TIDAL favourites un-favourited, files *moved* to
   `music-removed` (never deleted), with a Recently removed page to put them back.
 - **Your records**, from your Discogs collection: the albums you also have on vinyl (or CD) say so, the records you
@@ -47,7 +54,7 @@ few more. Expect rough edges, and please say what you find.
 - Optional Lyrion plugins, each found by itself and left out when it isn't there:
   - **Qobuz**: Qobuz releases, artists' stories and similar artists, search beyond your shelves
   - **TIDAL**: the same from TIDAL (no artist stories: those come from Wikipedia). With both signed in, Qobuz is used
-  - **Ratings Light** (3.2 or later): album stars become the average of your track ratings in Lyrion, and rating an
+  - **Ratings Light** (3.2 or later): an album's rating is the average of your track ratings in Lyrion, and rating an
     album rates its tracks
   - **Music & Artist Information**: album reviews, longer stories, more artist photographs
   - **ArchiveLMA**: Internet Archive shows
@@ -55,6 +62,10 @@ few more. Expect rough edges, and please say what you find.
   - **Listen Later**: a Listen Later button on albums, and your saved list on Discover
   - **ListenBrainz Fresh Releases**: fresh releases picked for you, on Discover
   - **Pitchfork Reviews**: Best New Music, on Discover
+  - **1001 Albums**: today's album from your 1001 Albums project, on Discover
+  - **KEXP**: your artists' Live on KEXP studio sessions, on Discover and their pages
+  - **Bliss Mixer**: *Sounds like this* on album pages and Discover (your own files only)
+  - Any other plugin: its menus on the Lyrion page
 - A library up to about **10,000 albums**. Bigger ones aren't supported.
 - Lyrion set to **English** if you want to keep or remove Qobuz albums from Soundsquatch (TIDAL doesn't need it). Everything else works in
   any language.
@@ -85,7 +96,7 @@ protection on (Lyrion's Settings, Security). It builds a profile for every artis
 your shelves in the background, so the first day is sparser than the second.
 
 When a new version is out, Soundsquatch says so (once on each screen, and at the top of Settings). To update, in
-that folder: `docker compose pull && docker compose up -d`. Everything Soundsquatch keeps (settings, hearts and stars,
+that folder: `docker compose pull && docker compose up -d`. Everything Soundsquatch keeps (settings, ratings,
 stations, the listening log, pictures, nightly backups) lives in `./data`.
 
 ### Changing music files
@@ -231,7 +242,7 @@ it: pause the room's streaming when the lid opens; tell the phones what to play 
 
 Anyone on your network can open Soundsquatch. A PIN (**Settings → PIN**) is asked for, once on each device, before the
 things that change the house for everyone: settings, music files, the never-play list, stations and artists' tags.
-Playing music, hearts and playlists never ask. It keeps a housemate or a guest from changing things by accident; it is
+Playing music, ratings and playlists never ask. It keeps a housemate or a guest from changing things by accident; it is
 not security. Soundsquatch passes Lyrion's own controls through, logged in when Lyrion has a password, so anyone who
 can open Soundsquatch can work Lyrion too. Keep it inside the house: to reach it from outside, put a login in front of it
 (a VPN, or a reverse proxy that asks for one), never a bare port forward. Backups and exports leave out Lyrion's
@@ -267,8 +278,8 @@ Planned, in no promised order, mostly from what testers have asked for:
   the side still to capture.
 - **A faster first scan** on big libraries and small machines.
 
-Not now, but not ruled out: Library Views and virtual libraries, Dynamic Playlists, and everything Lyrion's own
-settings and every plugin's menus can do.
+Not now, but not ruled out: Dynamic Playlists, a new way of working the queue, and Lyrion's server and plugin settings
+as Soundsquatch's own screens (today they open in Lyrion's own pages).
 
 ## Layout
 
@@ -293,7 +304,7 @@ house's own (its data in `~/soundsquatch`, its music in `/share`).
 ### What it needs, and what it finds
 
 Only Lyrion. Everything else is Soundsquatch's own, kept in its database beside it: stations and their seed artists, the
-never-play list, the house genres (found on MusicBrainz for every album), hearts, stars and tags, and nightly backups
+never-play list, the house genres (found on MusicBrainz for every album), ratings (without Ratings Light), and nightly backups
 (two weeks kept; download and restore in Settings). The listening log is kept by Soundsquatch itself
 (`listening.py`) unless the house already runs a recorder of its own, whose database it then reads. Music folders come
 from Lyrion's own settings. The Internet Archive features need the ArchiveLMA plugin and hide themselves without it.
