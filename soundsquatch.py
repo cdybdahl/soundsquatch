@@ -1144,8 +1144,7 @@ def album_art_edit(req):
             problems.append(f"{os.path.basename(f)}: {type(e).__name__}: {e}"[:160])
     if written:
         rpc("", "rescan")
-        for wait in (30, 90, 240):  # the shelves take the new cover once Lyrion has looked
-            threading.Timer(wait, lambda: load_library(force=True)).start()
+        follow_shelves()  # the shelves take the new cover once Lyrion has looked
     return {"ok": True, "written": written, "files": len(files), "problems": problems[:5]}
 
 
@@ -1289,6 +1288,76 @@ def library_ready(wait=20):
         time.sleep(0.25)
 
 
+JOINING = {}  # albums just added (a favourite): on the shelves at once, until Lyrion's scan brings the real one. key → album
+FOLLOW = {"on": False, "until": 0}
+
+
+def restamp():
+    """The shelves' tag made again (what the app watches to read them again): the library and what is joining it."""
+    with lib_lock:
+        library["etag"] = hashlib.sha1(json.dumps([library["albums"], library["scan"], sorted(JOINING)]).encode()).hexdigest()[:16]
+
+
+def joining(artist, album, year=0, cover=""):
+    """An album just added: shown on the shelves now (the app opens it from its service until it's in), and the shelves
+    read again the moment Lyrion has it."""
+    if not album:
+        return
+    k = copies(artist or "", album)
+    with lib_lock:
+        there = any(copies(a[2], a[1]) == k for a in library["albums"])
+    if not there:
+        JOINING[k] = {"artist": artist or "", "album": album, "year": int(year or 0), "cover": cover or "", "at": time.time()}
+        restamp()
+    follow_shelves()
+
+
+def joining_rows():
+    """What is joining, as library rows: [-n, title, artist, year, cover url, rank, "", 0, [], "joining", [], when]."""
+    return [[-(n + 1), j["album"], j["artist"], j["year"], j["cover"], -1, "", 0, [], "joining", [], int(j["at"])]
+            for n, j in enumerate(sorted(JOINING.values(), key=lambda j: -j["at"]))]
+
+
+def follow_shelves(rescan=False):
+    """After anything that changes the shelves: Lyrion asked every few seconds, and the shelves read again as soon as it
+    has the change (an album that's joining found, or a scan done), rather than at set times. rescan asks Lyrion to look
+    at the online library first (an add made in a plugin's own menu)."""
+    if rescan and not int(rpc("", "rescan", "?").get("_rescan") or 0):
+        rpc("", "rescan", "onlinelibrary")
+    FOLLOW["until"] = time.time() + 600
+    if not FOLLOW["on"]:
+        FOLLOW["on"] = True
+        threading.Thread(target=_follow, name="follow", daemon=True).start()
+
+
+def _follow():
+    try:
+        time.sleep(1)
+        st = rpc("", "serverstatus", "0", "0")
+        seen, quiet = (st.get("lastscan"), st.get("info total albums")), 0
+        while time.time() < FOLLOW["until"]:
+            time.sleep(2)
+            st = rpc("", "serverstatus", "0", "0")
+            now = (st.get("lastscan"), st.get("info total albums"))
+            scanning = int(rpc("", "rescan", "?").get("_rescan") or 0)
+            found = any(any(copies(x.get("artist") or "", x.get("album") or "") == k
+                            for x in rpc("", "albums", "0", "20", "search:" + j["album"][:60], "tags:la").get("albums_loop") or [])
+                        for k, j in list(JOINING.items()))
+            if now != seen or found:
+                seen = now
+                load_library(force=True)
+            for k in [k for k, j in JOINING.items() if time.time() - j["at"] > 900]:  # never came: not shown for ever
+                JOINING.pop(k, None)
+                restamp()
+            quiet = 0 if scanning or JOINING else quiet + 1
+            if quiet >= 3:
+                break
+    except Exception as e:
+        note_error(f"follow: {type(e).__name__}: {e}"[:200])
+    finally:
+        FOLLOW["on"] = False
+
+
 def load_library(force=False):
     """The shelves, as the Music page has them: one album a title (its best copy), newest first, with the house's genres."""
     status = rpc("", "serverstatus", "0", "0")
@@ -1347,9 +1416,12 @@ def load_library(force=False):
             continue
         a = artists.setdefault(key(e[2]), {"name": e[2], "id": e[7], "albums": 0, "rank": e[5]})
         a["albums"] += 1
+    have = {copies(e[2], e[1]) for e in albums}
+    for k in [k for k in JOINING if k in have]:  # in now: the real one replaces it
+        JOINING.pop(k, None)
     with lib_lock:
         library.update(albums=albums, artists=artists, scan=scan, genres=genres)
-        library["etag"] = hashlib.sha1(json.dumps([albums, scan]).encode()).hexdigest()[:16]
+    restamp()
     crawl_state["total"] = len(artists)
 
 
@@ -1367,7 +1439,7 @@ def library_payload():
     for k, a in sorted(artists.items(), key=lambda x: re.sub(r"^the ", "", x[0])):
         d = profiles.get(k, ({},))[0] or {}
         out.append([a["name"], a["id"], a["albums"], pick_photo(d, "thumb") if d else "", (d.get("mb") or {}).get("type") or ""])
-    body = json.dumps({"albums": albums, "artists": out, "physical": physical_records(albums)}, ensure_ascii=False, separators=(",", ":")).encode()
+    body = json.dumps({"albums": joining_rows() + albums, "artists": out, "physical": physical_records(albums)}, ensure_ascii=False, separators=(",", ":")).encode()
     payload.update(body=gzip.compress(body, 6), built=stamp, at=time.time(), etag='"' + hashlib.sha1(body).hexdigest()[:16] + '"')
     return payload["body"], payload["etag"]
 
@@ -2789,7 +2861,10 @@ def qobuz(req):
         return {"error": "Lyrion has no streaming plugin", "releases": [], "artists": []}
     if action not in ("search", "play", "queue", "keep", "aplay", "aqueue", "akeep"):
         return {"error": "unknown action"}
-    return svc().act(dict(req, term=term), player)
+    out = svc().act(dict(req, term=term), player)
+    if action in ("keep", "akeep") and out.get("result") == "added":  # on the shelves now, not after Lyrion's scan
+        joining(out.get("artist") or "", out.get("album") or "", req.get("year"), req.get("cover"))
+    return out
 
 
 # ───────────────────────── marks, lyrics, history, new releases, rooms ─────────────────────────
@@ -2946,8 +3021,7 @@ def keep_from_log(req):
         return {"error": "not a streamed track"}
     out = service.keep_track(player, url)
     if out.get("result") == "added":
-        for wait in (60, 150):
-            threading.Timer(wait, lambda: load_library(force=True)).start()
+        joining(out.get("artist") or req.get("artist") or "", out.get("album") or req.get("album") or "", req.get("year"), req.get("cover"))
     return out
 
 
@@ -3649,11 +3723,10 @@ def remove_album(album_id, player):
         rpc("", "rescan")  # looks for new, changed and missing files
     if done["qobuz"]:
         rpc("", "rescan", "onlinelibrary")
-    for wait in (45, 120, 300):  # the shelves follow once Lyrion has looked
-        threading.Timer(wait, lambda: load_library(force=True)).start()
+    follow_shelves()  # the shelves follow once Lyrion has looked
     with lib_lock:  # and leave the app's list at once (its other versions stay)
         library["albums"] = without_versions({i for i, _ in found})
-        library["etag"] = hashlib.sha1(json.dumps([library["albums"], library["scan"]]).encode()).hexdigest()[:16]
+    restamp()
     return {"ok": True, "album": a[1], "qobuz": len(done["qobuz"]), "moved": len([m for m in done["moved"] if not os.path.basename(m).startswith("._")]), "problems": done["problems"]}
 
 
@@ -3718,8 +3791,7 @@ def restore(rid, player):
         c.execute("update removals set data = ? where rowid = ?", (json.dumps(d, ensure_ascii=False), rid))
     if back:
         rpc("", "rescan")
-    for wait in (45, 120, 300):
-        threading.Timer(wait, lambda: load_library(force=True)).start()
+    follow_shelves()
     return {"ok": True, "album": row[0], "files": back, "qobuz": added, "kept": kept, "problems": problems}
 
 
@@ -5928,7 +6000,7 @@ class Handler(BaseHTTPRequestHandler):
                    "/api/ban", "/api/station-edit", "/api/artist-tags"}  # what changes the house for everyone: settings, files, never-play, stations
         if self.path in guarded and not pin_ok(self.headers.get("X-Soundsquatch-PIN")):
             return self.reply({"error": "pin", "pin": True}, status=403)
-        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/station": start_station, "/api/archive/do": archive_do,
+        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/kexp-play": kexp_play, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
                   "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/turntable/dismiss": turntable_dismiss, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,

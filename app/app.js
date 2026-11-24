@@ -107,10 +107,11 @@ const COVER_SIZES = [150, 300, 600, 800], PICTURE_WIDTHS = [160, 320, 640, 1600]
 const snap = (sizes, s) => sizes.filter(x => x >= s)[0] || sizes[sizes.length - 1];
 // an album with no cover of its own: a plain dark square where its picture would be (never a broken image)
 const NO_COVER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect width='1' height='1' fill='%23221e1b'/%3E%3C/svg%3E";
-const cover = (art, s) => art ? `/cover/${art}/${snap(COVER_SIZES, s || 300)}.jpg` : NO_COVER;
+const cover = (art, s) => !art ? NO_COVER : /^https?:/.test(art) ? pic(art, s || 300) : `/cover/${art}/${snap(COVER_SIZES, s || 300)}.jpg`; // a joining album's is its service's
 const pic = (u, w) => !u ? "" : u.charAt(0) === "/" ? u : "/img?u=" + encodeURIComponent(u) + (w ? "&w=" + snap(PICTURE_WIDTHS, w) : "");
 const artistHref = n => "#/artist/" + encodeURIComponent(shelfName(n)); // the shelves' spelling of a name, where they have it
-const albumHref = id => "#/album/" + id;
+// an album just added and still joining the shelves (the server's negative id) opens from its service until Lyrion has it
+const albumHref = id => { const a = +id < 0 && A.byId && A.byId.get(+id); return a ? awayHref(a[2], a[1], a[4]) : "#/album/" + id; };
 // a record off the shelves has a page too (from Qobuz), opened the same way wherever it's shown; the cover rides along to draw it at once
 const awayChip = (artist, album) => `<button class="chip" data-act="awayChip" data-v="${esc(JSON.stringify([artist || "", album || ""]))}" aria-label="Spin it">${icon("play")}</button>`;
 const awayHref = (artist, album, cover) => "#/away/" + encodeURIComponent(JSON.stringify([artist || "", album || "", cover || ""]));
@@ -398,7 +399,7 @@ const markAt = t => { const el = t.closest(".mk"), i = el.dataset.mark.indexOf("
 // a page still waiting on what it needs: the picture disc turning at 33⅓ in the middle of it
 const gathering = cls => `<div class="gather ${cls || ""}"><img src="disc.png" alt=""><p>Squatch is gathering the details&hellip;</p></div>`;
 // the disc as a hype sticker on a cover's corner: the album has a take captured from the turntable
-const capSticker = a => a[9] === "vinyl" || (a[10] || []).some(v => v[5] === "vinyl") ? `<img class="cap-sticker" src="disc-128.png" alt="Captured from vinyl" title="Captured from your vinyl">` : "";
+const capSticker = a => a[9] === "joining" ? `<span class="joining-tag">Joining</span>` : a[9] === "vinyl" || (a[10] || []).some(v => v[5] === "vinyl") ? `<img class="cap-sticker" src="disc-128.png" alt="Captured from vinyl" title="Captured from your vinyl">` : "";
 function albumCard(a, cls) {
   if (!a) return "";
   if (a.archive) return archCard(a.archive, cls);
@@ -2172,7 +2173,7 @@ VIEWS.history = function (el) {
       const early = x.outcome === "skipped" && x.played < 45, href = x.album_id ? albumHref(x.album_id) : artistHref(splitArtist(x.artist));
       return `<a class="hrow ${early ? "skip" : ""}" href="${href}"><span class="ht">${time(x.t)}</span>
         ${x.art ? `<img loading="lazy" src="${cover(x.art, 150)}" alt="">` : `<span class="noimg"></span>`}<span class="hw"><b>${esc(x.title)}</b><em>${esc(x.artist)}${x.album ? " &middot; " + esc(x.album) : ""}</em></span>
-        ${x.url ? `<button class="pill keep-log" data-act="keepLog" data-v="${esc(x.url)}" data-k="${esc(norm(x.artist + "|" + x.album))}" aria-label="Add to the library">${icon("heart")}<span class="pl">Add to library</span></button>` : ""}
+        ${x.url ? `<button class="pill keep-log" data-act="keepLog" data-v="${esc(x.url)}" data-cover="${esc(/^https?:/.test(x.art || "") ? x.art : "")}" data-k="${esc(norm(x.artist + "|" + x.album))}" aria-label="Add to the library">${icon("heart")}<span class="pl">Add to library</span></button>` : ""}
         <span class="hr">${esc(roomByName(x.room))}${x.who && x.who !== "household" ? " &middot; " + esc(x.who) : ""}</span><span class="ho">${early ? "skipped at " + mmss(x.played) : x.library || x.album_id ? "" : "beyond the shelves"}</span></a>`;
     };
     // an album listened to: four or more of its tracks one after another in the same room is one row (opened, its tracks)
@@ -2350,8 +2351,11 @@ function lmMenu() {
   return lms(k, ["menu", 0, 1000, "direct:1"]).then(r => { const items = (r.item_loop || []).map(x => Object.assign({ isANode: !x.actions || !Object.keys(x.actions).length }, x)); A.lmMenu = { room: k, at: Date.now(), items }; return items; });
 }
 const lmItem = v => { const k = v.lastIndexOf(":"), lvl = LMV[v.slice(0, k)]; return lvl ? [lvl.items[+v.slice(k + 1)], lvl.base, lvl] : [null]; };
+// an item that adds to (or takes from) what the shelves hold, in a plugin's own words: the shelves follow at once
+const lmAdds = x => { if (/favou?rite|my qobuz|library|collection/i.test(String(x.text || "")) && /\badd|remove|save/i.test(String(x.text || ""))) api("/api/shelves-follow", {}).then(() => setTimeout(freshShelves, 1500)).catch(() => {}); };
 function lmRun(v, name, words) {
   const got = lmItem(v), x = got[0]; if (!x) return;
+  if (name === "do" || name === "go") lmAdds(x);
   const a = lmAction(x, got[1], name); if (!a) return toast("Lyrion offers nothing for that");
   const playing = /^(play|add|add-hold)$/.test(name);
   (playing && A.room ? inOrder() : Promise.resolve()).then(() => lms(A.room || "", lmArgs(a.cmd, a.params))).then(() => {
@@ -2492,9 +2496,9 @@ function send(cmd, words) {
 function inOrder() { return A.st && +A.st["playlist shuffle"] ? lms(A.room, ["playlist", "shuffle", 0]) : Promise.resolve(); }
 const ACT = {
   back: () => back(),
-  playAlbum: v => { const a = A.byId.get(+v); inOrder().then(() => send(["playlistcontrol", "cmd:load", "album_id:" + v], `Spinning ${a ? a[1] : "the album"} in ${roomName(A.room)}`)); },
+  playAlbum: v => { const a = A.byId.get(+v); if (+v < 0) return a && ACT.awayChip(JSON.stringify([a[2], a[1]])); inOrder().then(() => send(["playlistcontrol", "cmd:load", "album_id:" + v], `Spinning ${a ? a[1] : "the album"} in ${roomName(A.room)}`)); },
   nextAlbum: v => { const a = A.byId.get(+v); send(["playlistcontrol", "cmd:insert", "album_id:" + v], `${a ? a[1] : "The album"} plays next`); },
-  queueAlbum: v => { const a = A.byId.get(+v); send(["playlistcontrol", "cmd:add", "album_id:" + v], `${a ? a[1] : "The album"} is queued`); },
+  queueAlbum: v => { const a = A.byId.get(+v); if (+v < 0) return toast("Still joining the shelves: a moment"); send(["playlistcontrol", "cmd:add", "album_id:" + v], `${a ? a[1] : "The album"} is queued`); },
   playTrack: v => { const p = v.split(":"); inOrder().then(() => send(["playlistcontrol", "cmd:load", "album_id:" + p[0], "play_index:" + p[1]])); },
   playSong: v => send(["playlistcontrol", "cmd:load", "track_id:" + v], "Playing"),
   // a connection's songs, in order: each found on its album by title (by its number when the title differs; a
@@ -2545,11 +2549,12 @@ const ACT = {
   qobuz: (v, t) => {
     const r = JSON.parse(t.closest("[data-r]").dataset.r), action = v;
     closeSheet();
-    const body = r.term ? { action, term: r.term, index: r.i, player: A.room } : { action: "a" + action, term: r.page || r.artist, index: r.i, album: r.album, player: A.room };
+    const body = Object.assign(r.term ? { action, term: r.term, index: r.i, player: A.room } : { action: "a" + action, term: r.page || r.artist, index: r.i, album: r.album, player: A.room }, { cover: r.cover || "", year: r.year || 0 });
     toast({ play: "Starting it…", queue: "Queueing it…", keep: "Adding it to the library…" }[action]);
     api("/api/qobuz", body).then(o => {
       if (o.error) return toast(o.error);
-      toast({ playing: `Spinning ${o.album} in ${roomName(A.room)}`, queued: `${o.album} is queued`, added: `${o.album} joins the library`, already: `${o.album} is in the library already` }[o.result] || "Done");
+      toast({ playing: `Spinning ${o.album} in ${roomName(A.room)}`, queued: `${o.album} is queued`, added: `${o.album} is on the shelves`, already: `${o.album} is in the library already` }[o.result] || "Done");
+      if (o.result === "added") freshShelves();
       setTimeout(poll, 400);
     }).catch(() => toast(`${SVC()} didn't answer`));
   },
@@ -2592,11 +2597,11 @@ const ACT = {
   awayAct: (v, t) => {
     const r = current && current.el.away; if (!r || !r.term) return;
     const words = { play: `Spinning ${r.album} in ${roomName(A.room)}`, next: `${r.album} plays next`, queue: `${r.album} is queued`, keep: "Adding it to the library…" }[v];
-    const call = v === "next" ? api("/api/away-play", { term: r.term, index: r.i, how: "insert", player: A.room }) : api("/api/qobuz", { action: v, term: r.term, index: r.i, player: A.room });
+    const call = v === "next" ? api("/api/away-play", { term: r.term, index: r.i, how: "insert", player: A.room }) : api("/api/qobuz", { action: v, term: r.term, index: r.i, player: A.room, cover: r.cover || "", year: r.year || 0 });
     toast(words);
     inOrder().then(() => call).then(o => {
       if (o.error) return toast(o.error);
-      if (v === "keep") { t.disabled = true; t.lastChild.textContent = " In your library"; toast(o.result === "already" ? `${r.album} is in the library already` : `${r.album} joins the library: it's on the shelves in a minute or two`); }
+      if (v === "keep") { t.disabled = true; t.lastChild.textContent = " In your library"; toast(o.result === "already" ? `${r.album} is in the library already` : `${r.album} is on the shelves`); freshShelves(); }
       setTimeout(poll, 800);
     }).catch(() => toast("The server didn't answer"));
   },
@@ -2808,9 +2813,9 @@ const ACT = {
   keepLog: (v, t) => {
     const k = t.dataset.k, row = t.closest(".hist") || document;
     t.disabled = true;
-    api("/api/keep", { url: v, player: A.room }).then(r => {
+    api("/api/keep", { url: v, player: A.room, cover: t.dataset.cover || "" }).then(r => {
       if (r.error) { t.disabled = false; return toast("Couldn't add it: " + r.error); }
-      toast(r.result === "already" ? `${r.album || "It"} is in the library already` : `${r.album || "The album"} joins the library; Lyrion shows it in a minute or two`);
+      toast(r.result === "already" ? `${r.album || "It"} is in the library already` : `${r.album || "The album"} is on the shelves`); freshShelves();
       row.querySelectorAll('.keep-log[data-k="' + k.replace(/"/g, '\\"') + '"]').forEach(b => { b.outerHTML = `<span class="kept">${icon("heart_on")}<span class="pl">In the library</span></span>`; });
     }).catch(() => { t.disabled = false; toast("Lyrion didn't answer"); });
   },
@@ -2890,6 +2895,7 @@ const ACT = {
   },
   lmGo: v => {
     const got = lmItem(v), x = got[0]; if (!x) return;
+    lmAdds(x);
     const a = lmAction(x, got[1], "go"); if (!a) return;
     if (lmRuns(x, a)) return lmRun(v, "go", String(x.text || "").split("\n")[0]);
     closeSheet();

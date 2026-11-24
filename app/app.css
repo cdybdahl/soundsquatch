@@ -1692,3 +1692,5 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .room-power .ic { width: 18px; height: 18px; }
 .view-chip { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); }
 .view-chip .ic { width: 13px; height: 13px; }
+/* an album just added, on the shelves before Lyrion has it */
+.joining-tag { position: absolute; left: 8px; top: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; background: rgba(0,0,0,.62); color: #fff; pointer-events: none; }
