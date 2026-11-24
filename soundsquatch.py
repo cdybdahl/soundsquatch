@@ -2410,6 +2410,8 @@ def artist_radio(req):
     artist, player = (req.get("artist") or "").strip(), req.get("player") or ""
     if not artist or not lms_qobuz.PLAYER.match(player):
         return {"error": "no artist or room"}
+    if backend_ma.ON:  # Music Assistant's radio, from this artist
+        return {"ok": True, "artist": artist, "kin": []} if backend_ma.radio(player, [artist]) else {"error": f"{artist} isn't on the shelves"}
     rng = random.Random()
     theirs = best_tracks(artist, 4, rng)
     if not theirs:
@@ -4214,6 +4216,9 @@ def start_station(req):
         ban_keys = {(kd, kk) for kd, kk in c.execute("select kind, k from bans")}
     names = [n for n in st["seeds"] if ("artist", ban_key("artist", n)) not in ban_keys]  # a banned artist is never a seed
     random.shuffle(names)
+    if backend_ma.ON:  # Music Assistant's radio, from the station's seeds (a few at a time, as Lyrion's start does)
+        got = backend_ma.radio(player, names[:5])
+        return {"ok": True, "station": st["name"], "seeds": names[:5]} if got else {"error": "none of its seed artists are on the shelves"}
     exclude, picked, urls = kv_get("exclude_albums", []), [], []
     for n in names:
         got = tracks_by(n, exclude, ban_keys)

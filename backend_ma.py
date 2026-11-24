@@ -203,6 +203,28 @@ def _track_row(item, index=None):
     return row
 
 
+def artist_uris(names):
+    """The library's artists by these names: their Music Assistant addresses (library://artist/N)."""
+    out = []
+    for n in names:
+        got = client().call("music/search", search_query=n, media_types=["artist"], limit=5, library_only=True) or {}
+        a = next((a for a in got.get("artists") or [] if _norm(a.get("name")) == _norm(n)), None)
+        if a:
+            out.append(a["uri"])
+    return out
+
+
+def radio(player, names):
+    """A station from these artists: Music Assistant's radio mode plays them and carries on with more like them, and the
+    room's own radio (its Don't Stop the Music) keeps it going when the queue ends."""
+    uris = artist_uris(names)
+    if not uris:
+        return []
+    client().call("player_queues/play_media", queue_id=player, media=uris, option="replace", radio_mode=True)
+    client().call("player_queues/dont_stop_the_music", queue_id=player, dont_stop_the_music_enabled=True)
+    return uris
+
+
 def move_queue(src, dst):
     """What one room plays, handed to another (Music Assistant moves the whole queue and the place in it)."""
     client().call("player_queues/transfer", source_queue_id=src, target_queue_id=dst, auto_play=True)
@@ -284,8 +306,11 @@ def lms(pid, cmd):
             how = {"load": "replace", "add": "add", "insert": "next"}.get(tagged.get("cmd"), "replace")
             if tagged.get("album_id"):
                 media = f"library://album/{tagged['album_id']}"
-            elif tagged.get("track_id") and int(tagged["track_id"]) in _uris:
-                media = _uris[int(tagged["track_id"])]
+            elif tagged.get("track_id"):  # one song, or several (track_id:1,2,3)
+                media = [_uris[int(t)] for t in tagged["track_id"].split(",") if t.isdigit() and int(t) in _uris]
+                if not media:
+                    return {}
+                media = media[0] if len(media) == 1 else media
             else:
                 return {}
             c.call("player_queues/play_media", queue_id=pid, media=media, option=how)
@@ -325,6 +350,12 @@ def lms(pid, cmd):
             p = _player(pid) or {}
             level = int(p.get("volume_level") or 0) + int(v) if v[0] in "+-" else int(float(v))
             c.call("players/cmd/volume_set", player_id=pid, volume_level=max(0, min(100, level)))
+            return {}
+        if head == "playerpref" and len(plain) > 2 and "dontstopthemusic" in plain[1]:  # the room's radio: Music Assistant's own
+            if plain[2] == "?":
+                q = c.call("player_queues/get", queue_id=pid) or {}
+                return {"_p2": "1" if q.get("dont_stop_the_music_enabled") else "0"}
+            c.call("player_queues/dont_stop_the_music", queue_id=pid, dont_stop_the_music_enabled=plain[2] not in ("0", ""))
             return {}
         if head == "power" and len(plain) > 1 and plain[1] in ("0", "1"):
             c.call("players/cmd/power", player_id=pid, powered=plain[1] == "1")
