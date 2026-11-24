@@ -2364,7 +2364,7 @@ function lmRun(v, name, words) {
 /* ───────────────────────── Add to… and ⋯ ─────────────────────────
    An album's (or the playing song's) doings, in two sheets, so its page keeps three buttons: Spin it, Add to… (the
    library, the queue, a playlist, a station, Listen Later, Lyrion's Favorites) and ⋯ (the occasional: share, Lyrion's
-   own menu, other pressings, genres, the cover, removing it). ctx: {k: "album", id} | {k: "away"} | {k: "np", …the song}. */
+   own menu, genres, the cover, removing it; other pressings are the chip by the album's facts). ctx: {k: "album", id} | {k: "away"} | {k: "np", …the song}. */
 const ctxAttr = ctx => esc(JSON.stringify(ctx));
 const addToBtn = (ctx, big) => `<button class="${big ? "btn ghost " : ""}add-to" data-act="addTo" data-v="${ctxAttr(ctx)}">${icon("plus")}<span>Add to…</span></button>`;
 const moreOfBtn = (ctx, big) => `<button class="${big ? "btn ghost " : ""}more-of" data-act="moreOf" data-v="${ctxAttr(ctx)}" aria-label="More">${icon("more")}</button>`;
@@ -2388,7 +2388,7 @@ function addToSheet(ctx) {
 function moreOfSheet(ctx) {
   const c = ctxOf(ctx), id = c.id, a = A.byId.get(id) || [], row = (act, v, ic, words, cls) => `<button class="btn ghost ${cls || ""}" data-act="${act}" data-v="${esc(String(v))}">${icon(ic)} ${words}</button>`;
   openSheet(`<div><div class="kicker">${esc(c.artist)}</div><h3>${esc(c.title)}</h3><div class="acts col">
-    <span class="more-share"></span>${row("lmInfo", "album:" + id, "apps", "More from Lyrion")}${versionsOf(a).length > 1 ? row("versions", id, "disc", "Other pressings") : ""}
+    <span class="more-share"></span>${row("lmInfo", "album:" + id, "apps", "More from Lyrion")}
     ${row("genreEdit", id, "tag", (a[8] || []).length ? "Edit genres" : "Add genres")}${on("features", "write_files") ? row("artEdit", id, "edit", "Change the cover") : ""}
     ${row("removeAsk", id, "trash", "Remove from the library", "danger")}</div></div>`);
   api("/api/share?album_id=" + id).then(r => { const box = $("#sheet .more-share"); if (r.url && box) box.outerHTML = `<button class="btn ghost" data-act="share" data-v="${esc(JSON.stringify({ title: c.title + " by " + c.artist, url: r.url }))}">${icon("share")} Share</button>`; }).catch(() => {});
