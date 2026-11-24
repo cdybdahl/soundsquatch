@@ -106,6 +106,7 @@ TURNTABLE_PORT = int(os.environ.get("TURNTABLE_PORT", "8095"))  # where the list
 REMOVED_DIR = os.environ.get("REMOVED_DIR", "/share/music-removed")  # where removed albums' files go: outside the scan, never deleted
 HA_URL = os.environ.get("HA_URL", "")
 DISCOGS_TOKEN = os.path.join(DATA, ".discogs_token")  # the house's Discogs token, for its record collection: never sent back
+MA_TOKEN = os.environ.get("MA_TOKEN_FILE", os.path.join(DATA, ".ma_token"))  # Music Assistant's long-lived token, when it is the music server
 HA_TOKEN = os.environ.get("HA_TOKEN_FILE", os.path.join(DATA, ".ha_token"))  # Soundsquatch's own long-lived token (stations)
 AUDIO = (".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".alac", ".ape", ".wv", ".dsf", ".dff")  # the playlist a room's music is saved to on its way to another room
 VERSION = "0.14.0 beta"  # the release tag is v + its number
@@ -116,7 +117,7 @@ NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
 DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp", "sounds", "a1001"]
 DEFAULTS = {
-    "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
+    "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": "", "ma_url": os.environ.get("MA_URL", "")},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "squatches": True, "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
                  "write_files": False,  # changing music files (genres, titles, covers, removing): off until the house says so
                  "turntable_capture": False,  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
@@ -288,6 +289,7 @@ def apply_settings():
     c = settings["connections"]
     LMS, HA_URL, LOG_DB = c["lms_url"].rstrip("/"), c["ha_url"].rstrip("/"), c["listening_db"]
     lms_keep_album.LMS = LMS + "/jsonrpc.js"  # the Qobuz and keeping helpers talk to Lyrion through it
+    backend_ma.configure(c.get("ma_url", ""), MA_TOKEN)  # Music Assistant's address set: it is the music server
     if c.get("lms_user"):  # every request to Lyrion carries the login (urllib's opener, for this address only)
         LMS_LOGIN.add_password(None, LMS, c["lms_user"], c["lms_password"], is_authenticated=True)
     os.environ["LMS_LOGIN"] = cli_login().decode()  # the recorder's event line logs in too
@@ -309,13 +311,22 @@ def load_settings():
 def check_settings():
     """What each connection finds, for the Settings page; and what Soundsquatch has worked out for itself."""
     out = {}
+    if backend_ma.ON:  # Music Assistant is the music server: it answers, or it doesn't
+        ok, said = backend_ma.check()
+        out.update(ma_url=said, ma_ok=ok, lms_ok=ok, lms_url="not used: Music Assistant is the music server")
+        if ok:
+            detect()
     try:
+        if backend_ma.ON:
+            raise StopIteration
         st = rpc("", "serverstatus", "0", "0", timeout=5)
         out["lms_url"] = f"Lyrion {st.get('version', '')}, {st.get('info total albums', 0)} albums"
         out["lms_ok"] = True
     except urllib.error.HTTPError as e:
         out["lms_url"] = "asks for a username and password" if e.code == 401 else f"not answering (HTTP {e.code})"
         out["lms_auth"] = e.code == 401
+    except StopIteration:
+        pass
     except Exception as e:
         out["lms_url"] = f"not answering ({type(e).__name__})"
     try:
@@ -336,7 +347,7 @@ def check_settings():
     read_music_dirs()
     out["music_dirs"] = ", ".join(MUSIC_DIRS)
     out["removed_dir"] = REMOVED_DIR
-    if out.get("lms_ok"):
+    if out.get("lms_ok") and not backend_ma.ON:
         detect()
     return out
 
@@ -608,7 +619,7 @@ def settings_for_app():
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
             "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()), "backend": "ma" if backend_ma.ON else "lyrion", "ma_url": backend_ma.MA_URL if backend_ma.ON else "",
-            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
+            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "ma_token_set": os.path.exists(MA_TOKEN), "checks": checks}
 
 
 def pin_hash(pin):
@@ -677,6 +688,13 @@ def save_settings(req):
         elif not settings["house"]["scrobble_url"] and os.path.exists(SCROBBLE_TOKEN):
             os.remove(SCROBBLE_TOKEN)  # no address: disconnected
         scrobble_now.set()
+    ma_token = (req.get("ma_token") or "").strip()
+    if ma_token:
+        with open(MA_TOKEN + ".tmp", "w") as f:
+            f.write(ma_token)
+        os.chmod(MA_TOKEN + ".tmp", 0o600)
+        os.replace(MA_TOKEN + ".tmp", MA_TOKEN)
+        backend_ma.configure("", "")  # the next ask opens with the new token
     token = (req.get("ha_token") or "").strip()
     if token:
         with open(HA_TOKEN + ".tmp", "w") as f:
@@ -691,7 +709,7 @@ def save_settings(req):
     # the shelves read again only when what they're read from or how they're sorted changed: Lyrion's address or login,
     # the Discogs collection, which copy leads. A Discover switch doesn't need it, and Lyrion, busy with the whole
     # library, kept the save's own checks waiting (8 s for a switch)
-    if req.get("connections") or "discogs_token" in req or "prefer_captured" in (req.get("features") or {}):
+    if req.get("connections") or "ma_token" in req or "discogs_token" in req or "prefer_captured" in (req.get("features") or {}):
         library["scan"] = None
         threading.Thread(target=lambda: load_library(force=True), daemon=True).start()
     return dict(settings_for_app(), ok=True)

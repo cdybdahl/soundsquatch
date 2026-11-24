@@ -1975,6 +1975,7 @@ VIEWS.removed = function (el) {
 // the connections a house sets; the rest (music folders, removed music, house genres, the Qobuz player) are found
 // the connections a house sets; the rest (music folders, removed music, the Qobuz player) are found
 const CONN = [["lms_url", "Lyrion", "its address, as the server reaches it", "lms_ok"],
+  ["ma_url", "Music Assistant", "to use it as the music server instead of Lyrion: its address and a long-lived token (its Settings, Profile). Empty: Lyrion", "ma_ok"],
   ["listening_db", "Listening log", "a recorder of the house's own, if there is one; otherwise Soundsquatch keeps the log itself", "listening_ok"]];
 const FEATS = [["squatches", "Rate in squatches", "a walking sasquatch for each star; off, plain stars"], ["stations", "Stations", "radio seeded from artists you choose"], ["archive", "Internet Archive", "shows from the ArchiveLMA plugin"],
   ["history", "History", "the History tab, from the listening log"], ["credits", "Credits", "who made each album, from MusicBrainz"], ["lyrics", "Lyrics", "synced lyrics in Now Playing (LRCLIB)"],
@@ -2091,12 +2092,13 @@ function drawSettings(el) {
       ${toggle("setDev", "still", device.get("still", false), "Reduce motion", "no slow zooms or shimmer, and the cover stories don't turn by themselves")}
       <div class="set-row"><span><b>Look</b><em>Classic, or set like a printed music magazine</em></span><div class="seg">${[["classic", "Classic"], ["magazine", "Magazine"]].map(l => `<button class="${(magOn() ? "magazine" : "classic") === l[0] ? "on" : ""}" data-act="setLook" data-v="${l[0]}">${l[1]}</button>`).join("")}</div></div>
       ${toggle("setOsk", "", oskOn(), "On-screen keyboard", "for a screen without a keyboard of its own, such as one on a wall")}`))}
-    ${inTab("house", section("For every screen in the house", "Lyrion's own settings", lyrionLinks()))}
+    ${isMA() ? "" : inTab("house", section("For every screen in the house", "Lyrion's own settings", lyrionLinks()))}
     ${inTab("house", section("For every screen in the house", "Connections", `${CONN.map(k => { const good = !!c.checks[k[3]];
         return `<div class="set-field conn ${good ? "" : "open"}" data-k="${k[0]}"><span><b>${k[1]}</b><em>${k[2]}</em></span>
         <span class="conn-now"><span class="check ${good ? "good" : "bad"}">${esc(c.checks[k[0]] || "")}</span><button class="pill" data-act="connEdit">Change</button></span>
         <input data-conn="${k[0]}" value="${esc(c.connections[k[0]] || "")}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         ${k[0] === "lms_url" && (c.checks.lms_auth || c.connections.lms_user) ? loginFields(c) : ""}
+        ${k[0] === "ma_url" ? `<input data-ma-token type="password" placeholder="${c.ma_token_set ? "its token (unchanged)" : "its long-lived token"}" autocomplete="off">` : ""}
         </div>`; }).join("")}
       <div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>
       <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`))}
@@ -2914,7 +2916,9 @@ const ACT = {
   },
   saveConn: () => {
     const conn = {}; document.querySelectorAll("[data-conn]").forEach(i => { conn[i.dataset.conn] = i.value.trim(); });
-    saveSettings({ connections: conn }, "Saved; checks below");
+    const tok = $("[data-ma-token]"), body = { connections: conn }, was = isMA();
+    if (tok && tok.value.trim()) body.ma_token = tok.value.trim();
+    saveSettings(body, "Saved; checks below").then(() => { if (!!conn.ma_url !== was) setTimeout(() => location.reload(), 1500); }); // the other music server: the app starts again on it
   },
   setZoom: v => { device.set("zoom", +v); applyDevice(); if (current && current.kind === "settings") drawSettings(current.el); },
   setDev: v => { device.set(v, !device.get(v, false)); applyDevice(); if (current && current.kind === "settings") drawSettings(current.el); },
@@ -4003,7 +4007,16 @@ function firstRun() {
     $("#main").innerHTML = `<div class="loading">${head}<p>${login ? "Lyrion asks for a username and password." : "Soundsquatch can't find Lyrion on the network. Where is it?"}</p>
       <div class="seed-add first-run"><input id="lms-at" type="url" placeholder="192.168.1.20:9000" value="${esc(c.connections.lms_url || "")}" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="lms-go">Look there</button></div>
       ${login ? `<div class="first-run">${loginFields(c)}</div>` : ""}
-      <p class="dim" id="lms-said">${login ? "" : esc(c.checks.lms_url || "")}</p></div>`;
+      <p class="dim" id="lms-said">${login ? "" : esc(c.checks.lms_url || "")}</p>
+      ${login ? "" : `<p><button class="pill" id="ma-show">Use Music Assistant instead</button></p><div class="first-run" id="ma-fields" hidden>
+        <input id="ma-at" type="url" placeholder="192.168.1.8:8095" autocomplete="off" autocapitalize="off" spellcheck="false"><input id="ma-tok" type="password" placeholder="a long-lived token (its Settings, Profile)" autocomplete="off">
+        <button class="btn" id="ma-go">Use it</button><p class="dim" id="ma-said"></p></div>`}</div>`;
+    const ms = $("#ma-show"); if (ms) ms.addEventListener("click", () => { $("#ma-fields").hidden = false; ms.hidden = true; $("#ma-at").focus(); });
+    const mg = $("#ma-go"); if (mg) mg.addEventListener("click", () => {
+      const u = $("#ma-at").value.trim(), t = $("#ma-tok").value.trim(); if (!u || !t) return;
+      $("#ma-said").textContent = "Asking…";
+      api("/api/settings", { connections: { ma_url: u }, ma_token: t }).then(r => { if (r.checks.ma_ok) location.reload(); else $("#ma-said").textContent = "Not answering: " + (r.checks.ma_url || ""); }).catch(stuck);
+    });
     const go = () => {
       let u = $("#lms-at").value.trim().replace(/\/+$/, "");
       if (!/^https?:\/\//.test(u)) u = "http://" + u;

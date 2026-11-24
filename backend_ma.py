@@ -18,9 +18,22 @@ import urllib.parse
 
 import websocket  # websocket-client
 
-MA_URL = os.environ.get("MA_URL", "").rstrip("/")  # http://host:8095
+MA_URL = os.environ.get("MA_URL", "").rstrip("/")  # http://host:8095 (or set in Settings: configure())
 MA_TOKEN_FILE = os.environ.get("MA_TOKEN_FILE", "")
 ON = bool(MA_URL)
+
+
+def configure(url, token_file):
+    """Music Assistant's address and token file, from the house's settings: set, it is the music server; empty, Lyrion is."""
+    global MA_URL, MA_TOKEN_FILE, ON, _client
+    url = (url or "").strip().rstrip("/")
+    if url and not url.startswith("http"):
+        url = "http://" + url
+    if url and not url.split("//", 1)[1].count(":"):
+        url += ":8095"
+    if (url, token_file) != (MA_URL, MA_TOKEN_FILE):
+        _client = None  # asked again with the new address or token
+    MA_URL, MA_TOKEN_FILE, ON = url, token_file, bool(url)
 
 
 class Client:
@@ -65,10 +78,24 @@ class Client:
 _client = None
 
 
+def check():
+    """For Settings: (ok, what it says)."""
+    try:
+        info = client().call("info") or {}
+        n = client().call("music/albums/count") or 0
+        return True, f"Music Assistant {info.get('server_version', '')}, {n:,} albums"
+    except Exception as e:
+        msg = str(e)
+        return False, "the token isn't accepted" if "token" in msg.lower() or "auth" in msg.lower() else f"not answering ({type(e).__name__})"
+
+
 def client():
     global _client
     if _client is None:
-        token = open(MA_TOKEN_FILE).read().strip() if MA_TOKEN_FILE else os.environ.get("MA_TOKEN", "")
+        try:
+            token = open(MA_TOKEN_FILE).read().strip() if MA_TOKEN_FILE else os.environ.get("MA_TOKEN", "")
+        except OSError:
+            token = ""
         _client = Client(MA_URL, token)
     return _client
 
