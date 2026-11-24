@@ -634,7 +634,19 @@ def settings_for_app():
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
             "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()), "backend": "ma" if backend_ma.ON else "lyrion", "ma_url": backend_ma.MA_URL if backend_ma.ON else "",
-            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "ma_token_set": os.path.exists(MA_TOKEN), "checks": checks}
+            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "ma_token_set": os.path.exists(MA_TOKEN), "ma_guess": ma_guess(), "checks": checks}
+
+
+def ma_guess():
+    """Music Assistant's address when one answers beside Soundsquatch (its add-on on the same Home Assistant): offered on
+    the first screen, so only its token is to be given."""
+    if backend_ma.ON or not os.environ.get("SOUNDSQUATCH_ADDON"):
+        return ""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8095/info", timeout=2) as r:
+            return "http://127.0.0.1:8095" if json.load(r).get("server_version") else ""
+    except Exception:
+        return ""
 
 
 def pin_hash(pin):

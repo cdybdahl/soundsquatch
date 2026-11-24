@@ -4072,9 +4072,10 @@ function firstRun() {
       ${login ? `<div class="first-run">${loginFields(c)}</div>` : ""}
       <p class="dim" id="lms-said">${login ? "" : esc(c.checks.lms_url || "")}</p>
       ${login ? "" : `<p><button class="pill" id="ma-show">Use Music Assistant instead</button></p><div class="first-run" id="ma-fields" hidden>
-        <input id="ma-at" type="url" placeholder="192.168.1.8:8095" autocomplete="off" autocapitalize="off" spellcheck="false"><input id="ma-tok" type="password" placeholder="a long-lived token (its Settings, Profile)" autocomplete="off">
+        <input id="ma-at" type="url" placeholder="192.168.1.8:8095" value="${esc(c.ma_guess || "")}" autocomplete="off" autocapitalize="off" spellcheck="false"><input id="ma-tok" type="password" placeholder="a long-lived token (its Settings, Profile)" autocomplete="off">
         <button class="btn" id="ma-go">Use it</button><p class="dim" id="ma-said"></p></div>`}</div>`;
-    const ms = $("#ma-show"); if (ms) ms.addEventListener("click", () => { $("#ma-fields").hidden = false; ms.hidden = true; $("#ma-at").focus(); });
+    const ms = $("#ma-show"); if (ms) ms.addEventListener("click", () => { $("#ma-fields").hidden = false; ms.hidden = true; $(c.ma_guess ? "#ma-tok" : "#ma-at").focus(); });
+    if (ms && c.ma_guess) ms.click(); // Music Assistant beside it (its add-on): offered first, its address filled in
     const mg = $("#ma-go"); if (mg) mg.addEventListener("click", () => {
       const u = $("#ma-at").value.trim(), t = $("#ma-tok").value.trim(); if (!u || !t) return;
       $("#ma-said").textContent = "Asking…";
