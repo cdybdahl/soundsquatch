@@ -1123,6 +1123,8 @@ VIEWS.front = function (el) {
     // the sections in the house's order (Settings, Discover), each only while it's on and has something to show
     const P = {}, D = k => on("discover", k);
     if (D("fresh") && newArrivals(1).length) P.fresh = sec("Just in", `Recently added <a class="fp-all" href="#/albums" data-act="recentAll">All of them</a>`, shelf(newArrivals(20).map(arrivalCard)));
+    const top = shuffled(A.albums.filter(a => albumRating(a) >= 5), seeded(h.date || ""));
+    if (D("loved") && top.length) P.loved = sec("Rated the highest", `${squatches() ? "Five squatches" : "Five stars"} <a class="fp-all" href="#/albums" data-act="tagFilter" data-v="@top">All of them</a>`, shelf(top.slice(0, 20).map(a => albumCard(a))));
     if (D("vinyl") && physicalShelf()) P.vinyl = sec("Let's get physical", `From the record shelf <a class="fp-all" href="#/vinyl">All of them</a>`, physicalShelf());
     if (D("a1001") && h.a1001 && h.a1001.album) P.a1001 = sec("1001 Albums You Must Hear Before You Die", "Today's album", card1001(h.a1001));
     const sounds = (h.sounds && h.sounds.albums || []).map(id => A.byId.get(id)).filter(Boolean);
