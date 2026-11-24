@@ -116,7 +116,7 @@ SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.jso
 DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp", "sounds", "a1001"]
 DEFAULTS = {
     "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
-    "features": {"home_assistant": bool(HA_URL), "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
+    "features": {"home_assistant": bool(HA_URL), "squatches": True, "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
                  "write_files": False,  # changing music files (genres, titles, covers, removing): off until the house says so
                  "turntable_capture": False,  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
                  "prefer_captured": True,  # an album with a take from the turntable shows and spins that take first
@@ -1368,11 +1368,15 @@ def load_library(force=False):
     found = sorted(rpc("", "albums", "0", str(total + 50), "tags:lajyS", timeout=120).get("albums_loop", []), key=lambda a: -int(a["id"]))
     tracks, step = [], 25000  # a page at a time: a large library in one answer is more than Lyrion likes to build
     while True:
-        got = rpc("", "titles", str(len(tracks)), str(step), "tags:eoIrTuD", timeout=180).get("titles_loop", [])
+        got = rpc("", "titles", str(len(tracks)), str(step), "tags:eoIrTuDR", timeout=180).get("titles_loop", [])
         tracks += got
         if len(got) < step:
             break
-    by_album, streamed, added, captured = {}, {}, {}, set()  # streamed: album → the service it streams from
+    by_album, streamed, added, captured, rates = {}, {}, {}, set(), {}  # streamed: album → the service it streams from
+    for t in tracks:  # Ratings Light's track ratings (0-100), for each album's stars: the rated tracks' average, to the half star
+        if int(t.get("rating") or 0) > 0:
+            rates.setdefault(str(t.get("album_id")), []).append(int(t["rating"]))
+    rated = {int(k): round(sum(v) / len(v) / 10) / 2 for k, v in rates.items() if k.isdigit()}
     cap = urllib.parse.quote(capture_dir())  # the turntable's own recordings: versions of their own ("Your vinyl")
     for t in tracks:
         if cap in (t.get("url") or ""):
@@ -1420,7 +1424,7 @@ def load_library(force=False):
     for k in [k for k in JOINING if k in have]:  # in now: the real one replaces it
         JOINING.pop(k, None)
     with lib_lock:
-        library.update(albums=albums, artists=artists, scan=scan, genres=genres)
+        library.update(albums=albums, artists=artists, scan=scan, genres=genres, rated=rated)
     restamp()
     crawl_state["total"] = len(artists)
 
@@ -1439,7 +1443,7 @@ def library_payload():
     for k, a in sorted(artists.items(), key=lambda x: re.sub(r"^the ", "", x[0])):
         d = profiles.get(k, ({},))[0] or {}
         out.append([a["name"], a["id"], a["albums"], pick_photo(d, "thumb") if d else "", (d.get("mb") or {}).get("type") or ""])
-    body = json.dumps({"albums": joining_rows() + albums, "artists": out, "physical": physical_records(albums)}, ensure_ascii=False, separators=(",", ":")).encode()
+    body = json.dumps({"albums": joining_rows() + albums, "rated": library.get("rated") or {}, "artists": out, "physical": physical_records(albums)}, ensure_ascii=False, separators=(",", ":")).encode()
     payload.update(body=gzip.compress(body, 6), built=stamp, at=time.time(), etag='"' + hashlib.sha1(body).hexdigest()[:16] + '"')
     return payload["body"], payload["etag"]
 
@@ -2130,6 +2134,43 @@ def carry_ratings():
                 note_error(f"carrying ratings: {type(e).__name__}: {e}"[:200])
                 return  # asked again at the next start
     kv_set("ratings-carried", {"at": time.time(), "albums": len(rows), "tracks": done})
+
+
+def retire_hearts():
+    """Once (0.14): hearts and tags were Soundsquatch's own marks, and they're gone; a rating is the one mark, and Lyrion's
+    (Ratings Light) where it's installed. A hearted album or track with no rating of its own gets five stars; the
+    hearted artists are noted (Lyrion rates no artists), then every heart and tag is cleared."""
+    if kv_get("hearts-retired"):
+        return
+    for _ in range(120):
+        if library["albums"]:
+            break
+        time.sleep(10)
+    with db() as c:
+        rows = c.execute("select kind, k, heart, rating, tags from marks where heart > 0 or tags != '[]'").fetchall()
+    lyrion = HAVE.get("ratings") and ratings_ready()
+    with lib_lock:
+        by_key = {copies(r[2], r[1]): r for r in library["albums"]}
+    done = {"albums": [], "tracks": 0, "artists": []}
+    for kind, k, heart, rating, _tags in rows:
+        if not heart:
+            continue
+        if kind == "artist":
+            done["artists"].append(k)
+        elif kind == "album" and lyrion and k in by_key:
+            r = by_key[k]
+            if not album_ratings(r[0])["rated"]:
+                rpc("", "ratingslight", "ratealbum", str(int(r[0])), "100", "1")  # only tracks not rated yet
+                done["albums"].append(f"{r[2]} – {r[1]}")
+        elif not rating:
+            with db_lock, db() as c:
+                c.execute("update marks set rating = 5 where kind = ? and k = ?", (kind, k))
+            done["albums" if kind == "album" else "tracks"] += [k] if kind == "album" else 1
+    with db_lock, db() as c:
+        c.execute("update marks set heart = 0, tags = '[]'")
+        c.execute("delete from marks where (rating is null or rating = 0)")
+    kv_set("hearts-retired", dict(done, at=time.time()))
+    load_library(force=True)
 
 
 def away_play(req):
@@ -6091,7 +6132,7 @@ if __name__ == "__main__":
     start_recorder()
     start_turntable()
     lapsed_local_artwork()
-    for job in (replaygain_captures, carry_ratings, lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
+    for job in (replaygain_captures, lambda: (carry_ratings(), retire_hearts()), lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does

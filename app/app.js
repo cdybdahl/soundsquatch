@@ -43,6 +43,9 @@ const ICONS = {
   vol: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9c1.5 1.5 1.5 4.5 0 6"/>',
   disc: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>',
   heart_on: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="currentColor"/>',
+  squatch: '<path d="M13.4 1.8L15 2.8 15.7 4.6 15.3 6.2 16.4 7.6 16.8 10.6 16.2 13.2 17.6 16.6 17.7 20.4 19.4 21.2 19.4 22.2 15.8 22.2 15.9 17.4 13.8 15.2 12.2 18.2 10.2 21.2 11.4 22.2 7.8 22.2 8.4 20.6 9.6 17.4 9.8 13.6 9.4 11.6 7.6 14.2 6.4 14.6 6.2 13.6 7.2 11.2 8.6 7.6 10.2 4.8 11.6 2.6Z" stroke-width="1.4"/>',
+  squatch_on: '<path d="M13.4 1.8L15 2.8 15.7 4.6 15.3 6.2 16.4 7.6 16.8 10.6 16.2 13.2 17.6 16.6 17.7 20.4 19.4 21.2 19.4 22.2 15.8 22.2 15.9 17.4 13.8 15.2 12.2 18.2 10.2 21.2 11.4 22.2 7.8 22.2 8.4 20.6 9.6 17.4 9.8 13.6 9.4 11.6 7.6 14.2 6.4 14.6 6.2 13.6 7.2 11.2 8.6 7.6 10.2 4.8 11.6 2.6Z" fill="currentColor" stroke-width="1"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
   star: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
   star_on: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z" fill="currentColor"/>',
   repeat: '<path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3"/>',
@@ -239,7 +242,7 @@ function shelvesTag(tag) {
 }
 function useLibrary(lib) {
   {
-    A.albums = lib.albums; A.byId = new Map(lib.albums.map(a => [a[0], a]));
+    A.albums = lib.albums; A.rated = lib.rated || {}; A.byId = new Map(lib.albums.map(a => [a[0], a]));
     lib.albums.forEach(a => (a[10] || []).forEach(v => { if (!A.byId.has(v[0])) A.byId.set(v[0], [v[0], v[1], a[2], v[3], v[4], a[5], v[2], a[7], a[8], v[5], [], v[6] || 0, a[0]]); })); // [11] when added, [12]: the album it is a pressing of
     A.byArtist = new Map();
     lib.albums.forEach(a => { const k = norm(a[2]); if (!A.byArtist.has(k)) A.byArtist.set(k, []); A.byArtist.get(k).push(a); });
@@ -345,7 +348,7 @@ function profile(name) {
   return p;
 }
 
-/* ───────────────────────── hearts, stars and tags ─────────────────────────
+/* ───────────────────────── ratings (hearts and tags retired in 0.14) ─────────────────────────
    Kept by the server for the whole house (/api/marks). An album is known as the server's copies() knows it ("artist|album",
    lower case, no asides, letters and digits), so a mark survives a rescan and follows the best copy; a track adds its title. */
 const copiesKey = (artist, album) => (artist + "|" + album).toLowerCase().replace(/&/g, "and").replace(/[(\[].*?[)\]]/g, "").replace(/[^a-z0-9|]/g, "");
@@ -361,29 +364,24 @@ function setMark(kind, k, change) {
 // a mark on the page: <span class="mk" data-mark="kind|key" data-mk="heart|stars|tags|loved">; drawn again wherever it shows when it changes
 function mk(kind, k, type) { return `<span class="mk mk-${type}" data-mark="${kind}|${esc(k)}" data-mk="${type}">${mkInner(type, markOf(kind, k))}</span>`; }
 function mkInner(type, m) {
-  if (type === "heart") return `<button class="heart ${m[0] ? "on" : ""}" data-act="heart" aria-label="${m[0] ? "Loved" : "Love"}">${icon(m[0] ? "heart_on" : "heart")}</button>`;
-  if (type === "loved") return m[0] ? icon("heart_on") : "";
-  if (type === "stars") return [1, 2, 3, 4, 5].map(n => `<button class="star ${n <= m[1] ? "on" : ""}" data-act="rate" data-v="${n}" aria-label="${n} stars">${icon(n <= m[1] ? "star_on" : "star")}</button>`).join("");
-  if (type === "tags") return m[2].map(t => `<span class="tag"><a href="#/albums" data-act="tagFilter" data-v="${esc(t)}">#${esc(t)}</a><button data-act="untag" data-v="${esc(t)}" aria-label="Remove">${icon("close")}</button></span>`).join("") +
-    `<button class="tag add" data-act="addTag">+ Tag</button>`;
-  return "";
+  if (type === "stars") return [1, 2, 3, 4, 5].map(n => `<button class="star ${n <= m[1] ? "on" : ""}" data-act="rate" data-v="${n}" aria-label="${rateWord(n)}">${rateIcon(n <= m[1])}</button>`).join("");
+  return ""; // hearts and tags are retired (0.14): a rating, Lyrion's where it can be, is the one mark
 }
 function refreshMarks(kind, k) {
   document.querySelectorAll(`[data-mark="${kind}|${k}"]`).forEach(el => { el.innerHTML = mkInner(el.dataset.mk, markOf(kind, k)); });
 }
-// a name and its heart, the heart fast to the last word so a wrap never leaves it dangling on a line of its own;
-// open/close wrap each part (a link, say) and the heart stays outside them
-function hearted(text, heart, open, close) {
-  open = open || ""; close = close || "";
-  const t = String(text || "").trim(), cut = t.lastIndexOf(" ");
-  const head = cut > 0 ? t.slice(0, cut + 1) : "", last = cut > 0 ? t.slice(cut + 1) : t;
-  return `${head ? open + esc(head) + close : ""}<span class="nw">${open}${esc(last)}${close}${heart}</span>`;
-}
+function hearted(text, heart, open, close) { return (open || "") + esc(String(text || "").trim()) + (close || ""); } // a name (its heart is retired)
+// the rating's mark: a walking sasquatch (the house's conceit), or a plain star with Settings' "Rate in squatches" off
+const squatches = () => !(A.cfg && A.cfg.features && A.cfg.features.squatches === false);
+const rateIcon = lit => icon((squatches() ? "squatch" : "star") + (lit ? "_on" : ""));
+const rateWord = n => n + (squatches() ? (n === 1 ? " squatch" : " squatches") : (n === 1 ? " star" : " stars"));
+// an album's rating, wherever it's kept: Lyrion's (Ratings Light, its tracks' average, read with the library) or the house's own
+const albumRating = a => lyrionRates() ? +((A.rated || {})[a[0]] || 0) : markOf("album", albumKey(a))[1];
 // an album's stars when Ratings Light is installed: Lyrion's, the average of its tracks' ratings, and a star tapped rates
 // every track (asked first); without it, the house's own album stars
 const lyrionRates = () => !!(A.cfg && A.cfg.have && A.cfg.have.ratings);
 const albumStars = a => lyrionRates() ? `<span class="lr-stars" data-album="${a[0]}"><span class="lr-in">${lrInner(0)}</span><span class="lr-note"></span></span>` : mk("album", albumKey(a), "stars");
-const lrInner = st => [1, 2, 3, 4, 5].map(n => `<button class="star ${n <= st ? "on" : n - 0.5 === st ? "on half" : ""}" data-act="lrRate" data-v="${n}" aria-label="${n} stars">${icon(n - 0.5 <= st ? "star_on" : "star")}</button>`).join("");
+const lrInner = st => [1, 2, 3, 4, 5].map(n => `<button class="star ${n <= st ? "on" : n - 0.5 === st ? "on half" : ""}" data-act="lrRate" data-v="${n}" aria-label="${rateWord(n)}">${rateIcon(n - 0.5 <= st)}</button>`).join("");
 function lrPaint(box, r) {
   box.lr = r;
   $(".lr-in", box).innerHTML = lrInner(r.stars);
@@ -588,8 +586,8 @@ function drawDiscover(el) {
   if (on("discover", "kexp") && (h.kexp || []).length) put("kexp", section("Live on KEXP", "Your artists in the studio", shelf(h.kexp.map(kexpCard)), "", "kexp"));
   if (on("discover", "beyond") && h.beyond.length) put("beyond", section("Not on your shelves yet", "Beyond the shelves", shelf(h.beyond.map(b => face(b.name, b.image, b.because.length ? "like " + esc(b.because.slice(0, 2).join(", ")) : "", "new"))), "", "beyond"));
   if (on("discover", "archive") && A.archive.length) put("archive", section("From the Internet Archive", "Live on your shelves", shelf(A.archive.map(x => archCard(x))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@archive">All of them</a>`));
-  const loved = shuffled(A.albums.filter(a => markOf("album", albumKey(a))[0]), seeded(h.date || ""));
-  if (on("discover", "loved") && loved.length) put("loved", section("The ones with hearts", "Loved", shelf(loved.slice(0, 20).map(a => albumCard(a))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@loved">All of them</a>`));
+  const loved = shuffled(A.albums.filter(a => albumRating(a) >= 5), seeded(h.date || ""));
+  if (on("discover", "loved") && loved.length) put("loved", section("Rated the highest", squatches() ? "Five squatches" : "Five stars", shelf(loved.slice(0, 20).map(a => albumCard(a))), `<a class="more" href="#/albums" data-act="tagFilter" data-v="@top">All of them</a>`));
   if (on("discover", "round") && (h.round || []).length) { // albums turning a round number this month, the oldest anniversaries first, each with its age
     const groups = h.round.map(r => [r.age, r.albums.map(id => A.byId.get(id)).filter(Boolean)]).filter(g => g[1].length);
     const cards = [].concat.apply([], groups.map(g => g[1].map(a => `<div class="rn"><span class="rn-age">${g[0]}</span>${albumCard(a)}</div>`)));
@@ -832,9 +830,7 @@ VIEWS.away = function (el, arg) {
   let x; try { x = JSON.parse(arg); } catch (e) { x = ["", arg, ""]; }
   const artist = x[0] || "", title = x[1] || "", mag = magOn(), more = artist ? albumsBy(artist).filter(a => !a.archive) : [];
   const art = c => c ? `<img src="${esc(pic(c, 800))}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`;
-  const acts = big => [["play", "play", "Spin it"], ["next", "next_up", "Play Next"], ["queue", "queue", "Add to Queue"], ["keep", "heart", "Add to the library"]]
-    .map((b, n) => big ? `<button class="${n ? "btn ghost" : "btn"}" data-act="awayAct" data-v="${b[0]}">${icon(b[1])} ${b[2]}</button>`
-      : `<button ${n ? "" : `class="al-spin" `}data-act="awayAct" data-v="${b[0]}">${icon(b[1])}${n ? `<span>${b[2]}</span>` : " " + b[2]}</button>`).join("");
+  const acts = big => (big ? `<button class="btn" data-act="awayAct" data-v="play">${icon("play")} Spin it</button>` : `<button class="al-spin" data-act="awayAct" data-v="play">${icon("play")} Spin it</button>`) + addToBtn({ k: "away" }, big);
   const rows = `<div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div>`;
   const by = artist ? `<a href="${artistHref(artist)}">${esc(artist)}</a>` : "";
   el.innerHTML = mag ? `<article class="mag mag-al">${magRun("The Records")}
@@ -863,7 +859,6 @@ VIEWS.away = function (el, arg) {
       const d = r.details, facts = [d.type && d.type !== "Album" ? d.type : "", r.year, d.label, d.genre, d.length ? d.length.replace(/^0:/, "") : ""].filter(Boolean);
       const f = $(".aw-facts", el); if (f) f.innerHTML = mag ? facts.filter(v => v !== r.year).map(esc).join(" &middot; ") + ` &middot; On ${SVC()}` : ["Not on your shelves"].concat(facts).map(esc).join(" &middot; ");
       const y = $(".aw-year", el); if (y && r.year) y.textContent = ", " + r.year;
-      if (r.kept) { const k = $('[data-act="awayAct"][data-v="keep"]', el); if (k) { k.disabled = true; k.lastChild.textContent = mag ? "In your library" : " In your library"; } }
       if (!x[2] && r.cover) $(".album-art", el).innerHTML = art(r.cover);
     }
     return api("/api/review?" + new URLSearchParams({ artist: r.artist || artist, album: r.album || title }));
@@ -1240,11 +1235,9 @@ MAG.album = function (el, id) {
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
         <div class="mag-by">${[a[6] && a[9] !== "vinyl" ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-heard"></div>
-        <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button data-act="nextAlbum" data-v="${a[0]}" aria-label="Play it next">${icon("next_up")}<span>Play Next</span></button>
-          <button data-act="queueAlbum" data-v="${a[0]}" aria-label="Add it to the queue">${icon("queue")}<span>Add to Queue</span></button><button data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}<span>Playlist</span></button>${A.cfg && A.cfg.have && A.cfg.have.listenlater ? `<button data-act="listenLater" data-v="${a[0]}" aria-label="Save to Listen Later">${icon("clock")}<span>Listen Later</span></button>` : ""}
-          <span class="mag-share"></span><button data-act="lmInfo" data-v="album:${a[0]}" aria-label="More from Lyrion">${icon("more")}</button>${title ? `<button data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
-        <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}<button class="g-edit${(a[8] || []).length ? "" : " named"}" data-act="genreEdit" data-v="${a[0]}">${icon("edit")}${(a[8] || []).length ? "" : " Add genres"}</button></dd></div>
-          ${title ? `<div><dt>Your marks</dt><dd class="al-marks-in">${albumStars(a)}${mk("album", albumKey(a), "tags")}</dd></div>` : ""}</dl></div>
+        <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button>${title ? addToBtn({ k: "album", id: a[0] }) + moreOfBtn({ k: "album", id: a[0] }) : ""}</div>
+        <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("") || `<span class="dim">None yet</span>`}</dd></div>
+          ${title ? `<div><dt>Your rating</dt><dd class="al-marks-in">${albumStars(a)}</dd></div>` : ""}</dl></div>
     </div>
     <div class="al-body"><div class="al-main">
     <nav class="mag-tabs">${[["tracks", "The tracks"], ["story", "The story"], ["credits", "Credits"], ["plays", "Plays"]].filter(t => (t[0] !== "credits" || on("features", "credits")) && (t[0] !== "plays" || (title && on("features", "history")))).map(t =>
@@ -1260,7 +1253,6 @@ MAG.album = function (el, id) {
   </article>`;
   const img = $(".mag-cover img", el); if (img) tint(img, el);
   if (title) lrFill(el, a[0]);
-  if (title) api("/api/share?album_id=" + a[0]).then(r => { const box = $(".mag-share", el); if (r.url && box && el.isConnected) box.outerHTML = `<button data-act="share" data-v="${esc(JSON.stringify({ title: title + " by " + artist, url: r.url }))}" aria-label="Share">${icon("share")}<span>Share</span></button>`; }).catch(() => {});
   profile(artist).then(p => {
     const k = $(".mag-kind", el); if (k && title) k.textContent = { album: "The LP", ep: "The EP", live: "Live", comp: "The compilation" }[kindOf(a, p.rgs)];
     // at the foot, as on the artist's page: those like them, in circles, the ones new to the house first
@@ -1310,13 +1302,9 @@ VIEWS.album = function (el, id) {
     <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, versionsOf(a).length)}</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
       <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
       <div class="al-heard"></div>
-      ${title ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}${(a[8] || []).length ? `<button class="g-edit" data-act="genreEdit" data-v="${a[0]}" aria-label="Edit genres">${icon("edit")}</button>` : `<button class="g-edit named" data-act="genreEdit" data-v="${a[0]}">${icon("edit")} Add genres</button>`}</div>` : ""}
-      ${title ? `<div class="al-marks">${albumStars(a)}${mk("album", albumKey(a), "tags")}</div>` : ""}
-      <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button><button class="btn ghost" data-act="nextAlbum" data-v="${a[0]}">${icon("next_up")} Play Next</button>
-      <button class="btn ghost" data-act="queueAlbum" data-v="${a[0]}">${icon("queue")} Add to Queue</button>
-      <button class="btn ghost" data-act="addToPlaylist" data-v="album:${a[0]}" aria-label="Add to a playlist">${icon("list")}</button>
-      <button class="btn ghost" data-act="lmInfo" data-v="album:${a[0]}" aria-label="More from Lyrion">${icon("more")}</button>
-      ${title ? `<button class="btn ghost" data-act="removeAsk" data-v="${a[0]}" aria-label="Remove from the library">${icon("trash")}</button>` : ""}</div>
+      ${title && (a[8] || []).length ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}</div>` : ""}
+      ${title ? `<div class="al-marks">${albumStars(a)}</div>` : ""}
+      <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button>${title ? addToBtn({ k: "album", id: a[0] }, true) + moreOfBtn({ k: "album", id: a[0] }, true) : ""}</div>
       <div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div></div></div>
     <div id="al-review"></div><div id="al-credits"></div><div id="al-plays"></div><div id="al-sounds"></div>
     ${more.length ? section("Also on your shelves", "More by " + esc(artist), shelf(more.map(x => albumCard(x)))) : ""}<div id="al-sim"></div>`;
@@ -1339,7 +1327,6 @@ VIEWS.album = function (el, id) {
     }).join("")}</div>`;
     $(".al-kick", el).insertAdjacentHTML("beforeend", (a[3] || a[6] ? " &middot; " : "") + d.tracks.length + " tracks &middot; " + Math.round(total / 60) + " min");
     if (!title) { $(".al-title", el).textContent = d.album; $(".al-by", el).textContent = by; $(".al-by", el).setAttribute("href", artistHref(by)); }
-    if (title) api("/api/share?album_id=" + a[0]).then(r => { const acts = $(".album-head .acts", el); if (r.url && acts && el.isConnected) { const bin = $('[data-act="removeAsk"]', acts); if (bin) bin.insertAdjacentHTML("beforebegin", shareBtn(title + " by " + artist, r.url)); else acts.insertAdjacentHTML("beforeend", shareBtn(title + " by " + artist, r.url)); } }).catch(() => {});
     if (title && on("features", "credits")) creditsFor(a[0]).then(c => { const box = $("#al-credits", el); if (box && el.isConnected) box.outerHTML = creditsHtml(c); }).catch(() => {});
     if (title) trackCredits(el, a[0], d, ".album-head .tracks");
     if (title) albumPlays(el, a[0], d, ".album-head .tracks");
@@ -1557,7 +1544,7 @@ VIEWS.show = function (el, id) {
         <h1 class="al-title">${esc(name)}</h1>${x.artist ? `<div class="byline">${hearted(x.artist, mk("artist", norm(x.artist), "heart"), `<a class="by al-by" href="${artistHref(x.artist)}">`, "</a>")}</div>` : ""}
         <div class="genres sh-when">${x.date ? `<span>${esc(new Date(x.date + "T12:00").toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }))}</span>` : ""}</div>
         <div class="acts"><button class="btn" data-act="archDo" data-v="play">${icon("play")} Spin it</button><button class="btn ghost" data-act="archDo" data-v="queue">${icon("queue")} Queue</button>
-          <button class="btn ghost arch-fav" data-act="archDo" data-v="${fav() ? "unfav" : "fav"}" aria-label="${fav() ? "On your shelves" : "Add to your shelves"}">${icon(fav() ? "heart_on" : "heart")}</button>
+          <button class="btn ghost arch-fav" data-act="archDo" data-v="${fav() ? "unfav" : "fav"}" aria-label="${fav() ? "On your shelves" : "Add to your shelves"}">${icon(fav() ? "check" : "plus")}</button>
           ${shareBtn(x.artist + (x.venue ? " live at " + x.venue : "") + (x.date ? ", " + x.date : ""), archiveLink(x.image) || "https://archive.org/details/" + id)}</div>
         <div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div></div></div>
       <div id="sh-notes"></div><div id="sh-rec"></div><div id="sh-more"></div><div id="sh-albums"></div>`;
@@ -1606,7 +1593,7 @@ function openArchive(x) {
   openSheet(`<div class="qs arch" data-show="${esc(JSON.stringify(x))}">${x.image ? `<img src="${esc(x.image)}" alt="">` : ""}<div><div class="kicker">The Internet Archive</div>
     <h3>${esc(x.venue ? "Live at " + x.venue : x.title)}</h3><a class="dim" href="${artistHref(x.artist)}" data-act="closeSheet">${esc(x.artist)}</a>${x.date ? `<div class="dim">${esc(new Date(x.date + "T12:00").toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }))}</div>` : ""}
     <div class="acts col"><button class="btn" data-act="archDo" data-v="play">${icon("play")} Spin it in ${esc(roomName(A.room))}</button><button class="btn ghost" data-act="archDo" data-v="queue">${icon("queue")} Queue it</button>
-    <button class="btn ghost arch-fav" data-act="archDo" data-v="${fav ? "unfav" : "fav"}">${icon(fav ? "heart_on" : "heart")} ${fav ? "On your shelves" : "Add to your shelves"}</button>${shareBtn(x.artist + (x.venue ? " live at " + x.venue : "") + (x.date ? ", " + x.date : ""), archiveLink(x.image), "wide")}</div></div></div>
+    <button class="btn ghost arch-fav" data-act="archDo" data-v="${fav ? "unfav" : "fav"}">${icon(fav ? "check" : "plus")} ${fav ? "On your shelves" : "Add to your shelves"}</button>${shareBtn(x.artist + (x.venue ? " live at " + x.venue : "") + (x.date ? ", " + x.date : ""), archiveLink(x.image), "wide")}</div></div></div>
     <div class="kicker setlist-h">Setlist</div><div class="setlist"><p class="dim">Asking the Archive&hellip;</p></div>`);
   api("/api/archive/show", { ctx: x.ctx, player: A.room }).then(r => {
     const box = $("#sheet .setlist"); if (!box) return;
@@ -1689,8 +1676,8 @@ VIEWS.albums = function (el) {
   if (!A.heard && focusOn()) loadHeard().then(() => { if (current && current.el === el) VIEWS.albums(el); });
   const list = (genre === "@archive" ? [] : A.albums.filter(a => albumIn(a, genre) && inView(a))).concat(shows).filter(focusMatch).sort(SORTS[sort][1]);
   const tags = {}; Object.keys(A.marks.album).forEach(k => A.marks.album[k][2].forEach(t => { tags[t] = 1; }));
-  const filters = [["@loved", icon("heart_on") + " Loved"], ["@rated", icon("star_on") + " Four stars and up"]].concat(A.archive.length ? [["@archive", "Live from the Archive"]] : []).concat(A.physical.length ? [["@vinyl", icon("disc") + (A.physWord === "vinyl" ? " On vinyl" : " Physical copies")]] : []).concat(A.albums.some(a => (a[10] || []).length) ? [["@versions", "With other pressings"]] : []).concat(Object.keys(tags).sort().map(t => ["#" + t, "#" + esc(t)]));
-  const label = genre === "@vinyl" ? A.physWord + " " : genre === "@versions" ? "multi-pressing " : genre === "@loved" ? "loved " : genre === "@rated" ? "four-star " : genre === "@archive" ? "Archive " : genre ? esc(genre) + " " : "";
+  const filters = [["@top", rateIcon(true) + (squatches() ? " Five squatches" : " Five stars")], ["@rated", rateIcon(true) + (squatches() ? " Four squatches and up" : " Four stars and up")]].concat(A.archive.length ? [["@archive", "Live from the Archive"]] : []).concat(A.physical.length ? [["@vinyl", icon("disc") + (A.physWord === "vinyl" ? " On vinyl" : " Physical copies")]] : []).concat(A.albums.some(a => (a[10] || []).length) ? [["@versions", "With other pressings"]] : []).concat(Object.keys(tags).sort().map(t => ["#" + t, "#" + esc(t)]));
+  const label = genre === "@vinyl" ? A.physWord + " " : genre === "@versions" ? "multi-pressing " : genre === "@top" ? "top-rated " : genre === "@rated" ? "four-and-up " : genre === "@archive" ? "Archive " : genre ? esc(genre) + " " : "";
   const countText = `${list.length.toLocaleString()} ${label}albums${focusOn() ? " in the dig" : ""}` + (A.view ? " &middot; " + viewChip() : "");
   el.innerHTML = `${pageBar("Albums", ["The library", countText],
       `<button class="pill focus-btn ${focusOn() ? "on" : ""}" data-act="focusOpen">${icon("tag")}<span class="pl">Dig${focusOn() ? ` &middot; ${focusOn()}` : ""}</span></button><div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="sortAlbums" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`, false, "segs grow albums-acts")}
@@ -1705,14 +1692,14 @@ const FACETS = [
   ["decade", "Decade", () => Array.from(new Set(A.albums.filter(a => a[3] >= 1900).map(a => a[3] - a[3] % 10))).sort().map(d => [String(d), d + "s"])],
   ["sound", "Sound", () => [["hires", "Hi-res"], ["cd", "CD"], ["lossy", "Lossy"]]],
   ["source", "Plays from", () => [["local", "The shelves"], ["qobuz", "Qobuz"], ["tidal", "TIDAL"], ["vinyl", "Your vinyl"], ["archive", "The Archive"]]],
-  ["marks", "Marks", () => [["loved", "Hearted"], ["rated", "Four stars and up"]]],
+  ["marks", "Rating", () => [["top", "Five"], ["rated", "Four and up"]]],
   ["heard", "Listening", () => [["never", "Never played"], ["year", "Not in a year"], ["lately", "In the last month"]]]];
 const FOCUS_TEST = {
   genre: (a, v) => { const fam = v === "Your own" ? ((genreFamilies().find(f => f[0] === v) || [0, []])[1]).map(x => x[0]) : familyOf(v); return (a[8] || []).some(g => fam.indexOf(g) >= 0); },
   decade: (a, v) => a[3] >= 1900 && String(a[3] - a[3] % 10) === v,
   sound: (a, v) => { const q = a[6] || "", m = /^(\d+)\/([\d.]+)/.exec(q); return v === "hires" ? !!m && (+m[1] > 16 || +m[2] > 48) : v === "cd" ? q === "CD" : /^(mp3|aac|ogg|opus|wma)/i.test(q); },
   source: (a, v) => v === "archive" ? !!a.archive : v === "vinyl" ? !a.archive && (a[9] === v || (a[10] || []).some(x => x[5] === v)) : !a.archive && a[9] === v,
-  marks: (a, v) => { const m = markOf("album", albumKey(a)); return v === "loved" ? !!m[0] : m[1] >= 4; },
+  marks: (a, v) => albumRating(a) >= (v === "top" ? 5 : 4),
   heard: (a, v) => { const h = (A.heard || {})[albumKey(a)], now = Date.now() / 1000; return v === "never" ? !h : v === "year" ? !h || h[0] < now - 365 * 86400 : !!h && h[0] > now - 30 * 86400; }
 };
 A.focus = store.get("sq-focus", {});
@@ -1744,15 +1731,14 @@ function focusChanged() {
   const go = () => { const v = A.views.get("#/albums"); if (v) { v.el.remove(); A.views.delete("#/albums"); } if (location.hash === "#/albums") route(); };
   (A.focus.heard && A.focus.heard.length && !A.heard ? loadHeard() : Promise.resolve()).then(go);
 }
-// an album in a filter: a genre, or @loved, @rated (four stars and up), #tag
+// an album in a filter: a genre, or @top (rated five), @rated (four and up)
 function albumIn(a, f) {
   if (!f) return true;
-  const m = markOf("album", albumKey(a));
   if (f === "@versions") return (a[10] || []).length > 0;
   if (f === "@vinyl") return A.vinylOf.has(a[0]);
-  if (f === "@loved") return !!m[0];
-  if (f === "@rated") return m[1] >= 4;
-  if (f.charAt(0) === "#") return m[2].indexOf(f.slice(1)) >= 0;
+  if (f === "@top" || f === "@loved") return albumRating(a) >= 5;
+  if (f === "@rated") return albumRating(a) >= 4;
+  if (f.charAt(0) === "#") return false;
   return (a[8] || []).indexOf(f) >= 0;
 }
 VIEWS.artists = function (el) {
@@ -1987,7 +1973,7 @@ VIEWS.removed = function (el) {
 // the connections a house sets; the rest (music folders, removed music, the Qobuz player) are found
 const CONN = [["lms_url", "Lyrion", "its address, as the server reaches it", "lms_ok"],
   ["listening_db", "Listening log", "a recorder of the house's own, if there is one; otherwise Soundsquatch keeps the log itself", "listening_ok"]];
-const FEATS = [["stations", "Stations", "radio seeded from artists you choose"], ["archive", "Internet Archive", "shows from the ArchiveLMA plugin"],
+const FEATS = [["squatches", "Rate in squatches", "a walking sasquatch for each star; off, plain stars"], ["stations", "Stations", "radio seeded from artists you choose"], ["archive", "Internet Archive", "shows from the ArchiveLMA plugin"],
   ["history", "History", "the History tab, from the listening log"], ["credits", "Credits", "who made each album, from MusicBrainz"], ["lyrics", "Lyrics", "synced lyrics in Now Playing (LRCLIB)"],
   ["write_files", "Change music files", "genres, titles and covers written into the files; Remove from the library moves them to music-removed. Off, genres are Soundsquatch's own and the files are never touched"],
   ["turntable_capture", "Keep the turntable's songs", "each song the record player plays written as a tagged FLAC into the music folder (From vinyl), so the library has it"],
@@ -2020,7 +2006,7 @@ function discOrder(mag) {
   return out;
 }
 const DISC = [["cover", "Cover stories"], ["stations", "Stations"], ["because", "Kindred spirits"], ["rotation", "On rotation"], ["back", "Back to it"], ["new", "New from your artists"],
-  ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Loved"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
+  ["spotlight", "Artist of the day"], ["fresh", "Fresh on the shelves"], ["rediscover", "Rediscover"], ["loved", "Rated the highest"], ["archive", "Live on your shelves"], ["listenlater", "Listen later"], ["lbfresh", "Fresh releases (ListenBrainz)"], ["pitchfork", "Best new music (Pitchfork)"],
   ["connections", "Connections"], ["beyond", "Beyond the shelves"], ["round", "Round numbers"], ["decade", "A decade"], ["genre", "Genre of the day"], ["vinyl", "From the record shelf"], ["kexp", "Live on KEXP"], ["sounds", "Sounds like what you've played"], ["a1001", "1001 Albums"]];
 const toggle = (act, v, isOn, label, note) => `<button class="set-row toggle ${isOn ? "on" : ""}" data-act="${act}" data-v="${v}"><span><b>${label}</b>${note ? `<em>${note}</em>` : ""}</span><i class="sw"></i></button>`;
 VIEWS.settings = function (el, arg) {
@@ -2089,7 +2075,7 @@ function drawSettings(el) {
         return `<div class="set-row"><span><b>${esc(roomName(p.playerid))}</b><em>${r.name ? esc(p.name) + " in Lyrion" : "as Lyrion names it"}${r.fixed ? " &middot; volume set on the device" : ""}</em></span><button class="pill" data-act="roomEdit" data-v="${p.playerid}">Change</button></div>`; }).join("") || `<p class="dim">No players are connected to Lyrion.</p>`))}
     ${inTab("discover", section("For every screen in the house", "Discover", discList(c)))}
     ${inTab("house", `<div id="set-bans"></div>`)}
-    ${inTab("help", section("For every screen in the house", "Backups", `<p class="plan-note">Each night Soundsquatch keeps a copy of what it can't fetch again (hearts, stars, tags, stations, the never-play list, removals and settings); the last two weeks of them stay on the server.</p>
+    ${inTab("help", section("For every screen in the house", "Backups", `<p class="plan-note">Each night Soundsquatch keeps a copy of what it can't fetch again (ratings, stations, the never-play list, removals and settings); the last two weeks of them stay on the server.</p>
       <div class="set-row"><span><b>Last copy</b><em id="bk-last">&hellip;</em></span><a class="pill" href="/api/backup" download>${icon("share")}<span class="pl">Download one now</span></a></div>
       <div class="set-row"><span><b>Restore</b><em>from a downloaded copy: what it holds replaces what is here (removals are added to)</em></span><label class="pill bk-restore">Choose a file<input type="file" accept=".json,application/json" hidden></label></div>`))}
     ${inTab("device", section("This device only", "This device", `
@@ -2173,7 +2159,7 @@ VIEWS.history = function (el) {
       const early = x.outcome === "skipped" && x.played < 45, href = x.album_id ? albumHref(x.album_id) : artistHref(splitArtist(x.artist));
       return `<a class="hrow ${early ? "skip" : ""}" href="${href}"><span class="ht">${time(x.t)}</span>
         ${x.art ? `<img loading="lazy" src="${cover(x.art, 150)}" alt="">` : `<span class="noimg"></span>`}<span class="hw"><b>${esc(x.title)}</b><em>${esc(x.artist)}${x.album ? " &middot; " + esc(x.album) : ""}</em></span>
-        ${x.url ? `<button class="pill keep-log" data-act="keepLog" data-v="${esc(x.url)}" data-cover="${esc(/^https?:/.test(x.art || "") ? x.art : "")}" data-k="${esc(norm(x.artist + "|" + x.album))}" aria-label="Add to the library">${icon("heart")}<span class="pl">Add to library</span></button>` : ""}
+        ${x.url ? `<button class="pill keep-log" data-act="keepLog" data-v="${esc(x.url)}" data-cover="${esc(/^https?:/.test(x.art || "") ? x.art : "")}" data-k="${esc(norm(x.artist + "|" + x.album))}" aria-label="Add to the library">${icon("plus")}<span class="pl">Add to library</span></button>` : ""}
         <span class="hr">${esc(roomByName(x.room))}${x.who && x.who !== "household" ? " &middot; " + esc(x.who) : ""}</span><span class="ho">${early ? "skipped at " + mmss(x.played) : x.library || x.album_id ? "" : "beyond the shelves"}</span></a>`;
     };
     // an album listened to: four or more of its tracks one after another in the same room is one row (opened, its tracks)
@@ -2363,6 +2349,38 @@ function lmRun(v, name, words) {
     if (playing) setTimeout(poll, 600);
     if (a.next || x.nextWindow || name === "do" || name === "go") lmRefresh();
   }).catch(() => toast("Lyrion didn't answer"));
+}
+/* ───────────────────────── Add to… and ⋯ ─────────────────────────
+   An album's (or the playing song's) doings, in two sheets, so its page keeps three buttons: Spin it, Add to… (the
+   library, the queue, a playlist, a station, Listen Later, Lyrion's Favorites) and ⋯ (the occasional: share, Lyrion's
+   own menu, other pressings, genres, the cover, removing it). ctx: {k: "album", id} | {k: "away"} | {k: "np", …the song}. */
+const ctxAttr = ctx => esc(JSON.stringify(ctx));
+const addToBtn = (ctx, big) => `<button class="${big ? "btn ghost " : ""}add-to" data-act="addTo" data-v="${ctxAttr(ctx)}">${icon("plus")}<span>Add to…</span></button>`;
+const moreOfBtn = (ctx, big) => `<button class="${big ? "btn ghost " : ""}more-of" data-act="moreOf" data-v="${ctxAttr(ctx)}" aria-label="More">${icon("more")}</button>`;
+function ctxOf(ctx) { // what the sheets need: artist, title, whether it's on the shelves, and its id there
+  if (ctx.k === "album") { const a = A.byId.get(+ctx.id) || []; return { artist: a[2] || "", title: a[1] || "", id: +ctx.id, kept: +ctx.id > 0 }; }
+  if (ctx.k === "away") { const r = (current && current.el.away) || {}; return { artist: r.artist || "", title: r.album || "", kept: !!r.kept, away: r }; }
+  return Object.assign({ kept: !!ctx.lib || /^file:/.test(ctx.url || "") }, ctx, { title: ctx.album || "" });
+}
+function addToSheet(ctx) {
+  const c = ctxOf(ctx), row = (what, ic, words, off) => `<button class="btn ghost" data-act="addToDo" data-v="${what}" ${off ? "disabled" : ""}>${icon(ic)} ${words}</button>`;
+  const streamed = ctx.k === "away" || (ctx.k === "np" && /^\w+:\/\/\d+\./.test(ctx.url || "") && !/^file:/.test(ctx.url || ""));
+  const rows = [
+    c.kept ? row("", "check", "In your library", true) : streamed ? row("library", "plus", "Your library") : "",
+    ctx.k !== "np" ? row("next", "next_up", "Play next") + row("queue", "queue", "End of the queue") : "",
+    ctx.k === "album" || (ctx.k === "np" && +ctx.id > 0) ? row("playlist", "list", "A playlist…") : "",
+    on("features", "stations") && c.artist ? row("station", "radio_plus", `A station <span class="dim">(${esc(splitArtist(c.artist))})</span>`) : "",
+    ctx.k === "album" && A.cfg && A.cfg.have && A.cfg.have.listenlater ? row("later", "clock", "Listen Later") : "",
+    ctx.k === "album" || (ctx.k === "np" && ctx.url) ? row("fav", "link", "Lyrion's Favorites") : ""].join("");
+  openSheet(`<div data-ctx="${ctxAttr(ctx)}"><div class="kicker">Add to…</div><h3>${esc(ctx.k === "np" ? ctx.song || c.title : c.title)}</h3><div class="acts col add-list">${rows}</div></div>`);
+}
+function moreOfSheet(ctx) {
+  const c = ctxOf(ctx), id = c.id, a = A.byId.get(id) || [], row = (act, v, ic, words, cls) => `<button class="btn ghost ${cls || ""}" data-act="${act}" data-v="${esc(String(v))}">${icon(ic)} ${words}</button>`;
+  openSheet(`<div><div class="kicker">${esc(c.artist)}</div><h3>${esc(c.title)}</h3><div class="acts col">
+    <span class="more-share"></span>${row("lmInfo", "album:" + id, "apps", "More from Lyrion")}${versionsOf(a).length > 1 ? row("versions", id, "disc", "Other pressings") : ""}
+    ${row("genreEdit", id, "tag", (a[8] || []).length ? "Edit genres" : "Add genres")}${on("features", "write_files") ? row("artEdit", id, "edit", "Change the cover") : ""}
+    ${row("removeAsk", id, "trash", "Remove from the library", "danger")}</div></div>`);
+  api("/api/share?album_id=" + id).then(r => { const box = $("#sheet .more-share"); if (r.url && box) box.outerHTML = `<button class="btn ghost" data-act="share" data-v="${esc(JSON.stringify({ title: c.title + " by " + c.artist, url: r.url }))}">${icon("share")} Share</button>`; }).catch(() => {});
 }
 /* ───────────────────────── search ───────────────────────── */
 let searchT, qobuzT, archT, lastQ = "";
@@ -2601,7 +2619,7 @@ const ACT = {
     toast(words);
     inOrder().then(() => call).then(o => {
       if (o.error) return toast(o.error);
-      if (v === "keep") { t.disabled = true; t.lastChild.textContent = " In your library"; toast(o.result === "already" ? `${r.album} is in the library already` : `${r.album} is on the shelves`); freshShelves(); }
+      if (v === "keep") { r.kept = true; toast(o.result === "already" ? `${r.album} is in the library already` : `${r.album} is on the shelves`); freshShelves(); }
       setTimeout(poll, 800);
     }).catch(() => toast("The server didn't answer"));
   },
@@ -2685,7 +2703,7 @@ const ACT = {
       if (!r.local) return toast("A streamed track's title comes from its service");
       openSheet(`<div class="kicker">Fix the title</div><h3>${esc(r.title)}</h3>
         <div class="seed-add"><input id="title-new" type="text" maxlength="200" value="${esc(r.title)}" autocomplete="off" spellcheck="true"><button class="btn" data-act="titleSave" data-v="${v}" data-album="${esc(album)}">Save</button></div>
-        <p class="plan-note">Written into the file (and any other copy of it), and Lyrion looks again. The track keeps its heart and stars.${r.original ? ` It was “${esc(r.original)}” before; Put back returns that.` : ""}</p>
+        <p class="plan-note">Written into the file (and any other copy of it), and Lyrion looks again. The track keeps its rating.${r.original ? ` It was “${esc(r.original)}” before; Put back returns that.` : ""}</p>
         <div class="acts col">${r.original ? `<button class="btn ghost" data-act="titleUndo" data-v="${v}" data-album="${esc(album)}">Put back “${esc(r.original)}”</button>` : ""}<button class="btn ghost" data-act="closeSheet">Not now</button></div>`);
       $("#title-new").addEventListener("keydown", e => { if (e.key === "Enter") ACT.titleSave(v, $("#sheet [data-act=titleSave]")); });
     }).catch(() => toast("The server didn't answer"));
@@ -2816,7 +2834,7 @@ const ACT = {
     api("/api/keep", { url: v, player: A.room, cover: t.dataset.cover || "" }).then(r => {
       if (r.error) { t.disabled = false; return toast("Couldn't add it: " + r.error); }
       toast(r.result === "already" ? `${r.album || "It"} is in the library already` : `${r.album || "The album"} is on the shelves`); freshShelves();
-      row.querySelectorAll('.keep-log[data-k="' + k.replace(/"/g, '\\"') + '"]').forEach(b => { b.outerHTML = `<span class="kept">${icon("heart_on")}<span class="pl">In the library</span></span>`; });
+      row.querySelectorAll('.keep-log[data-k="' + k.replace(/"/g, '\\"') + '"]').forEach(b => { b.outerHTML = `<span class="kept">${icon("check")}<span class="pl">In the library</span></span>`; });
     }).catch(() => { t.disabled = false; toast("Lyrion didn't answer"); });
   },
   share: v => shareIt(JSON.parse(v)),
@@ -2838,7 +2856,7 @@ const ACT = {
       if (v === "fav" || v === "unfav") {
         loadArchive().then(() => { Array.from(A.views.keys()).forEach(h => { const view = A.views.get(h); if (view !== current) { view.el.remove(); A.views.delete(h); } }); });
         const b = (holder.closest(".view") || document).querySelector(".arch-fav") || $("#sheet .arch-fav");
-        if (b) { b.dataset.v = v === "fav" ? "unfav" : "fav"; b.innerHTML = b.closest("#sheet") ? `${icon(v === "fav" ? "heart_on" : "heart")} ${v === "fav" ? "On your shelves" : "Add to your shelves"}` : icon(v === "fav" ? "heart_on" : "heart"); b.setAttribute("aria-label", v === "fav" ? "On your shelves" : "Add to your shelves"); }
+        if (b) { b.dataset.v = v === "fav" ? "unfav" : "fav"; b.innerHTML = b.closest("#sheet") ? `${icon(v === "fav" ? "check" : "plus")} ${v === "fav" ? "On your shelves" : "Add to your shelves"}` : icon(v === "fav" ? "check" : "plus"); b.setAttribute("aria-label", v === "fav" ? "On your shelves" : "Add to your shelves"); }
         toast(v === "fav" ? "On your shelves (the plugin's favourites)" : "Off your shelves");
       } else { toast(v === "queue" ? "Queued" : `Playing in ${roomName(A.room)}`); setTimeout(poll, 800); }
     }).catch(() => toast("The Archive didn't answer"));
@@ -2873,6 +2891,7 @@ const ACT = {
     api("/api/rate-album", { album_id: +id, stars: n }).then(r => {
       if (r.error) return toast(r.error);
       document.querySelectorAll(`.lr-stars[data-album="${id}"]`).forEach(b => lrPaint(b, r));
+      if (!r.scanning) (A.rated = A.rated || {})[id] = r.stars; // the five-squatch shelf and filters follow at once
       toast(r.scanning ? "Lyrion is scanning: try again once it's done" : n ? `${r.count} tracks rated` : `${r.count} tracks cleared`);
     }).catch(() => toast("Lyrion didn't answer"));
   },
@@ -2900,6 +2919,25 @@ const ACT = {
     if (lmRuns(x, a)) return lmRun(v, "go", String(x.text || "").split("\n")[0]);
     closeSheet();
     location.hash = lmHref(a.cmd, a.params, String(x.text || x.name || "").split("\n")[0]);
+  },
+  addTo: v => addToSheet(JSON.parse(v)),
+  moreOf: v => moreOfSheet(JSON.parse(v)),
+  addToDo: (v, t) => {
+    const holder = t.closest("[data-ctx]"), ctx = JSON.parse(holder.dataset.ctx), c = ctxOf(ctx);
+    if (v === "station") return ACT.seedSheet(splitArtist(c.artist));
+    if (v === "playlist") return openPlaylistPicker((ctx.k === "album" ? "album:" : "track:") + (ctx.k === "album" ? c.id : ctx.id));
+    closeSheet();
+    if (ctx.k === "away") return ACT.awayAct(v === "library" ? "keep" : v, t);
+    if (ctx.k === "album") {
+      if (v === "next") return ACT.nextAlbum(String(c.id));
+      if (v === "queue") return ACT.queueAlbum(String(c.id));
+      if (v === "later") return ACT.listenLater(String(c.id));
+      if (v === "fav") return lms("", ["favorites", "add", "url:db:album.title=" + encodeURIComponent(c.title) + "&contributor.name=" + encodeURIComponent(c.artist), "title:" + c.title]).then(() => toast(`${c.title} is in Lyrion's Favorites`)).catch(() => toast("Lyrion didn't answer"));
+    }
+    if (ctx.k === "np") {
+      if (v === "library") return api("/api/keep", { url: ctx.url, player: A.room, cover: ctx.cover || "" }).then(r => { toast(r.error ? "Couldn't add it: " + r.error : r.result === "already" ? `${r.album || "It"} is in the library already` : `${r.album || "The album"} is on the shelves`); if (!r.error) freshShelves(); }).catch(() => toast("Lyrion didn't answer"));
+      if (v === "fav") return lms("", ["favorites", "add", "url:" + ctx.url, "title:" + (ctx.song || "")]).then(() => toast(`${ctx.song || "It"} is in Lyrion's Favorites`)).catch(() => toast("Lyrion didn't answer"));
+    }
   },
   lmPlay: v => lmRun(v, "play", `Playing in ${roomName(A.room)}`),
   lmNext: v => lmRun(v, "add-hold", "Next up"),
@@ -3069,7 +3107,7 @@ const ACT = {
       if (r.files) what.push(`Moves its ${r.files} ${r.files === 1 ? "file" : "files"}${r.copies > 1 ? ` (${r.copies} copies)` : ""} to <b>${esc(r.to)}</b>, out of Lyrion's sight. Nothing is deleted: they can be put back.`);
       if (!what.length) what.push("Lyrion holds nothing for it that this can remove.");
       openSheet(`<div class="kicker">Remove from the library</div><h3>${esc(r.album)}</h3><div class="dim">${esc(r.artist)}</div>
-        <ul class="plan">${what.map(w => `<li>${w}</li>`).join("")}${r.versions_left ? `<li>Only this pressing goes: ${r.versions_left === 1 ? "the other pressing stays" : `the other ${r.versions_left} pressings stay`} on the shelves.</li>` : ""}<li>Its hearts, stars and tags are kept.</li></ul>
+        <ul class="plan">${what.map(w => `<li>${w}</li>`).join("")}${r.versions_left ? `<li>Only this pressing goes: ${r.versions_left === 1 ? "the other pressing stays" : `the other ${r.versions_left} pressings stay`} on the shelves.</li>` : ""}<li>Its rating is kept.</li></ul>
         <div class="acts col">${r.qobuz || r.files ? `<button class="btn danger-solid" data-act="removeDo" data-v="${v}">${icon("trash")} Remove it</button>` : ""}<button class="btn ghost" data-act="closeSheet">Keep it</button></div>`);
     }).catch(() => { closeSheet(); toast("Lyrion didn't answer"); });
   },
@@ -3237,7 +3275,6 @@ function openTrackMenu(v) {
       <div class="acts col"><button class="btn" data-act="trackDo" data-v="play">${icon("play")} Spin from here</button><button class="btn ghost" data-act="trackDo" data-v="next">${icon("next_up")} Spin it next</button>
       <button class="btn ghost" data-act="trackDo" data-v="queue">${icon("queue")} Add to the queue</button><button class="btn ghost" data-act="addToPlaylist" data-v="track:${t.id}">${icon("list")} Add to a playlist</button>
       <button class="btn ghost" data-act="banDo" data-v="track" data-artist="${esc(t.artist || d.artist)}" data-title="${esc(t.title)}">${icon("ban")} Never play this track</button><button class="btn ghost" data-act="trackDo" data-v="radio">${icon("radio")} Start a radio from it</button>${on("features", "write_files") ? `<button class="btn ghost" data-act="titleEdit" data-v="${t.id}" data-album="${esc(p[0])}">${icon("edit")} Fix the title</button>` : ""}</div>
-      <div class="sheet-mark">${mk("track", trackKey(Object.assign({ album: d.album }, t)), "heart")} <span class="dim">Love this track</span></div>
       <button class="lm-more-open" data-act="lmInfo" data-v="track:${t.id}">${icon("more")} More from Lyrion</button><div id="lm-sheet"></div></div>`);
   });
 }
@@ -3304,7 +3341,7 @@ function closeSheet() { const s = $("#sheet"); s.classList.remove("on"); setTime
 function openQobuz(r) {
   openSheet(`<div class="qs" data-r="${esc(JSON.stringify(r))}">${r.cover ? `<img src="${esc(pic(r.cover, 640))}" alt="">` : ""}<div><div class="kicker">On ${SVC()}</div><h3>${esc(r.album)}</h3><div class="dim">${esc(r.artist)}</div>
     <div class="acts col"><button class="btn" data-act="qobuz" data-v="play">${icon("play")} Spin it in ${esc(roomName(A.room))}</button><button class="btn ghost" data-act="qobuz" data-v="queue">${icon("queue")} Queue it</button>
-    <button class="btn ghost" data-act="qobuz" data-v="keep">${icon("heart")} Add to the library</button>${shareBtn(r.album + " by " + r.artist, qobuzLink(r.cover), "wide")}</div></div></div>`);
+    <button class="btn ghost" data-act="qobuz" data-v="keep">${icon("plus")} Add to the library</button>${shareBtn(r.album + " by " + r.artist, qobuzLink(r.cover), "wide")}</div></div></div>`);
 }
 /* Rooms that may play together: only players that tell Lyrion exactly where they are in a song, so it can keep them in
    step. The bridges (CastBridge for Chromecasts, UPnPBridge, AirPlay's RaopBridge) can't (their speakers buffer on their
@@ -3639,7 +3676,7 @@ function drawNp() {
       <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>${t.turntable && A.tt ? ttAsk(A.tt) : ""}
-        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${has("radio") ? `<button class="pill seed-btn ${isSeed(splitArtist(t.artist || "")) ? "on" : ""}" data-act="seedSheet" data-v="${esc(splitArtist(t.artist || ""))}" aria-label="Add to a station">${icon("radio_plus")}</button><button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button><button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
+        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${addToBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0, cover: /^https?:/.test(t.artwork_url || "") ? t.artwork_url : "" }).replace('class="add-to"', 'class="pill add-to" aria-label="Add to…"')}${has("radio") ? `<button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button><button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
       <div class="np-next"></div></div></div>`;
   drawNpSide();
