@@ -373,6 +373,169 @@ def config_action(kind, ident, action, values=None):
     raise ValueError("unknown")
 
 
+# ───────────────────────── beyond the shelves: Music Assistant's own search, as a streaming service ─────────────────────────
+STREAMING_SKIP = {"library", "builtin", "ambient_sounds", "filesystem_local", "filesystem_smb", "filesystem_nfs", "radiobrowser", "tunein"}
+
+
+def _norm(t):
+    import re
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"\s*[(\[].*$", "", (t or "").lower()).replace("&", "and"))
+
+
+class Service:
+    """Search, artists' releases, play, queue and add to the library, through Music Assistant itself: whatever services it
+    has (Qobuz, Spotify, TIDAL, Plex, …) answer together, so Soundsquatch needs no plugin of its own for any of them.
+    Its label is the first streaming service Music Assistant has (Qobuz, say); a search's results are kept for a while,
+    so an ask by its number (play the 3rd) means the same release it showed."""
+    key, scheme = "ma", "ma"
+
+    def __init__(self):
+        self.found = {}  # term → (when, albums)
+
+    @property
+    def label(self):
+        names = [p.get("name") or p.get("domain") for p in client().call("providers") or []
+                 if p.get("type") == "music" and p.get("domain") not in STREAMING_SKIP]
+        return names[0] if names else "streaming"
+
+    def available(self, can=None, player=""):
+        return ON
+
+    def _albums(self, term):
+        import time as _t
+        hit = self.found.get(term)
+        if hit and _t.time() - hit[0] < 1800:
+            return hit[1]
+        got = client().call("music/search", search_query=term, media_types=["album"], limit=40) or {}
+        albums = [a for a in got.get("albums") or [] if a.get("is_playable", True)]
+        self.found[term] = (_t.time(), albums)
+        return albums
+
+    @staticmethod
+    def _row(a):
+        return ((a.get("artists") or [{}])[0].get("name", ""), a.get("name") or "", picture(a))
+
+    def search(self, term, player=""):
+        return [self._row(a) for a in self._albums(term)]
+
+    def _streaming_artist(self, name):
+        """The artist on a streaming service (through the library's link to it, or the search's own), as (item_id, provider)."""
+        got = client().call("music/search", search_query=name, media_types=["artist"], limit=10) or {}
+        for a in got.get("artists") or []:
+            if _norm(a.get("name")) != _norm(name):
+                continue
+            if a.get("provider") not in ("library",) and (a.get("provider") or "").split("--")[0] not in STREAMING_SKIP:
+                return a["item_id"], a["provider"], a
+            for m in a.get("provider_mappings") or []:
+                if m.get("provider_domain") not in STREAMING_SKIP:
+                    return m["item_id"], m["provider_instance"], a
+        return None, None, None
+
+    def _releases(self, name):
+        aid, prov, art = self._streaming_artist(name)
+        if not aid:
+            return None, []
+        al = client().call("music/artists/artist_albums", item_id=aid, provider_instance_id_or_domain=prov, in_library_only=False) or []
+        kind = {"album": "Albums", "single": "Singles & EPs", "ep": "Singles & EPs", "compilation": "Compilations", "live": "Live"}
+        rels = [{"group": kind.get(a.get("album_type"), "Albums"), "artist": (a.get("artists") or [{}])[0].get("name", name), "album": a.get("name") or "",
+                 "cover": picture(a), "year": a.get("year") or 0, "_a": a} for a in al]
+        return art, rels
+
+    def sheet(self, name, player=""):
+        art, rels = self._releases(name)
+        if not art:
+            return {"error": "no such artist on " + self.label}
+        return {"name": art.get("name") or name, "bio": "", "photo": picture(art), "heard": {},
+                "releases": [dict({k: v for k, v in r.items() if k != "_a"}, i=i) for i, r in enumerate(rels)], "similar": []}
+
+    def _pick(self, req):
+        term, i = (req.get("term") or "").strip()[:120], int(req.get("index") or 0)
+        if (req.get("action") or "").startswith("a"):
+            rels = self._releases(term)[1]
+            r = next((r for r in rels if r["album"] == req.get("album")), None) or (rels[i] if i < len(rels) else None)
+            return r["_a"] if r else None
+        found = self._albums(term)
+        return found[i] if i < len(found) else None
+
+    def _play(self, player, media, how, start=None):
+        client().call("player_queues/play_media", queue_id=player, media=media, option=how)
+        if start:
+            client().call("player_queues/play_index", queue_id=player, index=int(start))
+
+    def keep(self, album):
+        """An album added to Music Assistant's library (with 2-way sync on, to the service's favourites too)."""
+        if album.get("provider") == "library" or any(m.get("in_library") for m in album.get("provider_mappings") or []):
+            return "already"
+        client().call("music/library/add_item", item=album)
+        return "added"
+
+    def act(self, req, player):
+        action = req.get("action")
+        if action == "search":
+            got = client().call("music/search", search_query=req.get("term"), media_types=["artist"], limit=12) or {}
+            return {"releases": [{"i": i, "artist": a, "album": t, "cover": c} for i, (a, t, c) in enumerate(self.search(req.get("term")))],
+                    "artists": [{"name": x.get("name"), "image": picture(x)} for x in got.get("artists") or [] if x.get("name")]}
+        album = self._pick(req)
+        if not album:
+            return {"error": f"{self.label} no longer lists that release"}
+        name, artist = album.get("name") or "", (album.get("artists") or [{}])[0].get("name", "")
+        verb = action[1:] if action in ("aplay", "aqueue", "akeep") else action
+        if verb in ("play", "queue"):
+            self._play(player, album["uri"], "replace" if verb == "play" else "add")
+            return {"result": "playing" if verb == "play" else "queued", "album": name, "artist": artist}
+        if verb == "keep":
+            return {"result": self.keep(album), "album": name, "artist": artist, "year": album.get("year") or 0, "cover": picture(album)}
+        return {"error": "unknown command"}
+
+    def release(self, artist, title, want, player=""):
+        term = f"{artist} {title}".strip()[:120]
+        found = self._albums(term)
+        fit = lambda a: (_norm(a.get("name")) == _norm(title)) * (2 if not artist or _norm((a.get("artists") or [{}])[0].get("name")) == _norm(artist) else 1)
+        best = max(range(len(found)), key=lambda n: fit(found[n]), default=None)
+        if best is None or not fit(found[best]):
+            return None
+        a = found[best]
+        songs = client().call("music/albums/album_tracks", item_id=a["item_id"], provider_instance_id_or_domain=a["provider"]) or []
+        secs = sum(int(s.get("duration") or 0) for s in songs)
+        return {"artist": (a.get("artists") or [{}])[0].get("name", artist), "album": a.get("name") or title, "cover": picture(a), "term": term, "i": best,
+                "details": {"length": f"{secs // 3600}:{secs % 3600 // 60:02d}:{secs % 60:02d}" if secs else ""},
+                "tracks": [{"n": s.get("track_number") or n + 1, "title": s.get("name") or "", "k": n} for n, s in enumerate(songs)],
+                "year": a.get("year") or "", "kept": a.get("provider") == "library" or any(m.get("in_library") for m in a.get("provider_mappings") or [])}
+
+    def play_release(self, term, i, track, how, player):
+        found = self._albums(term)
+        if i >= len(found):
+            return {"error": f"{self.label} no longer lists that release"}
+        self._play(player, found[i]["uri"], "replace" if how == "play" else "next" if how == "insert" else "add", track)
+        return {"result": "playing"}
+
+    def album_of_uri(self, uri):
+        t = client().call("music/item_by_uri", uri=uri) or {}
+        return t.get("album") or {}
+
+    def keep_track(self, player, url):
+        album = self.album_of_uri(url)
+        if not album:
+            return {"error": "Music Assistant didn't say which album that is from"}
+        full = client().call("music/item_by_uri", uri=album.get("uri")) or album
+        return {"album": full.get("name") or "", "artist": (full.get("artists") or [{}])[0].get("name", ""), "result": self.keep(full), "cover": picture(full)}
+
+    def unkeep_track(self, player, url):
+        album = self.album_of_uri(url)
+        lib = next((m for m in album.get("provider_mappings") or [] if m.get("provider_domain") == "library"), None)
+        if album.get("provider") == "library" or lib:
+            client().call("music/library/remove_item", media_type="album", library_item_id=album.get("item_id") if album.get("provider") == "library" else lib["item_id"])
+            return True
+        return False
+
+    def link(self, player, url):
+        album = self.album_of_uri(url)
+        return next((m.get("url") for m in album.get("provider_mappings") or [] if m.get("url")), "")
+
+
+SERVICE = Service()
+
+
 if __name__ == "__main__":  # a look from the command line: python3 backend_ma.py
     rows = library_rows()
     print(len(rows), "albums; newest:", [r[1:4] + [r[6], r[9]] for r in rows[:3]])

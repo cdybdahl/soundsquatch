@@ -184,7 +184,10 @@ def detect():
 
 
 def svc():
-    """The streaming service Lyrion has a plugin for (Qobuz first, when it has both), or None."""
+    """The streaming service Lyrion has a plugin for (Qobuz first, when it has both), or None; with Music Assistant as the
+    music server, its own search (every service it has)."""
+    if backend_ma.ON:
+        return backend_ma.SERVICE
     return next((x for x in streaming.ALL if HAVE.get(x.key)), None)
 
 
@@ -283,6 +286,9 @@ def start_recorder():
     RECORDER["built_in"] = True
 
 
+LYRION_PLAYER = lms_qobuz.PLAYER
+
+
 def apply_settings():
     """The settings put to work: the module's own values (read where they are used, so nothing needs restarting)."""
     global LMS, HA_URL, LOG_DB
@@ -290,6 +296,8 @@ def apply_settings():
     LMS, HA_URL, LOG_DB = c["lms_url"].rstrip("/"), c["ha_url"].rstrip("/"), c["listening_db"]
     lms_keep_album.LMS = LMS + "/jsonrpc.js"  # the Qobuz and keeping helpers talk to Lyrion through it
     backend_ma.configure(c.get("ma_url", ""), MA_TOKEN)  # Music Assistant's address set: it is the music server
+    # a room's id: Lyrion's are its players' MACs; Music Assistant's are its own (a uuid, a service's id)
+    lms_qobuz.PLAYER = lms_keep_album.PLAYER = re.compile(r"^[A-Za-z0-9_:.\-]{1,100}$") if backend_ma.ON else LYRION_PLAYER
     if c.get("lms_user"):  # every request to Lyrion carries the login (urllib's opener, for this address only)
         LMS_LOGIN.add_password(None, LMS, c["lms_user"], c["lms_password"], is_authenticated=True)
     os.environ["LMS_LOGIN"] = cli_login().decode()  # the recorder's event line logs in too
@@ -3106,6 +3114,11 @@ def afterwork_verdict(req):
 def keep_from_log(req):
     """A Qobuz album the log heard, added to the library (a Qobuz favourite), by one of its tracks."""
     url, player = req.get("url") or "", req.get("player") or PLAYER
+    if backend_ma.ON:  # a song from Music Assistant: its album added to its library
+        out = backend_ma.SERVICE.keep_track(player, url)
+        if out.get("result") == "added":
+            joining(out.get("artist") or req.get("artist") or "", out.get("album") or req.get("album") or "", req.get("year"), out.get("cover") or req.get("cover"))
+        return out
     service = streaming.by_url(url)
     if not service or not re.fullmatch(r"\w+://\d+\.\w+", url) or not lms_qobuz.PLAYER.match(player):
         return {"error": "not a streamed track"}
