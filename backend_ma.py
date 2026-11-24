@@ -127,6 +127,7 @@ def library_rows():
         albums += got
         if len(got) < step:
             break
+    albums = [a for a in albums if any(m.get("available") for m in a.get("provider_mappings") or [])]  # nothing playable: not on the shelves
     rows = []
     for rank, a in enumerate(albums):
         first = (a.get("artists") or [{}])[0]  # the album's first artist, as Soundsquatch files albums
@@ -264,7 +265,7 @@ def lms(pid, cmd):
             c.call("player_queues/seek", queue_id=pid, position=int(float(plain[1])))
             return {}
     except Exception as e:
-        return {"_error": f"{type(e).__name__}: {e}"[:200]}
+        return {"_error": f"{type(e).__name__}: {e} [{pid[:8]} {' '.join(cmd)}]"[:300]}
     return {}
 
 
