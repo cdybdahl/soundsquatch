@@ -114,7 +114,13 @@ shelf = {"t": 0, "best": {}}  # the library's best copy of each track (upgrade):
 LOSSLESS = {"flc", "wav", "aif", "alc", "wvp", "ape"}
 
 
+SNAPSHOT = None  # and, with it, every room's (mode, url) in one ask
+RPC = None  # set by Soundsquatch when another music server (Music Assistant) answers Lyrion's commands for it
+
+
 def rpc(player, cmd):
+    if RPC:
+        return RPC(player, cmd)
     body = json.dumps({"id": 1, "method": "slim.request", "params": [player, cmd]}).encode()
     req = urllib.request.Request(JSONRPC, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=10) as r:
@@ -204,7 +210,7 @@ def write(cur):
 def handle(line):
     """One line of Lyrion's event stream."""
     parts = [urllib.parse.unquote(p) for p in line.split(" ")]
-    if len(parts) < 2 or parts[0].count(":") != 5:
+    if len(parts) < 2 or (parts[0].count(":") != 5 and parts[0] not in rooms):
         return
     player, cmd, now = parts[0], parts[1:], time.time()
     with lock:
@@ -440,6 +446,51 @@ def listen():
         except Exception as e:
             print("cli:", type(e).__name__, e, flush=True)
         time.sleep(5)
+
+
+def listen_polled(every=2.0):
+    """Another music server (Music Assistant) has no event stream like Lyrion's: each room's state is looked at every
+    couple of seconds instead, and what changed is told to handle() as Lyrion would have said it (a new song, a pause,
+    a stop). Skips and new albums started from Soundsquatch come straight from its own commands (heard())."""
+    last, rooms_at = {}, 0
+    while True:
+        try:
+            if time.time() - rooms_at > 60:
+                refresh_rooms()
+                rooms_at = time.time()
+            now_all = SNAPSHOT() if SNAPSHOT else {}  # every room at once, where the server can say so
+            for player in list(rooms):
+                if SNAPSHOT:
+                    mode, url = now_all.get(player, ("stop", ""))
+                else:
+                    st = rpc(player, ["status", "-", 1, "tags:u"])
+                    mode = st.get("mode") or "stop"
+                    url = ((st.get("playlist_loop") or [{}])[0]).get("url", "") if mode != "stop" else ""
+                was = last.get(player, ("stop", ""))
+                last[player] = (mode, url)
+                with state:
+                    if url and url != was[1] and mode in ("play", "pause"):
+                        handle(f"{player} playlist newsong")
+                        if mode == "pause":
+                            handle(f"{player} pause 1")
+                    elif mode == "pause" and was[0] == "play":
+                        handle(f"{player} pause 1")
+                    elif mode == "play" and was[0] == "pause":
+                        handle(f"{player} pause 0")
+                    elif mode == "stop" and was[0] != "stop":
+                        handle(f"{player} playlist stop")
+        except Exception as e:
+            print("poll:", type(e).__name__, e, flush=True)
+        time.sleep(every)
+
+
+def heard(player, words):
+    """A command Soundsquatch itself sent (a skip, a new album), told to the log as Lyrion's stream would have."""
+    try:
+        with state:
+            handle(f"{player} {words}")
+    except Exception as e:
+        print("heard:", type(e).__name__, e, flush=True)
 
 
 def settling():

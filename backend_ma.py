@@ -246,11 +246,26 @@ def status(pid, start, count):
     return st
 
 
+def snapshot():
+    """Every room's state and song in one ask (the listening log looks every couple of seconds): {room: (mode, uri)}."""
+    out = {}
+    for q in client().call("player_queues/all") or []:
+        item = (q.get("current_item") or {}).get("media_item") or {}
+        mode = {"playing": "play", "paused": "pause"}.get(q.get("state"), "stop")
+        out[q["queue_id"]] = (mode, item.get("uri") or "" if mode != "stop" else "")
+    return out
+
+
+HEARD = None  # the listening log's ear, for the commands Soundsquatch itself sends (a skip, a new album)
+
+
 def lms(pid, cmd):
     """One Lyrion command, answered from Music Assistant ({} where it has nothing like it)."""
     cmd = [str(c) for c in cmd]
     if not cmd:
         return {}
+    if HEARD and pid and cmd[0] in ("playlist", "playlistcontrol") and len(cmd) > 1 and cmd[1] != "?" and cmd[1] not in ("shuffle", "repeat"):
+        HEARD(pid, " ".join(cmd))  # heard as Lyrion's stream would tell it: "playlist index +1", "playlistcontrol cmd:load …"
     tagged, plain = _args(cmd)
     c = client()
     head = plain[0] if plain else ""

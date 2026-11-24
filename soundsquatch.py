@@ -281,7 +281,12 @@ def start_recorder():
     host = urllib.parse.urlparse(LMS).hostname or "127.0.0.1"
     os.environ.update(LISTENING_DB=LOG_DB, LMS_HOST=host, LMS_WEB_PORT=str(urllib.parse.urlparse(LMS).port or 9000), LMS_CLI_PORT=str(cli_port()), STEWARD_PLAYERS="")
     import listening
-    threading.Thread(target=listening.listen, name="recorder", daemon=True).start()
+    if backend_ma.ON:  # Music Assistant: its rooms looked at, and Soundsquatch's own skips told to the log
+        listening.RPC, listening.SNAPSHOT = backend_ma.lms, backend_ma.snapshot
+        backend_ma.HEARD = listening.heard
+        threading.Thread(target=listening.listen_polled, name="recorder", daemon=True).start()
+    else:
+        threading.Thread(target=listening.listen, name="recorder", daemon=True).start()
     threading.Thread(target=listening.settling, name="recorder-settle", daemon=True).start()
     RECORDER["built_in"] = True
 
