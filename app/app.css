@@ -1705,3 +1705,14 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .add-list .btn .dim { font-weight: 400; }
 .acts.col .btn.danger { color: var(--danger, #e06c5a); }
 .star .ic { width: 1.25em; height: 1.25em; }
+/* Music Assistant's settings, drawn here */
+.ma-row { padding: 10px 0; gap: 16px; }
+.ma-row .lm-w b { white-space: normal; }
+.ma-row .lm-w em, .lm-switch .lm-w em { white-space: normal; }
+.ma-in { flex: none; width: min(46%, 280px); height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--rule); background: transparent; color: var(--ink); font: 15px var(--sans); }
+select.ma-in { appearance: none; -webkit-appearance: none; background: var(--bg2); }
+.ma-note { margin: 10px 0; } .ma-alert { margin: 10px 0; color: var(--accent); }
+.ma-err { color: var(--danger, #e06c5a) !important; }
+.ma-multi { flex-wrap: wrap; justify-content: flex-end; }
+.ma-adv summary { cursor: pointer; list-style: none; } .ma-adv summary::-webkit-details-marker { display: none; }
+.ma-adv[open] summary { color: var(--ink); }

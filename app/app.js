@@ -498,7 +498,7 @@ const VIEWS = {};
 VIEWS.discover = function (el) {
   if (emptyShelves(el)) return;
   const when = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  el.innerHTML = `${pageBar(`<img class="mast-logo" src="logo.png" alt=""><span>Sound<em>squatch</em></span>`, [esc(when), `${A.albums.length.toLocaleString()} albums &middot; ${A.artists.length.toLocaleString()} artists`],
+  el.innerHTML = `${pageBar(`<img class="mast-logo" src="logo.png" alt=""><span>Sound<em>squatch</em></span>`, [esc(when) + " &middot; " + edition(), `${A.albums.length.toLocaleString()} albums &middot; ${A.artists.length.toLocaleString()} artists`],
     `<a class="pill gear" href="#/settings" aria-label="Settings">${icon("gear")}</a><button class="pill" data-act="pickArtist" aria-label="Random artist">${icon("person")}<span class="pl">Random artist</span></button><button class="pill" data-act="surprise" aria-label="Random album">${icon("dice")}<span class="pl">Random album</span></button>`)}
     <div id="d-hero" class="hero skeleton"></div><div id="d-body"></div>`;
   A.homeAt = Date.now();
@@ -960,7 +960,7 @@ const MAG = {};
 function magRun(section) {
   const issue = Math.floor((Date.now() - new Date("2026-01-01").getTime()) / 86400000) + 1;
   const when = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
-  return `<header class="mag-run"><button class="backbtn" data-act="back" aria-label="Back">${icon("back")}</button><span>Soundsquatch</span><span>${section}</span><span>No. ${issue} &middot; ${esc(when)}</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></header>`;
+  return `<header class="mag-run"><button class="backbtn" data-act="back" aria-label="Back">${icon("back")}</button><span>Soundsquatch</span><span>${section}</span><span>No. ${issue} &middot; ${edition()} &middot; ${esc(when)}</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></header>`;
 }
 VIEWS.mag = function (el, name) {
   el.innerHTML = `<div class="mag">${gathering()}</div>`;
@@ -1151,7 +1151,7 @@ VIEWS.front = function (el) {
     }
     const frontBody = body.join("\n");
     el.innerHTML = `<article class="mag fp">
-      <header class="fp-plate"><div class="fp-line"><span>Vol. 1 &middot; No. ${issue}</span><span>${esc(date)}</span><span>${A.albums.length.toLocaleString()} records on the shelves</span></div>
+      <header class="fp-plate"><div class="fp-line"><span>Vol. 1 &middot; No. ${issue} &middot; ${edition()}</span><span>${esc(date)}</span><span>${A.albums.length.toLocaleString()} records on the shelves</span></div>
         <h1>Sound<em>squatch</em></h1><div class="fp-line fp-tag"><span>Your music, connected.</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></div></header>
       <div class="fp-top">${lead ? story(lead, true) : `<p class="dim">No stories today.</p>`}<div class="fp-also">${rest.map(x => story(x, false)).join("")}
         <div class="fp-lucky"><button data-act="surprise">${icon("dice")} A record at random</button><button data-act="pickArtist">${icon("person")} An artist at random</button></div></div></div>
@@ -2133,6 +2133,7 @@ function saveSettings(change, words) {
 }
 // what the house's settings change outside the pages that ask: the History tab, the Archive's shelf
 function applyHouse() {
+  const lm = $('#rail a[data-tab="lms"] span'); if (lm) lm.textContent = isMA() ? "Music Assistant" : "Lyrion"; // the music server's own page
   const hist = $('#rail a[data-tab="history"]'); if (hist) hist.hidden = !on("features", "history");
   if (!on("features", "archive")) A.archive = [];
 }
@@ -2288,6 +2289,7 @@ function lmDraw(box, where, r, title, info) {
     : text ? "" : `<p class="dim">Nothing here.</p>`) + (+r.count > LMV[where].items.length ? `<p class="dim center">${LMV[where].items.length} of ${r.count}</p>` : "");
 }
 VIEWS.lms = function (el, arg) {
+  if (isMA()) return maPage(el);
   const o = arg ? lmDec(arg) : null;
   if (!o || o.n) { // Lyrion's home menu for this room (as a Squeezebox Touch has it): My Music, Favorites, Apps, Radio, Settings
     el.innerHTML = o ? `${pageBar(esc(o.t || "Lyrion"), ["Lyrion", "&nbsp;"], "", true)}<div class="lm-page" id="lm-body">${gathering("small")}</div>`
@@ -2363,6 +2365,78 @@ function lmRun(v, name, words) {
     if (a.next || x.nextWindow || name === "do" || name === "go") lmRefresh();
   }).catch(() => toast("Lyrion didn't answer"));
 }
+/* ───────────────────────── Music Assistant's own settings ─────────────────────────
+   With Music Assistant as the music server, its page (where Lyrion's is) holds its settings, drawn here: they describe
+   themselves (type, label, options, range, category, advanced, what they depend on), so one drawing serves them all.
+   A change is saved as it's made. #/lms is the list; #/ma/<kind>/<id> one thing's settings. */
+const isMA = () => !!(A.cfg && A.cfg.backend === "ma");
+const edition = () => isMA() ? "Music Assistant Edition" : "Lyrion Edition"; // on the masthead: which music server this one reads
+function maPage(el) {
+  el.innerHTML = `${pageBar("Music Assistant", ["Its settings", "drawn here"], "")}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
+  api("/api/ma/config").then(r => {
+    const box = $("#ma-body", el); if (!box) return;
+    box.innerHTML = (r.groups || []).map(g => `<div class="kicker lm-k2">${esc(g.title)}</div><div class="lm-list">${g.items.map(i =>
+      `<a class="lm-row lm-go" href="#/ma/${i.kind}/${encodeURIComponent(i.id)}"><span class="lm-w"><b>${esc(i.name)}</b>${i.error ? `<em class="ma-err">${esc(i.error)}</em>` : i.enabled === false ? `<em>Switched off</em>` : ""}</span>${icon("chev")}</a>`).join("")}</div>`).join("")
+      + `<div class="kicker lm-k2">Music Assistant's own pages</div><div class="lm-list lm-web"><a class="lm-row lm-go" href="${esc(maWeb())}" target="_blank" rel="noopener"><span class="lm-noart">${icon("gear")}</span><span class="lm-w"><b>Adding a source or a sign-in</b><em>In Music Assistant's own pages: new music services and their logins</em></span></a></div>`;
+  }).catch(() => { const box = $("#ma-body", el); if (box) box.innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
+}
+const maWeb = () => (A.cfg && A.cfg.ma_url) || ("http://" + location.hostname + ":8095");
+const maCat = c => c === "generic" ? "" : /^protocol_/.test(c) ? "Through " + c.slice(9).replace(/^./, x => x.toUpperCase()).replace("Airplay", "AirPlay").replace("Dlna", "DLNA").replace("Wiim", "WiiM") : c.replace(/_/g, " ").replace(/^./, x => x.toUpperCase());
+const maShown = (e, vals) => !e.depends_on || (e.depends_on_value != null ? vals[e.depends_on] === e.depends_on_value : !!vals[e.depends_on]);
+function maEntry(e, i) {
+  const v = e.value != null ? e.value : e.default_value, ref = `data-i="${i}"`, about = e.description ? `<em>${esc(e.description.split("\n")[0])}</em>` : "";
+  const words = `<span class="lm-w"><b>${esc(e.label || e.key)}</b>${about}</span>`;
+  if (e.type === "label") return `<p class="plan-note ma-note">${esc(e.label)}</p>`;
+  if (e.type === "alert") return `<p class="plan-note ma-alert">${esc(e.label)}</p>`;
+  if (e.type === "action") return `<div class="lm-row ma-row">${words}<button class="pill" data-act="maAction" ${ref}>${esc(e.action_label || "Run")}</button></div>`;
+  if (e.type === "boolean") return `<button class="lm-row lm-switch ${v ? "on" : ""}" data-act="maSwitch" ${ref}>${words}<i class="sw"></i></button>`;
+  if ((e.options || []).length && e.multi_value) return `<div class="lm-row ma-row">${words}<span class="seg ma-multi">${e.options.map(o => `<button class="${(v || []).indexOf(o.value) >= 0 ? "on" : ""}" data-act="maMulti" ${ref} data-o="${esc(JSON.stringify(o.value))}">${esc(o.title)}</button>`).join("")}</span></div>`;
+  if ((e.options || []).length) return `<div class="lm-row ma-row">${words}<select class="ma-in" ${ref}>${e.options.map(o => `<option value="${esc(JSON.stringify(o.value))}" ${o.value === v ? "selected" : ""} ${o.disabled ? "disabled" : ""}>${esc(o.title)}</option>`).join("")}</select></div>`;
+  if (e.type === "integer" || e.type === "float") return `<div class="lm-row ma-row">${words}<input class="ma-in" type="number" ${ref} value="${esc(v == null ? "" : v)}" ${e.range ? `min="${e.range[0]}" max="${e.range[1]}"` : ""} step="${e.type === "float" ? "any" : 1}"></div>`;
+  if (e.type === "secure_string") return `<div class="lm-row ma-row">${words}<input class="ma-in" type="password" ${ref} placeholder="${e.is_set ? "Set: type to change" : "Not set"}" autocomplete="off"></div>`;
+  return `<div class="lm-row ma-row">${words}<input class="ma-in" type="text" ${ref} value="${esc(v == null ? "" : v)}" autocomplete="off"></div>`;
+}
+function maDraw(el, r) {
+  const box = $("#ma-body", el); if (!box) return;
+  el.ma = r;
+  const vals = {}; r.entries.forEach(e => { vals[e.key] = e.value != null ? e.value : e.default_value; });
+  const cats = []; r.entries.forEach(e => { if (cats.indexOf(e.category || "generic") < 0) cats.push(e.category || "generic"); });
+  const part = (list, title) => list.length ? `${title ? `<div class="kicker lm-k2">${esc(title)}</div>` : ""}<div class="lm-list">${list.map(e => maEntry(e, r.entries.indexOf(e))).join("")}</div>` : "";
+  const shown = e => maShown(e, vals);
+  box.innerHTML = cats.map(c => part(r.entries.filter(e => (e.category || "generic") === c && !e.advanced && shown(e)), maCat(c))).join("")
+    + (r.entries.some(e => e.advanced && shown(e)) ? `<details class="ma-adv"><summary class="kicker lm-k2">Advanced</summary>${cats.map(c => part(r.entries.filter(e => (e.category || "generic") === c && e.advanced && shown(e)), maCat(c))).join("")}</details>` : "")
+    || `<p class="dim">Nothing to set here.</p>`;
+}
+VIEWS.ma = function (el, arg) {
+  const kind = (arg || "").split("/")[0], id = (arg || "").slice(kind.length + 1);
+  el.innerHTML = `${pageBar("Music Assistant", ["Settings", "&nbsp;"], "", true)}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
+  api("/api/ma/config/item?" + new URLSearchParams({ kind, id })).then(r => {
+    if (r.error) { $("#ma-body", el).innerHTML = `<p class="dim">${esc(r.error)}</p>`; return; }
+    const t = $(".mast-name", el); if (t) t.textContent = r.name;
+    maDraw(el, r);
+  }).catch(() => { $("#ma-body", el).innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
+};
+// one setting saved: the page drawn again with it (another may show or hide with it)
+function maSave(el, e, value) {
+  const r = el.ma; if (!r) return;
+  api("/api/ma/config/save", { kind: r.kind, id: r.id, values: { [e.key]: value } }).then(o => {
+    if (o.error) return toast(o.error.replace(/^\w+Error: /, ""));
+    e.value = value; if (e.type === "secure_string") { e.is_set = !!value; e.value = null; }
+    maDraw(el, r); toast("Saved");
+  }).catch(() => toast("Music Assistant didn't answer"));
+}
+const maAt = t => { const el = t.closest(".view"), r = el && el.ma; return r ? [el, r.entries[+t.dataset.i]] : [null, null]; };
+document.addEventListener("change", ev => {
+  const t = ev.target; if (!t.classList || !t.classList.contains("ma-in")) return;
+  const got = maAt(t), e = got[1]; if (!e) return;
+  let v = t.value;
+  if (t.tagName === "SELECT") v = JSON.parse(v);
+  else if (e.type === "integer") v = parseInt(v, 10);
+  else if (e.type === "float") v = parseFloat(v);
+  if (e.type === "secure_string" && !v) return;
+  if ((e.type === "integer" || e.type === "float") && (isNaN(v) || (e.range && (v < e.range[0] || v > e.range[1])))) return toast(`Between ${e.range[0]} and ${e.range[1]}`);
+  maSave(got[0], e, v);
+});
 /* ───────────────────────── Add to… and ⋯ ─────────────────────────
    An album's (or the playing song's) doings, in two sheets, so its page keeps three buttons: Spin it, Add to… (the
    library, the queue, a playlist, a station, Listen Later, Lyrion's Favorites) and ⋯ (the occasional: share, Lyrion's
@@ -2670,7 +2744,7 @@ const ACT = {
       <p class="plan-note">Your ${s.albums.toLocaleString()} albums are here to play now. What Soundsquatch knows about them comes in the background: each artist's story, photographs, members and kindred spirits; each album's genres, credits and review. It asks MusicBrainz, Wikipedia${has("mai") ? " and Lyrion's Music &amp; Artist Information" : ""} for them, and MusicBrainz answers one question a second.</p>
       <p class="plan-note">For ${s.artists.toLocaleString()} artists that takes <b>about ${timeLeft(s.minutes)}</b>. Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
       <div class="settling settling-in"><span class="settling-t"><b>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists</b><span>genres for ${(s.albums - s.genres_left).toLocaleString()} of ${s.albums.toLocaleString()} albums, credits for ${(s.albums - s.credits_left).toLocaleString()}</span></span></div>
-      ${PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
+      ${!isMA() && PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
       <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<a class="btn ghost" href="#/settings/house" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
   },
   // the diagnostics a tester pastes: shown to read, copied (the clipboard needs https, so a selection otherwise), and
@@ -2932,6 +3006,13 @@ const ACT = {
     if (lmRuns(x, a)) return lmRun(v, "go", String(x.text || "").split("\n")[0]);
     closeSheet();
     location.hash = lmHref(a.cmd, a.params, String(x.text || x.name || "").split("\n")[0]);
+  },
+  maSwitch: (v, t) => { const got = maAt(t), e = got[1]; if (!e) return; const now = !(e.value != null ? e.value : e.default_value); t.classList.toggle("on", now); maSave(got[0], e, now); },
+  maMulti: (v, t) => { const got = maAt(t), e = got[1]; if (!e) return; const o = JSON.parse(t.dataset.o), cur = (e.value != null ? e.value : e.default_value || []).slice(), at = cur.indexOf(o); if (at >= 0) cur.splice(at, 1); else cur.push(o); maSave(got[0], e, cur); },
+  maAction: (v, t) => {
+    const got = maAt(t), e = got[1], r = got[0] && got[0].ma; if (!e) return;
+    t.disabled = true; toast(`${e.action_label || "Running"}…`);
+    api("/api/ma/config/action", { kind: r.kind, id: r.id, action: e.action }).then(o => { t.disabled = false; toast(o.error ? o.error.replace(/^\w+Error: /, "") : "Done"); }).catch(() => { t.disabled = false; toast("Music Assistant didn't answer"); });
   },
   addTo: v => addToSheet(JSON.parse(v)),
   moreOf: v => moreOfSheet(JSON.parse(v)),

@@ -607,7 +607,7 @@ def settings_for_app():
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"], "discover_order": settings["house"]["discover_order"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
-            "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()),
+            "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()), "backend": "ma" if backend_ma.ON else "lyrion", "ma_url": backend_ma.MA_URL if backend_ma.ON else "",
             "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
 
 
@@ -6003,6 +6003,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header(h, v)
                 self.end_headers()
                 return self.wfile.write(body)
+            if url.path == "/api/ma/config" and backend_ma.ON:
+                return self.reply({"groups": backend_ma.config_overview()})
+            if url.path == "/api/ma/config/item" and backend_ma.ON:
+                return self.reply(backend_ma.config_get(qs.get("kind", ""), qs.get("id", "")))
             if url.path == "/api/removals":
                 return self.reply(removals())
             if url.path == "/api/removal":
@@ -6077,11 +6081,13 @@ class Handler(BaseHTTPRequestHandler):
                 got = rpc(q[0] or "", *(q[1] if len(q) > 1 else []))
                 return self.reply({"id": 1, "result": got}, extra={"X-Shelves": library.get("etag") or ""})
             return self.pass_to_lms("POST", body)
-        guarded = {"/api/settings", "/api/import", "/api/album-genres", "/api/track-title", "/api/art", "/api/remove", "/api/restore", "/api/artist-photo",
+        guarded = {"/api/ma/config/save", "/api/ma/config/action", "/api/settings", "/api/import", "/api/album-genres", "/api/track-title", "/api/art", "/api/remove", "/api/restore", "/api/artist-photo",
                    "/api/ban", "/api/station-edit", "/api/artist-tags"}  # what changes the house for everyone: settings, files, never-play, stations
         if self.path in guarded and not pin_ok(self.headers.get("X-Soundsquatch-PIN")):
             return self.reply({"error": "pin", "pin": True}, status=403)
-        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
+        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log,
+                  "/api/ma/config/save": lambda r: (backend_ma.config_save(r.get("kind"), r.get("id"), r.get("values") or {}), {"ok": True})[1] if backend_ma.ON else {"error": "not Music Assistant"},
+                  "/api/ma/config/action": lambda r: ({"ok": True, "result": backend_ma.config_action(r.get("kind"), r.get("id"), r.get("action"), r.get("values"))}) if backend_ma.ON else {"error": "not Music Assistant"}, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/kexp-play": kexp_play, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
                   "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/turntable/dismiss": turntable_dismiss, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,

@@ -271,6 +271,81 @@ def lms(pid, cmd):
     return {}
 
 
+# ───────────────────────── Music Assistant's own settings ─────────────────────────
+# Its settings describe themselves (key, type, label, options, range, category, advanced, depends_on), so the app draws
+# them as its own screens: the music sources, players, plugins and metadata providers, and the core's parts.
+KINDS = {"music": "Music sources", "player": "Kinds of speaker", "plugin": "Plugins", "metadata": "Where pictures and stories come from", "audio_analysis": "Listening to the audio"}
+
+
+def config_overview():
+    """Everything that has settings, by kind: [{kind, title, items: [{id, name, enabled, status, error}]}]."""
+    c = client()
+    groups = {k: [] for k in KINDS}
+    for p in c.call("config/providers") or []:
+        groups.setdefault(p.get("type") or "other", []).append({"kind": "provider", "id": p["instance_id"], "domain": p.get("domain"),
+                                                               "name": p.get("name") or p.get("default_name") or p.get("domain"),
+                                                               "enabled": bool(p.get("enabled", True)), "error": p.get("last_error") or ""})
+    players = [{"kind": "player", "id": p["player_id"], "name": p.get("name") or p.get("default_name") or p["player_id"], "provider": p.get("provider"),
+                "enabled": bool(p.get("enabled", True))} for p in c.call("config/players") or []]
+    core = [{"kind": "core", "id": x.get("domain"), "name": (x.get("domain") or "").replace("_", " ").capitalize()} for x in c.call("config/core") or []]
+    out = [{"kind": k, "title": KINDS.get(k, k.replace("_", " ").capitalize()), "items": sorted(v, key=lambda x: x["name"].lower())} for k, v in groups.items() if v]
+    out.insert(1, {"kind": "players", "title": "Rooms and speakers", "items": sorted(players, key=lambda x: x["name"].lower())})
+    out.append({"kind": "core", "title": "Music Assistant itself", "items": core})
+    return out
+
+
+def _entries(full):
+    vals = full.get("values") or {}
+    rows = list(vals.values()) if isinstance(vals, dict) else list(vals)
+    keep = ("key", "type", "label", "description", "value", "default_value", "options", "range", "required", "category", "advanced", "hidden",
+            "depends_on", "depends_on_value", "multi_value", "action", "action_label", "help_link")
+    return [{k: e.get(k) for k in keep} for e in rows if not e.get("hidden")]
+
+
+def config_get(kind, ident):
+    """One thing's settings: {kind, id, name, entries: [...]} (a secret's value is never sent: only whether it is set)."""
+    c = client()
+    if kind == "provider":
+        full = c.call("config/providers/get", instance_id=ident)
+    elif kind == "player":
+        full = c.call("config/players/get", player_id=ident)
+    elif kind == "core":
+        full = c.call("config/core/get", domain=ident)
+    else:
+        return {"error": "unknown"}
+    entries = _entries(full or {})
+    for e in entries:
+        if e["type"] == "secure_string":
+            e["is_set"], e["value"], e["default_value"] = bool(e.get("value")), None, None
+    name = (full or {}).get("name") or (full or {}).get("default_name") or ident
+    return {"kind": kind, "id": ident, "name": name, "domain": (full or {}).get("domain") or (full or {}).get("provider") or "", "entries": entries}
+
+
+def config_save(kind, ident, values):
+    """Changed values saved (only the keys sent; a secret left empty keeps what it had)."""
+    values = {k: v for k, v in (values or {}).items() if not (isinstance(v, str) and v == "" and k.endswith(("password", "token", "key", "secret")))}
+    c = client()
+    if kind == "provider":
+        full = c.call("config/providers/get", instance_id=ident) or {}
+        return c.call("config/providers/save", provider_domain=full.get("domain"), values=values, instance_id=ident)
+    if kind == "player":
+        return c.call("config/players/save", player_id=ident, values=values)
+    if kind == "core":
+        return c.call("config/core/save", domain=ident, values=values)
+    raise ValueError("unknown")
+
+
+def config_action(kind, ident, action, values=None):
+    """An action button (Refresh Recommendations, say): Music Assistant runs it as it builds the settings again."""
+    c = client()
+    if kind == "provider":
+        full = c.call("config/providers/get", instance_id=ident) or {}
+        return c.call("config/providers/get_entries", provider_domain=full.get("domain"), instance_id=ident, action=action, values=values or {})
+    if kind == "core":
+        return c.call("config/core/get_entries", domain=ident, action=action, values=values or {})
+    raise ValueError("unknown")
+
+
 if __name__ == "__main__":  # a look from the command line: python3 backend_ma.py
     rows = library_rows()
     print(len(rows), "albums; newest:", [r[1:4] + [r[6], r[9]] for r in rows[:3]])
