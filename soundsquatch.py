@@ -63,6 +63,7 @@ os.environ.setdefault("MB_CACHE", os.path.join(DATA, "mb"))
 sys.path.insert(0, HERE)
 sys.path.insert(1, os.path.join(HERE, "vendor"))  # mutagen, for genre tags (install.sh puts it there)
 import lms_keep_album  # noqa: E402
+import backend_ma  # noqa: E402  (Music Assistant in Lyrion's place, when MA_URL is set: a trial)
 import lms_qobuz  # noqa: E402
 import streaming  # noqa: E402
 from library import copies, quality  # noqa: E402
@@ -222,6 +223,8 @@ def qobuz_arrived():
 def find_lms():
     """Lyrion on the network, found as its players find it: a discovery broadcast on port 3483, answered with its web
     port (the reply's JSON field). The address, or None."""
+    if backend_ma.ON:
+        return  # Music Assistant in Lyrion's place: no Lyrion to find or listen to
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -756,6 +759,11 @@ def put_profile(name, data, complete):
 
 # ───────────────────────── Lyrion ─────────────────────────
 def rpc(player, *cmd, timeout=30):
+    if backend_ma.ON:
+        got = backend_ma.lms(player, cmd)
+        if got.get("_error"):
+            note_error("music assistant: " + got["_error"])
+        return {k: v for k, v in got.items() if k != "_error"}
     body = json.dumps({"id": 1, "method": "slim.request", "params": [player, [str(x) for x in cmd]]}).encode()
     req = urllib.request.Request(LMS + "/jsonrpc.js", body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -1360,6 +1368,8 @@ def _follow():
 
 def load_library(force=False):
     """The shelves, as the Music page has them: one album a title (its best copy), newest first, with the house's genres."""
+    if backend_ma.ON:
+        return load_library_ma(force)
     status = rpc("", "serverstatus", "0", "0")
     scan = (status.get("lastscan"), status.get("info total albums"))
     if not force and scan == library["scan"] and library["albums"]:
@@ -1425,6 +1435,27 @@ def load_library(force=False):
         JOINING.pop(k, None)
     with lib_lock:
         library.update(albums=albums, artists=artists, scan=scan, genres=genres, rated=rated)
+    restamp()
+    crawl_state["total"] = len(artists)
+
+
+def load_library_ma(force=False):
+    """The shelves from Music Assistant's library (its rows already in the shelves' shape), with the house's genres."""
+    if not force and library["albums"] and time.time() - library.get("ma_at", 0) < 600:
+        return
+    albums = backend_ma.library_rows()
+    with db() as c:
+        genres = {k: json.loads(g) for k, g in c.execute("select k, genres from album_genres")}
+    for e in albums:
+        e[8] = genres.get(copies(e[2], e[1]), [])
+    artists = {}
+    for e in albums:
+        if key(e[2]) in NOT_ARTISTS or not e[2]:
+            continue
+        a = artists.setdefault(key(e[2]), {"name": e[2], "id": e[7], "albums": 0, "rank": e[5]})
+        a["albums"] += 1
+    with lib_lock:
+        library.update(albums=albums, artists=artists, scan=("ma", len(albums)), genres=genres, rated={}, ma_at=time.time())
     restamp()
     crawl_state["total"] = len(artists)
 
@@ -4298,6 +4329,8 @@ def cli_port():
 
 def radio_events():
     """Lyrion's event stream (its CLI), kept open, for what the radio adds to each queue."""
+    if backend_ma.ON:
+        return  # Music Assistant in Lyrion's place: no Lyrion to find or listen to
     while True:
         try:
             with socket.create_connection((urllib.parse.urlparse(LMS).hostname or "127.0.0.1", cli_port()), timeout=30) as sock:
@@ -4596,7 +4629,7 @@ def picture(url, width=None):
     (bytes, type) or None."""
     if url and "://" not in url:  # a picture in Lyrion itself: Music & Artist Information's local artwork, Lyrion's artist pictures
         url = LMS + "/" + url.lstrip("/")
-    own = url.startswith(LMS + "/")
+    own = url.startswith(LMS + "/") or (backend_ma.ON and url.startswith(backend_ma.MA_URL + "/imageproxy?"))  # the music server's own covers
     host = urllib.parse.urlparse(url).hostname or ""
     if url.startswith("http://") and host in PICTURE_HOSTS:
         url = "https://" + url[len("http://"):]  # the same picture over https (TIDAL's plugin names its covers by http)
@@ -6036,6 +6069,13 @@ class Handler(BaseHTTPRequestHandler):
         if origin and urllib.parse.urlparse(origin).netloc not in (self.headers.get("Host"), self.headers.get("X-Forwarded-Host")):
             return self.reply({"error": "another site"}, status=403)  # a page elsewhere on the web posting to the house's Soundsquatch
         if self.path == "/jsonrpc.js":
+            if backend_ma.ON:  # Lyrion's commands, answered from Music Assistant
+                try:
+                    q = json.loads(body or b"{}").get("params") or ["", []]
+                except ValueError:
+                    q = ["", []]
+                got = rpc(q[0] or "", *(q[1] if len(q) > 1 else []))
+                return self.reply({"id": 1, "result": got}, extra={"X-Shelves": library.get("etag") or ""})
             return self.pass_to_lms("POST", body)
         guarded = {"/api/settings", "/api/import", "/api/album-genres", "/api/track-title", "/api/art", "/api/remove", "/api/restore", "/api/artist-photo",
                    "/api/ban", "/api/station-edit", "/api/artist-tags"}  # what changes the house for everyone: settings, files, never-play, stations
