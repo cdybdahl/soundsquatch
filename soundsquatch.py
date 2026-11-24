@@ -4629,7 +4629,7 @@ def picture(url, width=None):
     (bytes, type) or None."""
     if url and "://" not in url:  # a picture in Lyrion itself: Music & Artist Information's local artwork, Lyrion's artist pictures
         url = LMS + "/" + url.lstrip("/")
-    own = url.startswith(LMS + "/") or (backend_ma.ON and url.startswith(backend_ma.MA_URL + "/imageproxy?"))  # the music server's own covers
+    own = url.startswith(LMS + "/") or (backend_ma.ON and url.startswith(backend_ma.MA_URL + "/imageproxy"))  # the music server's own covers
     host = urllib.parse.urlparse(url).hostname or ""
     if url.startswith("http://") and host in PICTURE_HOSTS:
         url = "https://" + url[len("http://"):]  # the same picture over https (TIDAL's plugin names its covers by http)

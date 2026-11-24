@@ -93,7 +93,9 @@ def picture(item, size=600):
             continue
         if im.get("remotely_accessible") and str(im.get("path", "")).startswith("http"):
             return im["path"]
-        return f"{MA_URL}/imageproxy?" + urllib.parse.urlencode({"path": im.get("path", ""), "provider": im.get("provider", ""), "size": size})
+        if im.get("proxy_id"):  # its image proxy, by the picture's own id (sizes: 0, 80, 160, 256, 512, 1024)
+            return f"{MA_URL}/imageproxy/{im['proxy_id']}?size=1024"
+        return f"{MA_URL}/imageproxy?" + urllib.parse.urlencode({"path": urllib.parse.quote(im.get("path", ""), safe=""), "provider": im.get("provider", ""), "size": 1024})
     return ""
 
 
