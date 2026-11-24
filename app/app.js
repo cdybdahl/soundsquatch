@@ -229,6 +229,7 @@ function loadLibrary() {
 }
 function freshShelves() {
   if (document.hidden) return;
+  loadMissing();
   loadLibrary().then(changed => {
     if (!changed) return;
     Array.from(A.views.keys()).forEach(h => { const view = A.views.get(h); if (view !== current) { view.el.remove(); A.views.delete(h); } }); // drawn again when next opened
@@ -1674,6 +1675,7 @@ function loadView() {
 const inView = a => !A.view || A.view.ids.has(+a[0]) || (a[10] || []).some(v => A.view.ids.has(+v[0]));
 const viewChip = () => A.view ? `<span class="view-chip" title="Chosen for this room in Lyrion">${icon("list")} A library view: ${A.view.ids.size.toLocaleString()} albums</span>` : "";
 VIEWS.albums = function (el) {
+  loadMissing(); // what the service dropped, asked again each visit (the link fills in when it answers)
   const sort = store.get("sq-sort", "added"), genre = store.get("sq-genre", "");
   const shows = (genre === "" || genre === "@archive" ? A.archive.map(archRow) : []).concat(genre === "" || genre === "@vinyl" ? A.vinylOnly.map(vinylRow) : []);
   if (!A.heard && focusOn()) loadHeard().then(() => { if (current && current.el === el) VIEWS.albums(el); });
@@ -1684,7 +1686,7 @@ VIEWS.albums = function (el) {
   const countText = `${list.length.toLocaleString()} ${label}albums${focusOn() ? " in the dig" : ""}` + (A.view ? " &middot; " + viewChip() : "");
   el.innerHTML = `${pageBar("Albums", ["The library", countText],
       `<button class="pill focus-btn ${focusOn() ? "on" : ""}" data-act="focusOpen">${icon("tag")}<span class="pl">Dig${focusOn() ? ` &middot; ${focusOn()}` : ""}</span></button><div class="seg">${Object.keys(SORTS).map(k => `<button class="${k === sort ? "on" : ""}" data-act="sortAlbums" data-v="${k}">${SORTS[k][0]}</button>`).join("")}</div>`, false, "segs grow albums-acts")}
-    <div class="toolbar"><div class="chips"><button class="${genre ? "" : "on"}" data-act="genreAlbums" data-v="">Every album</button>${filters.map(f => `<button class="${f[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(f[0])}">${f[1]}</button>`).join("")}${focusSaved().map((f, i) => `<button class="saved-focus" data-act="focusUse" data-v="${i}">${icon("tag")} ${esc(f.name)}</button>`).join("")}<a class="chip-link" href="#/removed">Recently removed</a>${(A.missing || []).length ? `<a class="chip-link warn" href="#/missing">Gone from ${esc(SVC())} (${A.missing.length})</a>` : ""}<span class="chip-gap"></span>${A.genres.map(g => `<button class="${g[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(g[0])}">${esc(g[0])}</button>`).join("")}</div></div>
+    <div class="toolbar"><div class="chips"><button class="${genre ? "" : "on"}" data-act="genreAlbums" data-v="">Every album</button>${filters.map(f => `<button class="${f[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(f[0])}">${f[1]}</button>`).join("")}${focusSaved().map((f, i) => `<button class="saved-focus" data-act="focusUse" data-v="${i}">${icon("tag")} ${esc(f.name)}</button>`).join("")}<a class="chip-link" href="#/removed">Recently removed</a><span class="gone-link">${goneLink()}</span><span class="chip-gap"></span>${A.genres.map(g => `<button class="${g[0] === genre ? "on" : ""}" data-act="genreAlbums" data-v="${esc(g[0])}">${esc(g[0])}</button>`).join("")}</div></div>
     <div class="grid">${list.map(a => albumCard(a)).join("")}</div>`;
 };
 /* ───────────────────────── Focus: the Albums page's filters, combined ─────────────────────────
@@ -1960,7 +1962,8 @@ function openPlaylistPicker(what) {
    A release the service no longer streams leaves your favourites, and Lyrion's next look takes it off the shelves; the
    server notices one that left without being removed here. Each can be found again (the same record as the service
    has it now: a remaster, a reissue) and put back in one tap, its rating and history following it, or let go. */
-function loadMissing() { return api("/api/missing").then(r => { A.missing = r.missing || []; }).catch(() => {}); }
+function loadMissing() { return api("/api/missing").then(r => { A.missing = r.missing || []; document.querySelectorAll(".gone-link").forEach(b => { b.innerHTML = goneLink(); }); }).catch(() => {}); }
+const goneLink = () => (A.missing || []).length ? `<a class="chip-link warn" href="#/missing">Gone from ${esc(SVC())} (${A.missing.length})</a>` : "";
 VIEWS.missing = function (el) {
   el.innerHTML = `${pageBar("Gone from " + esc(SVC()), ["Off the shelves", "the service stopped streaming them"], "", true)}<div class="hist"><div class="trk ph"></div></div>`;
   loadMissing().then(() => {
