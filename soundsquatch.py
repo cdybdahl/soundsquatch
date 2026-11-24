@@ -1856,7 +1856,7 @@ def diagnostics():
 def settling():
     """How far Soundsquatch has got with what it gathers about the shelves (a new house's first hours): artists profiled,
     albums with genres and credits, and a rough time left. MusicBrainz, one question a second, sets the pace: an artist
-    takes about nine, an album's genres one or two, its credits about three. Settled when only a stray few are left."""
+    takes about nine, an album's genres one or two, its credits about three, and a real library about 1.4 times that. Settled when only a stray few are left."""
     with lib_lock:
         names = list(library["artists"])
         shelf = [copies(a[2], a[1]) for a in library["albums"] if key(a[2]) not in NOT_ARTISTS]
@@ -1869,7 +1869,7 @@ def settling():
         have_credits = {k for (k,) in c.execute("select k from credits")}
     genres_left = sum(1 for k in shelf if k not in have_genres)
     credits_left = sum(1 for k in shelf if k not in have_credits) if settings["features"]["credits"] else 0
-    left = (len(names) - profiled) * 9 + genres_left * 1.5 + credits_left * 3
+    left = ((len(names) - profiled) * 9 + genres_left * 1.5 + credits_left * 3) * 1.4  # measured 2026-11-24: a real library runs about 1.4 times these
     few = lambda n, of: n <= max(3, of * 0.02)
     return {"artists": len(names), "profiled": profiled, "albums": albums, "genres_left": genres_left, "credits_left": credits_left,
             "minutes": round(left / 60), "settled": bool(names) and few(len(names) - profiled, len(names)) and few(genres_left, albums) and few(credits_left, albums)}

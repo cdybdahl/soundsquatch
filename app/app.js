@@ -546,13 +546,13 @@ function settlingStrip(el) {
     if (s.settled || !el.isConnected || el.querySelector(".settling")) return;
     A.settling = s;
     const done = s.albums ? (s.profiled / Math.max(1, s.artists)) * 0.5 + (1 - s.genres_left / s.albums) * 0.25 + (1 - s.credits_left / s.albums) * 0.25 : 0;
-    const html = `<button class="settling" data-act="settlingWhy"><span class="settling-t"><b>Getting to know your shelves</b><span>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists &middot; about ${timeLeft(s.minutes)} to go</span></span><span class="settling-bar"><i style="width:${Math.round(done * 100)}%"></i></span></button>`;
+    const html = `<button class="settling" data-act="settlingWhy"><span class="settling-t"><b>Getting to know your shelves</b><span>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists &middot; ${timeLeft(s.minutes)} to go</span></span><span class="settling-bar"><i style="width:${Math.round(done * 100)}%"></i></span></button>`;
     const at = el.querySelector(".fp-plate") || el.querySelector(".mast");
     if (at) at.insertAdjacentHTML("afterend", html); else el.insertAdjacentHTML("afterbegin", html);
     if (!store.get("sq-settling-told", false)) { store.set("sq-settling-told", true); ACT.settlingWhy(); }
   }).catch(() => {});
 }
-const timeLeft = m => m < 50 ? "under an hour" : m < 90 ? "an hour" : Math.round(m / 60) + " hours";
+const timeLeft = m => m < 45 ? "under an hour" : m < 150 ? "an hour or two" : m < 420 ? "a few hours" : "most of a day"; // loose on purpose: MusicBrainz sets the pace
 function nowArtist() { const t = curTrack(); return t && t.artist ? splitArtist(t.artist) : ""; }
 function splitArtist(s) {
   if (onShelves(s)) return s;
@@ -2058,11 +2058,14 @@ const SET_TABS = [["device", "This device"], ["discover", "Discover"], ["house",
 const setTab = () => { const t = device.get("settab", "device"); return SET_TABS.some(x => x[0] === t) ? t : "device"; };
 const inTab = (t, html) => `<div class="set-tab" data-tab="${t}">${html}</div>`;
 // Discover's sections as a list in the page's order: a switch each, and a grip to drag one to another place
+// the Discover sections made from Lyrion plugins: a Music Assistant house has none of them, so they aren't offered
+const DISC_LYRION = ["a1001", "kexp", "sounds", "listenlater", "lbfresh", "pitchfork", "archive"];
+const discOffered = k => !(isMA() && DISC_LYRION.indexOf(k) >= 0);
 function discList(c) {
   const name = k => (DISC.find(d => d[0] === k) || [k, k])[1];
   return `<p class="plan-note">Drag a section by its grip to move it; its switch shows or hides it. Both looks, Classic and Magazine, follow this order; the cover stories always open the page.</p>
     <div class="disc-list">${toggle("setDisc", "cover", c.discover.cover, name("cover"), "always at the top")}
-    ${discOrder(magOn()).map(k => `<div class="dord" data-k="${k}"><span class="dgrip" aria-label="Move">${icon("grip")}</span>${toggle("setDisc", k, c.discover[k], name(k))}</div>`).join("")}</div>
+    ${discOrder(magOn()).filter(discOffered).map(k => `<div class="dord" data-k="${k}"><span class="dgrip" aria-label="Move">${icon("grip")}</span>${toggle("setDisc", k, c.discover[k], name(k))}</div>`).join("")}</div>
     ${(c.discover_order || []).length ? `<div class="acts"><button class="pill" data-act="discReset">Back to each look's own order</button></div>` : ""}`;
 }
 function drawSettings(el) {
@@ -2098,7 +2101,7 @@ function drawSettings(el) {
       <div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>
       <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`))}
     ${inTab("house", section("For every screen in the house", "Your records", discogsRow(c) + ttRow(c) + scrobbleRow(c)))}
-    ${inTab("house", section("What Lyrion adds", "Lyrion's plugins <span id=\"set-plugins\"></span>", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
+    ${isMA() ? "" : inTab("house", section("What Lyrion adds", "Lyrion's plugins <span id=\"set-plugins\"></span>", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
       ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`))}
     ${inTab("house", section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`))}
     ${inTab("help", section("When something's wrong", "Diagnostics", `<div class="set-row"><span><b>A report for the forum thread</b><em>versions, what was found, the last errors; no names, addresses or listening</em></span><button class="pill" data-act="diagnostics">Show it</button></div>`))}
@@ -2742,7 +2745,7 @@ const ACT = {
     const s = A.settling; if (!s) return;
     openSheet(`<div class="kicker">Welcome to Soundsquatch</div><h3>It's getting to know your shelves</h3>
       <p class="plan-note">Your ${s.albums.toLocaleString()} albums are here to play now. What Soundsquatch knows about them comes in the background: each artist's story, photographs, members and kindred spirits; each album's genres, credits and review. It asks MusicBrainz, Wikipedia${has("mai") ? " and Lyrion's Music &amp; Artist Information" : ""} for them, and MusicBrainz answers one question a second.</p>
-      <p class="plan-note">For ${s.artists.toLocaleString()} artists that takes <b>about ${timeLeft(s.minutes)}</b>. Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
+      <p class="plan-note">For ${s.albums.toLocaleString()} albums that takes <b>${timeLeft(s.minutes)}</b> (a library of about 1,700 albums takes four or five hours). Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
       <div class="settling settling-in"><span class="settling-t"><b>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists</b><span>genres for ${(s.albums - s.genres_left).toLocaleString()} of ${s.albums.toLocaleString()} albums, credits for ${(s.albums - s.credits_left).toLocaleString()}</span></span></div>
       ${!isMA() && PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
       <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<a class="btn ghost" href="#/settings/house" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
