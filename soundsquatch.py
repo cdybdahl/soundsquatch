@@ -109,7 +109,7 @@ HA_TOKEN = os.environ.get("HA_TOKEN_FILE", os.path.join(DATA, ".ha_token"))  # S
 AUDIO = (".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".alac", ".ape", ".wv", ".dsf", ".dff")  # the playlist a room's music is saved to on its way to another room
 VERSION = "0.14.0 beta"  # the release tag is v + its number
 AGENT = {"User-Agent": f"Soundsquatch/{VERSION.split()[0]} (a home music app; https://github.com/cdybdahl/soundsquatch)"}
-NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", ""}
+NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", "", "artist", "no artist", "various artist"}  # and tags left as placeholders
 
 # ───────────────────────── settings: settings.json beside the script, today's values the defaults ─────────────────────────
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
@@ -1368,7 +1368,7 @@ def load_library(force=False):
     found = sorted(rpc("", "albums", "0", str(total + 50), "tags:lajyS", timeout=120).get("albums_loop", []), key=lambda a: -int(a["id"]))
     tracks, step = [], 25000  # a page at a time: a large library in one answer is more than Lyrion likes to build
     while True:
-        got = rpc("", "titles", str(len(tracks)), str(step), "tags:eoIrTuDR", timeout=180).get("titles_loop", [])
+        got = rpc("", "titles", str(len(tracks)), str(step), "tags:eoIrTuDRAS", timeout=180).get("titles_loop", [])  # A, S: every contributor by role
         tracks += got
         if len(got) < step:
             break
@@ -1420,13 +1420,72 @@ def load_library(force=False):
             continue
         a = artists.setdefault(key(e[2]), {"name": e[2], "id": e[7], "albums": 0, "rank": e[5]})
         a["albums"] += 1
+    joint, appears = album_people(albums, tracks)
+    for aid, names in joint.items():  # an album shared ("A & B", or both credited): each of them has it
+        e = next((x for x in albums if x[0] == aid), None)
+        for n in names:
+            if key(n) in NOT_ARTISTS:
+                continue
+            a = artists.setdefault(key(n), {"name": n, "id": 0, "albums": 0, "rank": e[5] if e else 99999})
+            a["albums"] += 1
     have = {copies(e[2], e[1]) for e in albums}
     for k in [k for k in JOINING if k in have]:  # in now: the real one replaces it
         JOINING.pop(k, None)
     with lib_lock:
-        library.update(albums=albums, artists=artists, scan=scan, genres=genres, rated=rated)
+        library.update(albums=albums, artists=artists, scan=scan, genres=genres, rated=rated, joint=joint, appears=appears)
     restamp()
     crawl_state["total"] = len(artists)
+
+
+CREDITED_ROLES = ("albumartist", "artist", "trackartist", "band")  # who plays it (composers and conductors are the credits')
+
+
+def album_people(albums, tracks):
+    """Every artist on each album, as Lyrion has them by role: the ones it is by (its album artists, "A & B" taken apart
+    where each is known, and anyone the artist on half its songs or more) and the ones who appear on it (an artist on a
+    few of its songs: a guest, a featured singer). Returns ({album id: [the others it is by]}, {artist key: [album ids
+    they appear on]}), the album's own artist (the shelves') left out of both."""
+    names = {}
+    try:
+        for c in rpc("", "artists", "0", "100000", timeout=60).get("artists_loop") or []:
+            names[str(c["id"])] = c.get("artist") or ""
+    except Exception:
+        return {}, {}
+    of = {}  # Lyrion album id → (tracks, {contributor id: songs as an artist}, {album artist ids})
+    for t in tracks:
+        aid = str(t.get("album_id"))
+        n, plays, leads = of.setdefault(aid, [0, Counter(), set()])
+        of[aid][0] = n + 1
+        for role in ("artist", "trackartist", "band"):
+            for i in str(t.get(role + "_ids") or "").split(","):
+                if i:
+                    plays[i] += 1
+        for i in str(t.get("albumartist_ids") or "").split(","):
+            if i:
+                leads.add(i)
+    known = {key(v): v for v in names.values() if v}
+    bare = lambda n: re.sub(r"[^a-z0-9]", "", key(n))  # "June Of '44" and "June Of 44" are one band
+    joint, appears = {}, {}
+    for e in albums:
+        main = bare(e[2])
+        ids = [str(e[0])] + [str(v[0]) for v in (e[10] if len(e) > 10 and e[10] else [])]
+        total, plays, leads = 0, Counter(), set()
+        for i in ids:
+            n, p, l = of.get(i, (0, Counter(), set()))
+            total, plays, leads = total + n, plays + p, leads | l
+        by = [names[i] for i in leads if names.get(i)]
+        by += [names[i] for i, n in plays.items() if names.get(i) and total and n >= total / 2]
+        parts = re.split(r"\s+(?:&|and|with|x)\s+", e[2])  # "A & B" taken apart only when each part is an artist of its own
+        by += [known[key(p)] for p in parts] if len(parts) > 1 and all(key(p) in known for p in parts) else []
+        seen = set()
+        by = [n for n in by if bare(n) != main and key(n) not in NOT_ARTISTS and not (bare(n) in seen or seen.add(bare(n)))]
+        if by:
+            joint[e[0]] = by
+        for i, n in plays.items():
+            who = names.get(i)
+            if who and total and n < total / 2 and bare(who) != main and bare(who) not in seen and key(who) not in NOT_ARTISTS:
+                appears.setdefault(key(who), []).append(e[0])
+    return joint, appears
 
 
 def library_payload():
@@ -1443,7 +1502,7 @@ def library_payload():
     for k, a in sorted(artists.items(), key=lambda x: re.sub(r"^the ", "", x[0])):
         d = profiles.get(k, ({},))[0] or {}
         out.append([a["name"], a["id"], a["albums"], pick_photo(d, "thumb") if d else "", (d.get("mb") or {}).get("type") or ""])
-    body = json.dumps({"albums": joining_rows() + albums, "rated": library.get("rated") or {}, "artists": out, "physical": physical_records(albums)}, ensure_ascii=False, separators=(",", ":")).encode()
+    body = json.dumps({"albums": joining_rows() + albums, "rated": library.get("rated") or {}, "joint": library.get("joint") or {}, "appears": library.get("appears") or {}, "artists": out, "physical": physical_records(albums)}, ensure_ascii=False, separators=(",", ":")).encode()
     payload.update(body=gzip.compress(body, 6), built=stamp, at=time.time(), etag='"' + hashlib.sha1(body).hexdigest()[:16] + '"')
     return payload["body"], payload["etag"]
 
