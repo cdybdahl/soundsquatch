@@ -5,7 +5,7 @@ records and the turntable. It works with **Lyrion Music Server** or **Music Assi
 
 ## Getting started
 
-1. Install the add-on, start it, and choose **Open Web UI** (or open `http://<your Home Assistant's address>:8097` on any
+1. Install the add-on, start it, and choose **Open Web UI** (or open `http://<your Home Assistant's address>:8098` on any
    screen in the house: an iPad on the wall, a phone, a computer).
 2. Soundsquatch looks for Lyrion on your network. If it finds it, you're done.
 3. To use **Music Assistant** instead, choose *Use Music Assistant instead* on the first screen. When Music Assistant runs
@@ -19,6 +19,6 @@ Everything else is set in Soundsquatch's own **Settings**. The add-on itself has
 - Your music folders: the add-on can see Home Assistant's `share` and `media` folders. Soundsquatch only changes music
   files when you switch that on in its Settings.
 - The connection to Home Assistant is made for you.
-- The turntable's listener sends to port **8093** here (Music Assistant uses 8095).
+- Soundsquatch is on port **8098** here and the turntable's listener sends to **8093** (Music Assistant uses 8095 and 8097).
 - Everything Soundsquatch keeps (settings, ratings, stations, the listening log, pictures, nightly backups) lives in the
   add-on's own data, which Home Assistant's backups include.

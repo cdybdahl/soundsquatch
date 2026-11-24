@@ -20,9 +20,10 @@ map:
   - type: media
     read_only: false
 ports:
-  8097/tcp: 8097
+  8098/tcp: 8098
 ports_description:
-  8097/tcp: Soundsquatch (open it on any screen in the house)
-webui: "http://[HOST]:[PORT:8097]"
+  8098/tcp: Soundsquatch (open it on any screen in the house)
+webui: "http://[HOST]:[PORT:8098]"
 environment:
-  TURNTABLE_PORT: "8093"  # Music Assistant's add-on has 8095 on the same network
+  MUSIC_APP_PORT: "8098"  # Music Assistant's add-on has 8097 (its streams) and 8095 on the same network
+  TURNTABLE_PORT: "8093"
