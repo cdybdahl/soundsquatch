@@ -326,6 +326,8 @@ def check_settings():
     out = {}
     if backend_ma.ON:  # Music Assistant is the music server: it answers, or it doesn't
         ok, said = backend_ma.check()
+        if ok and backend_ma.damaged():
+            said += f"; but {backend_ma.HEALTH['multi']:,} of its {backend_ma.HEALTH['albums']:,} albums are credited to several artists: its library looks mixed up (reset its library database: its Settings, Core, Music)"
         out.update(ma_url=said, ma_ok=ok, lms_ok=ok, lms_url="not used: Music Assistant is the music server")
         if ok:
             detect()
@@ -1962,6 +1964,8 @@ def diagnostics():
              "Plugins: " + ", ".join(f"{k} {'yes' if v else 'no'}" for k, v in HAVE.items() if k not in ("language", "mai_lang")),
              f"Library: {s['albums']} albums (+{versions} other versions), {s['artists']} artists; profiled {s['profiled']}, genres to find {s['genres_left']}, credits to find {s['credits_left']}",
              f"Gone from the streaming service (dropped, not removed here): {len(missing_albums())}",
+             *([f"Music Assistant: {backend_ma.HEALTH['multi']} of {backend_ma.HEALTH['albums']} albums credited to several artists"
+                + (" (its library looks mixed up: reset its library database in its Settings, Core, Music)" if backend_ma.damaged() else "")] if backend_ma.ON else []),
              f"Lyrion counts {st.get('info total albums', '?')} albums, {st.get('info total artists', '?')} artists; group players {groups}",
              f"My Music: {my_music}",
              f"Write-ups: {pieces}; Music & Artist Information asked in {', '.join(mai_langs())}{' (its own setting)' if HAVE.get('mai_lang') else ''}",

@@ -156,6 +156,7 @@ def library_rows():
         albums += got
         if len(got) < step:
             break
+    HEALTH.update(albums=len(albums), multi=sum(1 for a in albums if len(a.get("artists") or []) > 1))
     DEAD.clear()
     for a in albums:  # nothing playable (the service stopped streaming it): not on the shelves, but listed as gone
         if not any(m.get("available") for m in a.get("provider_mappings") or []):
@@ -172,6 +173,13 @@ def library_rows():
 
 
 DEAD = []  # the library's albums with no playable copy left: the Gone list's
+HEALTH = {"albums": 0, "multi": 0}  # how many albums it credits to several artists (most, in a library its old versions mixed up)
+
+
+def damaged():
+    """Music Assistant's library looks mixed up (most albums credited to several artists, as its older versions left
+    some houses' libraries): its database reset puts it right."""
+    return HEALTH["albums"] >= 50 and HEALTH["multi"] > HEALTH["albums"] * 0.25
 
 
 def drop_dead(item_id):
@@ -312,6 +320,34 @@ def lms(pid, cmd):
             return {"lastscan": "0", "info total albums": n, "player count": players()["count"], "version": "Music Assistant"}
         if head == "status":
             return status(pid, plain[1] if len(plain) > 1 else "-", plain[2] if len(plain) > 2 else 1)
+        if head == "playlists":  # Music Assistant's own playlists, as Lyrion's are asked for
+            sub = plain[1] if len(plain) > 1 and not plain[1].isdigit() else ""
+            pl = tagged.get("playlist_id")
+            if not sub:
+                got = c.call("music/playlists/library_items", limit=500) or []
+                return {"count": len(got), "playlists_loop": [{"id": int(x["item_id"]), "playlist": x.get("name") or ""} for x in got]}
+            if sub == "tracks" and pl:
+                got = c.call("music/playlists/playlist_tracks", item_id=str(pl), provider_instance_id_or_domain="library") or []
+                return {"count": len(got), "playlisttracks_loop": [_track_row(t) for t in got]}
+            if sub == "new" and tagged.get("name"):
+                made = c.call("music/playlists/create_playlist", name=tagged["name"]) or {}
+                return {"playlist_id": made.get("item_id")}
+            if sub == "edit" and pl and tagged.get("cmd") == "add" and tagged.get("url"):
+                c.call("music/playlists/add_playlist_tracks", db_playlist_id=str(pl), uris=[tagged["url"]])
+                return {}
+            if sub == "edit" and pl and tagged.get("cmd") == "delete" and tagged.get("index", "").isdigit():
+                c.call("music/playlists/remove_playlist_tracks", db_playlist_id=str(pl), positions_to_remove=[int(tagged["index"]) + 1])
+                return {}
+            if sub == "delete" and pl:
+                c.call("music/library/remove_item", media_type="playlist", library_item_id=str(pl))
+                return {}
+            return {}
+        if head == "titles" and tagged.get("track_id") and int(tagged["track_id"]) in _uris:  # one song, by our number for it
+            t = c.call("music/item_by_uri", uri=_uris[int(tagged["track_id"])]) or {}
+            return {"count": 1, "titles_loop": [_track_row(t)]} if t else {}
+        if head == "playlist" and len(plain) > 2 and plain[1] == "play" and plain[2].startswith("http"):  # an address (the turntable's live stream)
+            c.call("player_queues/play_media", queue_id=pid, media=plain[2], option="replace")
+            return {}
         if head == "titles" and tagged.get("album_id"):
             songs = album_songs(tagged["album_id"])
             return {"count": len(songs), "titles_loop": [_track_row(s) for s in songs]}
@@ -319,6 +355,8 @@ def lms(pid, cmd):
             how = {"load": "replace", "add": "add", "insert": "next"}.get(tagged.get("cmd"), "replace")
             if tagged.get("album_id"):
                 media = f"library://album/{tagged['album_id']}"
+            elif tagged.get("playlist_id"):
+                media = f"library://playlist/{tagged['playlist_id']}"
             elif tagged.get("track_id"):  # one song, or several (track_id:1,2,3)
                 media = [_uris[int(t)] for t in tagged["track_id"].split(",") if t.isdigit() and int(t) in _uris]
                 if not media:
