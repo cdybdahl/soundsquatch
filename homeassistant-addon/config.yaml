@@ -1,0 +1,29 @@
+# Soundsquatch as a Home Assistant add-on. The image is the one each release publishes (amd64 and arm64), so the
+# version here is the release's number (the release workflow tags the image with it).
+name: Soundsquatch
+version: "0.14.0"
+slug: soundsquatch
+description: A magazine-style music app for your music server (Lyrion or Music Assistant)
+url: https://github.com/cdybdahl/soundsquatch
+arch:
+  - amd64
+  - aarch64
+image: ghcr.io/cdybdahl/soundsquatch
+init: false
+startup: application
+boot: auto
+host_network: true  # it finds Lyrion and the players on the network, and the turntable's listener reaches it
+homeassistant_api: true  # its own connection to Home Assistant (stations, the turntable's lid), with no token to paste
+map:
+  - type: share
+    read_only: false
+  - type: media
+    read_only: false
+ports:
+  8098/tcp: 8098
+ports_description:
+  8098/tcp: Soundsquatch (open it on any screen in the house)
+webui: "http://[HOST]:[PORT:8098]"
+environment:
+  MUSIC_APP_PORT: "8098"  # Music Assistant's add-on has 8097 (its streams) and 8095 on the same network
+  TURNTABLE_PORT: "8093"

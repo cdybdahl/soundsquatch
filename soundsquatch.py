@@ -63,6 +63,7 @@ os.environ.setdefault("MB_CACHE", os.path.join(DATA, "mb"))
 sys.path.insert(0, HERE)
 sys.path.insert(1, os.path.join(HERE, "vendor"))  # mutagen, for genre tags (install.sh puts it there)
 import lms_keep_album  # noqa: E402
+import backend_ma  # noqa: E402  (Music Assistant in Lyrion's place, when MA_URL is set: a trial)
 import lms_qobuz  # noqa: E402
 import streaming  # noqa: E402
 from library import copies, quality  # noqa: E402
@@ -105,6 +106,7 @@ TURNTABLE_PORT = int(os.environ.get("TURNTABLE_PORT", "8095"))  # where the list
 REMOVED_DIR = os.environ.get("REMOVED_DIR", "/share/music-removed")  # where removed albums' files go: outside the scan, never deleted
 HA_URL = os.environ.get("HA_URL", "")
 DISCOGS_TOKEN = os.path.join(DATA, ".discogs_token")  # the house's Discogs token, for its record collection: never sent back
+MA_TOKEN = os.environ.get("MA_TOKEN_FILE", os.path.join(DATA, ".ma_token"))  # Music Assistant's long-lived token, when it is the music server
 HA_TOKEN = os.environ.get("HA_TOKEN_FILE", os.path.join(DATA, ".ha_token"))  # Soundsquatch's own long-lived token (stations)
 AUDIO = (".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".alac", ".ape", ".wv", ".dsf", ".dff")  # the playlist a room's music is saved to on its way to another room
 VERSION = "0.14.0 beta"  # the release tag is v + its number
@@ -115,7 +117,7 @@ NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", "", "a
 SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(DATA, "settings.json"))
 DISCOVER_SECTIONS = ["cover", "stations", "because", "rotation", "back", "new", "spotlight", "fresh", "rediscover", "loved", "archive", "listenlater", "lbfresh", "pitchfork", "connections", "beyond", "round", "decade", "genre", "vinyl", "kexp", "sounds", "a1001"]
 DEFAULTS = {
-    "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": ""},  # a login only for a Lyrion that asks for one
+    "connections": {"lms_url": LMS, "ha_url": HA_URL, "listening_db": LOG_DB, "lms_user": "", "lms_password": "", "ma_url": os.environ.get("MA_URL", "")},  # a login only for a Lyrion that asks for one
     "features": {"home_assistant": bool(HA_URL), "squatches": True, "stations": True, "archive": True, "history": True, "credits": True, "lyrics": True,
                  "write_files": False,  # changing music files (genres, titles, covers, removing): off until the house says so
                  "turntable_capture": False,  # each song the turntable plays kept as a file (in CAPTURE_DIR, outside the library)
@@ -158,6 +160,11 @@ def detect():
     """The Lyrion plugins Soundsquatch leans on, each asked whether it answers; what is missing is left out (the app hides
     it, the crawler doesn't ask it). Also Lyrion's language: the Qobuz plugin's menus are read by position where they can
     be, but keeping and removing Qobuz albums still finds its menu items by their English names."""
+    if backend_ma.ON:  # Music Assistant: none of Lyrion's plugins, but radio of its own (radio mode, Don't Stop the Music)
+        HAVE.clear()
+        HAVE.update(radio=True, language="EN", ma=True)
+        return HAVE
+
     def can(*cmd):
         return bool(int(rpc("", "can", *cmd, "?", timeout=5).get("_can") or 0))
 
@@ -182,7 +189,10 @@ def detect():
 
 
 def svc():
-    """The streaming service Lyrion has a plugin for (Qobuz first, when it has both), or None."""
+    """The streaming service Lyrion has a plugin for (Qobuz first, when it has both), or None; with Music Assistant as the
+    music server, its own search (every service it has)."""
+    if backend_ma.ON:
+        return backend_ma.SERVICE
     return next((x for x in streaming.ALL if HAVE.get(x.key)), None)
 
 
@@ -222,6 +232,8 @@ def qobuz_arrived():
 def find_lms():
     """Lyrion on the network, found as its players find it: a discovery broadcast on port 3483, answered with its web
     port (the reply's JSON field). The address, or None."""
+    if backend_ma.ON:
+        return  # Music Assistant in Lyrion's place: no Lyrion to find or listen to
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -274,9 +286,17 @@ def start_recorder():
     host = urllib.parse.urlparse(LMS).hostname or "127.0.0.1"
     os.environ.update(LISTENING_DB=LOG_DB, LMS_HOST=host, LMS_WEB_PORT=str(urllib.parse.urlparse(LMS).port or 9000), LMS_CLI_PORT=str(cli_port()), STEWARD_PLAYERS="")
     import listening
-    threading.Thread(target=listening.listen, name="recorder", daemon=True).start()
+    if backend_ma.ON:  # Music Assistant: its rooms looked at, and Soundsquatch's own skips told to the log
+        listening.RPC, listening.SNAPSHOT = backend_ma.lms, backend_ma.snapshot
+        backend_ma.HEARD = listening.heard
+        threading.Thread(target=listening.listen_polled, name="recorder", daemon=True).start()
+    else:
+        threading.Thread(target=listening.listen, name="recorder", daemon=True).start()
     threading.Thread(target=listening.settling, name="recorder-settle", daemon=True).start()
     RECORDER["built_in"] = True
+
+
+LYRION_PLAYER = lms_qobuz.PLAYER
 
 
 def apply_settings():
@@ -285,6 +305,9 @@ def apply_settings():
     c = settings["connections"]
     LMS, HA_URL, LOG_DB = c["lms_url"].rstrip("/"), c["ha_url"].rstrip("/"), c["listening_db"]
     lms_keep_album.LMS = LMS + "/jsonrpc.js"  # the Qobuz and keeping helpers talk to Lyrion through it
+    backend_ma.configure(c.get("ma_url", ""), MA_TOKEN)  # Music Assistant's address set: it is the music server
+    # a room's id: Lyrion's are its players' MACs; Music Assistant's are its own (a uuid, a service's id)
+    lms_qobuz.PLAYER = lms_keep_album.PLAYER = re.compile(r"^[A-Za-z0-9_:.\-]{1,100}$") if backend_ma.ON else LYRION_PLAYER
     if c.get("lms_user"):  # every request to Lyrion carries the login (urllib's opener, for this address only)
         LMS_LOGIN.add_password(None, LMS, c["lms_user"], c["lms_password"], is_authenticated=True)
     os.environ["LMS_LOGIN"] = cli_login().decode()  # the recorder's event line logs in too
@@ -306,13 +329,24 @@ def load_settings():
 def check_settings():
     """What each connection finds, for the Settings page; and what Soundsquatch has worked out for itself."""
     out = {}
+    if backend_ma.ON:  # Music Assistant is the music server: it answers, or it doesn't
+        ok, said = backend_ma.check()
+        if ok and backend_ma.damaged():
+            said += f"; but {backend_ma.HEALTH['multi']:,} of its {backend_ma.HEALTH['albums']:,} albums are credited to several artists: its library looks mixed up (reset its library database: its Settings, Core, Music)"
+        out.update(ma_url=said, ma_ok=ok, lms_ok=ok, lms_url="not used: Music Assistant is the music server")
+        if ok:
+            detect()
     try:
+        if backend_ma.ON:
+            raise StopIteration
         st = rpc("", "serverstatus", "0", "0", timeout=5)
         out["lms_url"] = f"Lyrion {st.get('version', '')}, {st.get('info total albums', 0)} albums"
         out["lms_ok"] = True
     except urllib.error.HTTPError as e:
         out["lms_url"] = "asks for a username and password" if e.code == 401 else f"not answering (HTTP {e.code})"
         out["lms_auth"] = e.code == 401
+    except StopIteration:
+        pass
     except Exception as e:
         out["lms_url"] = f"not answering ({type(e).__name__})"
     try:
@@ -333,7 +367,7 @@ def check_settings():
     read_music_dirs()
     out["music_dirs"] = ", ".join(MUSIC_DIRS)
     out["removed_dir"] = REMOVED_DIR
-    if out.get("lms_ok"):
+    if out.get("lms_ok") and not backend_ma.ON:
         detect()
     return out
 
@@ -604,8 +638,20 @@ def settings_for_app():
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"], "discover_order": settings["house"]["discover_order"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
-            "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()),
-            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "checks": checks}
+            "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()), "backend": "ma" if backend_ma.ON else "lyrion", "ma_url": backend_ma.MA_URL if backend_ma.ON else "",
+            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "ma_token_set": os.path.exists(MA_TOKEN), "ma_guess": ma_guess(), "checks": checks}
+
+
+def ma_guess():
+    """Music Assistant's address when one answers beside Soundsquatch (its add-on on the same Home Assistant): offered on
+    the first screen, so only its token is to be given."""
+    if backend_ma.ON or not os.environ.get("SOUNDSQUATCH_ADDON"):
+        return ""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8095/info", timeout=2) as r:
+            return "http://127.0.0.1:8095" if json.load(r).get("server_version") else ""
+    except Exception:
+        return ""
 
 
 def pin_hash(pin):
@@ -674,6 +720,13 @@ def save_settings(req):
         elif not settings["house"]["scrobble_url"] and os.path.exists(SCROBBLE_TOKEN):
             os.remove(SCROBBLE_TOKEN)  # no address: disconnected
         scrobble_now.set()
+    ma_token = (req.get("ma_token") or "").strip()
+    if ma_token:
+        with open(MA_TOKEN + ".tmp", "w") as f:
+            f.write(ma_token)
+        os.chmod(MA_TOKEN + ".tmp", 0o600)
+        os.replace(MA_TOKEN + ".tmp", MA_TOKEN)
+        backend_ma.configure("", "")  # the next ask opens with the new token
     token = (req.get("ha_token") or "").strip()
     if token:
         with open(HA_TOKEN + ".tmp", "w") as f:
@@ -688,7 +741,7 @@ def save_settings(req):
     # the shelves read again only when what they're read from or how they're sorted changed: Lyrion's address or login,
     # the Discogs collection, which copy leads. A Discover switch doesn't need it, and Lyrion, busy with the whole
     # library, kept the save's own checks waiting (8 s for a switch)
-    if req.get("connections") or "discogs_token" in req or "prefer_captured" in (req.get("features") or {}):
+    if req.get("connections") or "ma_token" in req or "discogs_token" in req or "prefer_captured" in (req.get("features") or {}):
         library["scan"] = None
         threading.Thread(target=lambda: load_library(force=True), daemon=True).start()
     return dict(settings_for_app(), ok=True)
@@ -757,6 +810,11 @@ def put_profile(name, data, complete):
 
 # ───────────────────────── Lyrion ─────────────────────────
 def rpc(player, *cmd, timeout=30):
+    if backend_ma.ON:
+        got = backend_ma.lms(player, cmd)
+        if got.get("_error"):
+            note_error("music assistant: " + got["_error"])
+        return {k: v for k, v in got.items() if k != "_error"}
     body = json.dumps({"id": 1, "method": "slim.request", "params": [player, [str(x) for x in cmd]]}).encode()
     req = urllib.request.Request(LMS + "/jsonrpc.js", body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -1361,6 +1419,8 @@ def _follow():
 
 def load_library(force=False):
     """The shelves, as the Music page has them: one album a title (its best copy), newest first, with the house's genres."""
+    if backend_ma.ON:
+        return load_library_ma(force)
     status = rpc("", "serverstatus", "0", "0")
     scan = (status.get("lastscan"), status.get("info total albums"))
     if not force and scan == library["scan"] and library["albums"]:
@@ -1438,6 +1498,29 @@ def load_library(force=False):
     crawl_state["total"] = len(artists)
 
 
+def load_library_ma(force=False):
+    """The shelves from Music Assistant's library (its rows already in the shelves' shape), with the house's genres."""
+    if not force and library["albums"] and time.time() - library.get("ma_at", 0) < 600:
+        return
+    albums = backend_ma.library_rows()
+    with db() as c:
+        genres = {k: json.loads(g) for k, g in c.execute("select k, genres from album_genres")}
+    for e in albums:
+        e[8] = genres.get(copies(e[2], e[1]), [])
+    artists = {}
+    for e in albums:
+        if key(e[2]) in NOT_ARTISTS or not e[2]:
+            continue
+        a = artists.setdefault(key(e[2]), {"name": e[2], "id": e[7], "albums": 0, "rank": e[5]})
+        a["albums"] += 1
+    with lib_lock:
+        library.update(albums=albums, artists=artists, scan=("ma", len(albums)), genres=genres, rated={}, ma_at=time.time())
+    restamp()
+    gone_at = time.time() - GONE_AFTER - 1  # Music Assistant says so itself: listed at once
+    with db_lock, db() as c:  # its dead albums on the Gone list (a dropped one stays dropped)
+        c.executemany("insert into shelf_seen (k, artist, title, year, art, source, last, gone) values (?,?,?,?,?,?,?,?) on conflict(k) do update set art=excluded.art",
+                      [(copies(d["artist"], d["title"]), d["artist"], d["title"], d["year"], d["art"], d["source"], gone_at, gone_at) for d in backend_ma.DEAD])
+    crawl_state["total"] = len(artists)
 # ───────────────────────── albums that leave on their own (a streaming service dropped them) ─────────────────────────
 GONE_AFTER = int(os.environ.get("SOUNDSQUATCH_GONE_AFTER", 6 * 3600))  # off the shelves this long (past a scan's comings and goings) before it counts as gone
 
@@ -1505,14 +1588,19 @@ def repair_do(req):
         row = c.execute("select artist, title from shelf_seen where k = ?", (k,)).fetchone()
     if not row:
         return {"error": "not a missing album"}
+    dead = next((d["id"] for d in backend_ma.DEAD if copies(d["artist"], d["title"]) == k), None) if backend_ma.ON else None
     if req.get("dismiss"):
         with db_lock, db() as c:
             c.execute("update shelf_seen set dismissed = 1 where k = ?", (k,))
+        if dead:  # Music Assistant: the dead album out of its library too
+            backend_ma.drop_dead(dead)
         return {"ok": True}
     out = qobuz({"action": "keep", "term": req.get("term") or "", "index": req.get("i"), "player": req.get("player") or PLAYER, "cover": req.get("cover") or ""})
     if out.get("result") in ("added", "already"):
         with db_lock, db() as c:
             c.execute("delete from shelf_seen where k = ?", (k,))
+        if dead:  # Music Assistant: the new edition in, the dead one out
+            backend_ma.drop_dead(dead)
     return out
 
 CREDITED_ROLES = ("albumartist", "artist", "trackartist", "band")  # who plays it (composers and conductors are the credits')
@@ -1950,6 +2038,8 @@ def diagnostics():
              "Plugins: " + ", ".join(f"{k} {'yes' if v else 'no'}" for k, v in HAVE.items() if k not in ("language", "mai_lang")),
              f"Library: {s['albums']} albums (+{versions} other versions), {s['artists']} artists; profiled {s['profiled']}, genres to find {s['genres_left']}, credits to find {s['credits_left']}",
              f"Gone from the streaming service (dropped, not removed here): {len(missing_albums())}",
+             *([f"Music Assistant: {backend_ma.HEALTH['multi']} of {backend_ma.HEALTH['albums']} albums credited to several artists"
+                + (" (its library looks mixed up: reset its library database in its Settings, Core, Music)" if backend_ma.damaged() else "")] if backend_ma.ON else []),
              f"Lyrion counts {st.get('info total albums', '?')} albums, {st.get('info total artists', '?')} artists; group players {groups}",
              f"My Music: {my_music}",
              f"Write-ups: {pieces}; Music & Artist Information asked in {', '.join(mai_langs())}{' (its own setting)' if HAVE.get('mai_lang') else ''}",
@@ -1963,7 +2053,7 @@ def diagnostics():
 def settling():
     """How far Soundsquatch has got with what it gathers about the shelves (a new house's first hours): artists profiled,
     albums with genres and credits, and a rough time left. MusicBrainz, one question a second, sets the pace: an artist
-    takes about nine, an album's genres one or two, its credits about three. Settled when only a stray few are left."""
+    takes about nine, an album's genres one or two, its credits about three, and a real library about 1.4 times that. Settled when only a stray few are left."""
     with lib_lock:
         names = list(library["artists"])
         shelf = [copies(a[2], a[1]) for a in library["albums"] if key(a[2]) not in NOT_ARTISTS]
@@ -1976,7 +2066,7 @@ def settling():
         have_credits = {k for (k,) in c.execute("select k from credits")}
     genres_left = sum(1 for k in shelf if k not in have_genres)
     credits_left = sum(1 for k in shelf if k not in have_credits) if settings["features"]["credits"] else 0
-    left = (len(names) - profiled) * 9 + genres_left * 1.5 + credits_left * 3
+    left = ((len(names) - profiled) * 9 + genres_left * 1.5 + credits_left * 3) * 1.4  # measured 2026-11-24: a real library runs about 1.4 times these
     few = lambda n, of: n <= max(3, of * 0.02)
     return {"artists": len(names), "profiled": profiled, "albums": albums, "genres_left": genres_left, "credits_left": credits_left,
             "minutes": round(left / 60), "settled": bool(names) and few(len(names) - profiled, len(names)) and few(genres_left, albums) and few(credits_left, albums)}
@@ -2492,6 +2582,8 @@ def artist_radio(req):
     artist, player = (req.get("artist") or "").strip(), req.get("player") or ""
     if not artist or not lms_qobuz.PLAYER.match(player):
         return {"error": "no artist or room"}
+    if backend_ma.ON:  # Music Assistant's radio, from this artist
+        return {"ok": True, "artist": artist, "kin": []} if backend_ma.radio(player, [artist]) else {"error": f"{artist} isn't on the shelves"}
     rng = random.Random()
     theirs = best_tracks(artist, 4, rng)
     if not theirs:
@@ -3201,6 +3293,11 @@ def afterwork_verdict(req):
 def keep_from_log(req):
     """A Qobuz album the log heard, added to the library (a Qobuz favourite), by one of its tracks."""
     url, player = req.get("url") or "", req.get("player") or PLAYER
+    if backend_ma.ON:  # a song from Music Assistant: its album added to its library
+        out = backend_ma.SERVICE.keep_track(player, url)
+        if out.get("result") == "added":
+            joining(out.get("artist") or req.get("artist") or "", out.get("album") or req.get("album") or "", req.get("year"), out.get("cover") or req.get("cover"))
+        return out
     service = streaming.by_url(url)
     if not service or not re.fullmatch(r"\w+://\d+\.\w+", url) or not lms_qobuz.PLAYER.match(player):
         return {"error": "not a streamed track"}
@@ -3530,6 +3627,8 @@ def move_room(src, dst, play=True):
     the track. src stops only once dst holds the whole queue; if anything is short, src plays on and nothing is lost."""
     if not (lms_qobuz.PLAYER.match(src or "") and lms_qobuz.PLAYER.match(dst or "")) or src == dst:
         return {"error": "no such rooms"}
+    if backend_ma.ON:
+        return backend_ma.move_queue(src, dst)
     st = rpc(src, "status", "-", "1")
     if not int(st.get("playlist_tracks") or 0):
         return {"error": "nothing to move"}
@@ -3834,6 +3933,9 @@ def this_version(album_id):
 
 def removal_plan(album_id):
     """What removing an album would do, for the app to say before it is done."""
+    if backend_ma.ON:  # Music Assistant: out of its library (a file-based album's files stay where they are)
+        a = album_row(album_id)
+        return {"album": a[1], "artist": a[2], "ma": True, "local": a[9] == "local", "copies": 1, "qobuz": 0, "files": 0, "folders": [], "to": "", "versions_left": 0} if a else {"error": "no such album"}
     a, found = this_version(album_id)
     if not a:
         return {"error": "no such album"}
@@ -3851,6 +3953,17 @@ def remove_album(album_id, player):
     """Takes an album off the shelves, the version chosen (its other versions stay): a Qobuz favourite is no longer one (the release's own menu, as keeping
     it used), and the files are moved, folder by folder as they were, to REMOVED_DIR, where Lyrion does not look and from
     where they can be put back. Then Lyrion looks again. What was done is written down (removals)."""
+    if backend_ma.ON:  # Music Assistant: out of its library, written down so it can be put back
+        a = album_row(album_id)
+        if not a:
+            return {"error": "no such album"}
+        got = backend_ma.remove_album(album_id)
+        with db_lock, db() as c:
+            c.execute("insert into removals values (?,?,?,?)", (time.time(), a[1], a[2], json.dumps({"ma": got, "moved": [], "qobuz": []}, ensure_ascii=False)))
+        with lib_lock:
+            library["albums"] = [x for x in library["albums"] if x[0] != a[0]]
+        restamp()
+        return {"ok": True, "album": a[1], "qobuz": 0, "moved": 0, "problems": []}
     a, found = this_version(album_id)
     if not a:
         return {"error": "no such album"}
@@ -3936,6 +4049,13 @@ def restore(rid, player):
     if not row:
         return {"error": "no such removal"}
     d = json.loads(row[1])
+    if d.get("ma"):  # Music Assistant: the album added to its library again, from the source it came from
+        backend_ma.restore_album(d["ma"])
+        d["restored"] = time.time()
+        with db_lock, db() as c:
+            c.execute("update removals set data = ? where rowid = ?", (json.dumps(d, ensure_ascii=False), rid))
+        follow_shelves()
+        return {"ok": True, "album": row[0], "files": 0, "qobuz": 1, "kept": 0, "problems": []}
     back, kept, problems = 0, 0, []
     for rel in d.get("moved", []):
         # the folder each file came from: with one media folder its place is as it was; with several, under the folder's name
@@ -4289,6 +4409,9 @@ def start_station(req):
         ban_keys = {(kd, kk) for kd, kk in c.execute("select kind, k from bans")}
     names = [n for n in st["seeds"] if ("artist", ban_key("artist", n)) not in ban_keys]  # a banned artist is never a seed
     random.shuffle(names)
+    if backend_ma.ON:  # Music Assistant's radio, from the station's seeds (a few at a time, as Lyrion's start does)
+        got = backend_ma.radio(player, names[:5])
+        return {"ok": True, "station": st["name"], "seeds": names[:5]} if got else {"error": "none of its seed artists are on the shelves"}
     exclude, picked, urls = kv_get("exclude_albums", []), [], []
     for n in names:
         got = tracks_by(n, exclude, ban_keys)
@@ -4442,6 +4565,8 @@ def cli_port():
 
 def radio_events():
     """Lyrion's event stream (its CLI), kept open, for what the radio adds to each queue."""
+    if backend_ma.ON:
+        return  # Music Assistant in Lyrion's place: no Lyrion to find or listen to
     while True:
         try:
             with socket.create_connection((urllib.parse.urlparse(LMS).hostname or "127.0.0.1", cli_port()), timeout=30) as sock:
@@ -4740,7 +4865,7 @@ def picture(url, width=None):
     (bytes, type) or None."""
     if url and "://" not in url:  # a picture in Lyrion itself: Music & Artist Information's local artwork, Lyrion's artist pictures
         url = LMS + "/" + url.lstrip("/")
-    own = url.startswith(LMS + "/")
+    own = url.startswith(LMS + "/") or (backend_ma.ON and url.startswith(backend_ma.MA_URL + "/imageproxy"))  # the music server's own covers
     host = urllib.parse.urlparse(url).hostname or ""
     if url.startswith("http://") and host in PICTURE_HOSTS:
         url = "https://" + url[len("http://"):]  # the same picture over https (TIDAL's plugin names its covers by http)
@@ -6160,6 +6285,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header(h, v)
                 self.end_headers()
                 return self.wfile.write(body)
+            if url.path == "/api/ma/config" and backend_ma.ON:
+                return self.reply({"groups": backend_ma.config_overview()})
+            if url.path == "/api/ma/browse" and backend_ma.ON:
+                return self.reply({"items": backend_ma.browse(qs.get("path") or None)})
+            if url.path == "/api/ma/config/item" and backend_ma.ON:
+                return self.reply(backend_ma.config_get(qs.get("kind", ""), qs.get("id", "")))
             if url.path == "/api/removals":
                 return self.reply(removals())
             if url.path == "/api/missing":
@@ -6228,12 +6359,22 @@ class Handler(BaseHTTPRequestHandler):
         if origin and urllib.parse.urlparse(origin).netloc not in (self.headers.get("Host"), self.headers.get("X-Forwarded-Host")):
             return self.reply({"error": "another site"}, status=403)  # a page elsewhere on the web posting to the house's Soundsquatch
         if self.path == "/jsonrpc.js":
+            if backend_ma.ON:  # Lyrion's commands, answered from Music Assistant
+                try:
+                    q = json.loads(body or b"{}").get("params") or ["", []]
+                except ValueError:
+                    q = ["", []]
+                got = rpc(q[0] or "", *(q[1] if len(q) > 1 else []))
+                return self.reply({"id": 1, "result": got}, extra={"X-Shelves": library.get("etag") or ""})
             return self.pass_to_lms("POST", body)
-        guarded = {"/api/settings", "/api/import", "/api/album-genres", "/api/track-title", "/api/art", "/api/remove", "/api/restore", "/api/artist-photo",
+        guarded = {"/api/ma/config/save", "/api/ma/config/action", "/api/settings", "/api/import", "/api/album-genres", "/api/track-title", "/api/art", "/api/remove", "/api/restore", "/api/artist-photo",
                    "/api/ban", "/api/station-edit", "/api/artist-tags"}  # what changes the house for everyone: settings, files, never-play, stations
         if self.path in guarded and not pin_ok(self.headers.get("X-Soundsquatch-PIN")):
             return self.reply({"error": "pin", "pin": True}, status=403)
-        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/repair-options": repair_options, "/api/repair": repair_do, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
+        routes = {"/api/ban": ban, "/api/station-edit": station_edit, "/api/settings": save_settings, "/api/keep": keep_from_log, "/api/repair-options": repair_options, "/api/repair": repair_do,
+                  "/api/ma/play": lambda r: backend_ma.play_uri(r.get("player"), r.get("uri"), r.get("how")) if backend_ma.ON and lms_qobuz.PLAYER.match(r.get("player") or "") and r.get("uri") else {"error": "nothing to play"},
+                  "/api/ma/config/save": lambda r: (backend_ma.config_save(r.get("kind"), r.get("id"), r.get("values") or {}), {"ok": True})[1] if backend_ma.ON else {"error": "not Music Assistant"},
+                  "/api/ma/config/action": lambda r: ({"ok": True, "result": backend_ma.config_action(r.get("kind"), r.get("id"), r.get("action"), r.get("values"))}) if backend_ma.ON else {"error": "not Music Assistant"}, "/api/shelves-follow": lambda r: (follow_shelves(rescan=True), {"ok": True})[1], "/api/station": start_station, "/api/archive/do": archive_do,
                   "/api/archive/show": lambda r: archive_show(r.get("ctx") or {}, r.get("player") if lms_qobuz.PLAYER.match(r.get("player") or "") else PLAYER),
                   "/api/import": import_, "/api/qobuz": qobuz, "/api/away-play": away_play, "/api/rate-album": rate_album, "/api/kexp-play": kexp_play, "/api/mark": mark, "/api/move": lambda r: move_room(r.get("from", ""), r.get("to", "")),
                   "/api/playlist-add": playlist_add, "/api/playlist-do": playlist_do, "/api/album-genres": album_genres_edit, "/api/track-title": track_title_edit, "/api/art": album_art_edit, "/api/artist-photo": artist_photo_edit, "/api/artist-tags": artist_tags_edit, "/api/artist-radio": artist_radio, "/api/play-albums": play_albums, "/api/turntable/play": turntable_play, "/api/turntable/name": turntable_name, "/api/turntable/new": turntable_new, "/api/turntable/dismiss": turntable_dismiss, "/api/afterwork": afterwork, "/api/afterwork/verdict": afterwork_verdict, "/api/focuses": focuses, "/api/screen": screen_do,

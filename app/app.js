@@ -75,7 +75,11 @@ const streams = () => !!(A.cfg ? A.cfg.service : true); // a streaming service, 
 const SVC = () => (A.cfg && A.cfg.service && A.cfg.service.label) || "Qobuz";
 const has = k => !A.cfg || !A.cfg.have || A.cfg.have[k] !== false;
 const NEEDS = { archive: "archive", stations: "radio" };
-const on = (group, k) => (group !== "features" || !NEEDS[k] || has(NEEDS[k])) && (!A.cfg || !A.cfg[group] || A.cfg[group][k] !== false);
+// what a Music Assistant house can't have: changing its files (Soundsquatch finds them through Lyrion), the turntable's
+// captures filed into Lyrion's folders, the Internet Archive (a Lyrion plugin)
+const MA_NOT = ["write_files", "turntable_capture", "prefer_captured", "capture_level", "archive"];
+const on = (group, k) => !(group === "features" && A.cfg && A.cfg.backend === "ma" && MA_NOT.indexOf(k) >= 0)
+  && (group !== "features" || !NEEDS[k] || has(NEEDS[k])) && (!A.cfg || !A.cfg[group] || A.cfg[group][k] !== false);
 const device = { get: (k, d) => store.get("sq-dev-" + k, d), set: (k, v) => store.set("sq-dev-" + k, v) };
 const A = { cfg: null, marks: { album: {}, track: {}, artist: {} }, npTab: store.get("sq-np-tab", "next"), albums: [], byId: new Map(), artists: [], byArtist: new Map(), artistInfo: new Map(), genres: [], rooms: [], room: store.get("sq-room", ""),
   st: null, stAt: 0, curKey: "\u0000", profiles: new Map(), views: new Map(), home: null, homeAt: 0 };
@@ -186,7 +190,7 @@ function missingNote(why, kind, v) {
   const line = {
     failed: `World hide-and-seek champion, still undefeated: the search for ${it} didn't get through this time. That one's on us, not Wikipedia.`,
     another: `Wikipedia's piece by this name turned out to be about another record, so it's left out.`,
-    "no-mai": `Write-ups and stories come through Lyrion's Music &amp; Artist Information plugin. Install it and they'll turn up here.`
+    get "no-mai"() { return isMA() ? `No write-up found for this one yet.` : `Write-ups and stories come through Lyrion's Music &amp; Artist Information plugin. Install it and they'll turn up here.`; }
   }[why] || (kind === "review" ? "Wikipedia has nothing written about this record yet." : "Wikipedia has nothing more on them yet.");
   return `<div class="piece-gone"><p class="dim">${line}</p>${why === "no-mai" ? "" : `<button class="more-story" data-act="lookAgain" data-v="${esc(kind + ":" + v)}">Look again</button>`}</div>`;
 }
@@ -507,7 +511,7 @@ const VIEWS = {};
 VIEWS.discover = function (el) {
   if (emptyShelves(el)) return;
   const when = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  el.innerHTML = `${pageBar(`<img class="mast-logo" src="logo.png" alt=""><span>Sound<em>squatch</em></span>`, [esc(when), `${A.albums.length.toLocaleString()} albums &middot; ${A.artists.length.toLocaleString()} artists`],
+  el.innerHTML = `${pageBar(`<img class="mast-logo" src="logo.png" alt=""><span>Sound<em>squatch</em></span>`, [esc(when) + " &middot; " + edition(), `${A.albums.length.toLocaleString()} albums &middot; ${A.artists.length.toLocaleString()} artists`],
     `<a class="pill gear" href="#/settings" aria-label="Settings">${icon("gear")}</a><button class="pill" data-act="pickArtist" aria-label="Random artist">${icon("person")}<span class="pl">Random artist</span></button><button class="pill" data-act="surprise" aria-label="Random album">${icon("dice")}<span class="pl">Random album</span></button>`)}
     <div id="d-hero" class="hero skeleton"></div><div id="d-body"></div>`;
   A.homeAt = Date.now();
@@ -539,8 +543,8 @@ function emptyShelves(el) {
     if (+s["info total albums"] > 0 && !s.rescan) return location.reload();
     const scanning = s.rescan, done = +s.progressdone || 0, total = +s.progresstotal || 0;
     el.innerHTML = `<div class="loading empty-shelves">${head}${scanning
-      ? `<h2>Lyrion is reading your music</h2><p>${esc(s.progressname || "Its first scan")}${total ? `: ${done.toLocaleString()} of ${total.toLocaleString()}` : ""}. The shelves fill as soon as it's done.</p>`
-      : `<h2>The shelves are bare</h2><p>Lyrion has no music yet. Add your music folder in Lyrion's own Settings (Basic Settings, Media Folders) and let it scan; Soundsquatch picks the albums up by itself.</p>`}</div>`;
+      ? `<h2>${SERVER()} is reading your music</h2><p>${esc(s.progressname || "Its first scan")}${total ? `: ${done.toLocaleString()} of ${total.toLocaleString()}` : ""}. The shelves fill as soon as it's done.</p>`
+      : `<h2>The shelves are bare</h2><p>${isMA() ? "Music Assistant has no music yet. Add a music source in its own Settings (your music folder, a streaming service) and let it scan" : "Lyrion has no music yet. Add your music folder in Lyrion's own Settings (Basic Settings, Media Folders) and let it scan"}; Soundsquatch picks the albums up by itself.</p>`}</div>`;
     setTimeout(look, 10000);
   }).catch(() => setTimeout(look, 10000));
   el.innerHTML = `<div class="loading">${head}<p>Looking at the shelves&hellip;</p></div>`;
@@ -555,13 +559,13 @@ function settlingStrip(el) {
     if (s.settled || !el.isConnected || el.querySelector(".settling")) return;
     A.settling = s;
     const done = s.albums ? (s.profiled / Math.max(1, s.artists)) * 0.5 + (1 - s.genres_left / s.albums) * 0.25 + (1 - s.credits_left / s.albums) * 0.25 : 0;
-    const html = `<button class="settling" data-act="settlingWhy"><span class="settling-t"><b>Getting to know your shelves</b><span>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists &middot; about ${timeLeft(s.minutes)} to go</span></span><span class="settling-bar"><i style="width:${Math.round(done * 100)}%"></i></span></button>`;
+    const html = `<button class="settling" data-act="settlingWhy"><span class="settling-t"><b>Getting to know your shelves</b><span>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists &middot; ${timeLeft(s.minutes)} to go</span></span><span class="settling-bar"><i style="width:${Math.round(done * 100)}%"></i></span></button>`;
     const at = el.querySelector(".fp-plate") || el.querySelector(".mast");
     if (at) at.insertAdjacentHTML("afterend", html); else el.insertAdjacentHTML("afterbegin", html);
     if (!store.get("sq-settling-told", false)) { store.set("sq-settling-told", true); ACT.settlingWhy(); }
   }).catch(() => {});
 }
-const timeLeft = m => m < 50 ? "under an hour" : m < 90 ? "an hour" : Math.round(m / 60) + " hours";
+const timeLeft = m => m < 45 ? "under an hour" : m < 150 ? "an hour or two" : m < 420 ? "a few hours" : "most of a day"; // loose on purpose: MusicBrainz sets the pace
 function nowArtist() { const t = curTrack(); return t && t.artist ? splitArtist(t.artist) : ""; }
 function splitArtist(s) {
   if (onShelves(s)) return s;
@@ -864,7 +868,7 @@ VIEWS.away = function (el, arg) {
     if (!r.error && !r.tracks.length && r.qid) { // Qobuz plays it by its id, but no search lists this edition's songs
       if (t) t.outerHTML = `<p class="dim">${SVC()} doesn't list this edition's songs here. Spin it plays the whole record.</p>`;
     } else if (r.error || !r.tracks.length) {
-      if (t) t.outerHTML = `<p class="dim">${r.error === "no Qobuz" ? `Not on your shelves, and Lyrion has no ${SVC()} plugin to find it on.` : r.error === "failed" ? `${SVC()} didn't answer this time.` : `${SVC()} doesn't have this one.`} <a href="#/search" data-act="findWork" data-v="${esc(artist + " " + title)}">Search for it</a></p>`;
+      if (t) t.outerHTML = `<p class="dim">${r.error === "no Qobuz" ? (isMA() ? `Not on your shelves, and Music Assistant has no streaming service to find it on.` : `Not on your shelves, and Lyrion has no ${SVC()} plugin to find it on.`) : r.error === "failed" ? `${SVC()} didn't answer this time.` : `${SVC()} doesn't have this one.`} <a href="#/search" data-act="findWork" data-v="${esc(artist + " " + title)}">Search for it</a></p>`;
       $(".aw-acts", el).hidden = true;
     } else {
       t.outerHTML = `<div class="tracks${mag ? " mag-tracks" : ""}">${r.tracks.map(s => `<div class="trk" data-act="awayTrack" data-v="${s.k}"><span class="n">${s.n}</span><span class="tt">${esc(s.title)}</span></div>`).join("")}</div>`;
@@ -972,7 +976,7 @@ const MAG = {};
 function magRun(section) {
   const issue = Math.floor((Date.now() - new Date("2026-01-01").getTime()) / 86400000) + 1;
   const when = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
-  return `<header class="mag-run"><button class="backbtn" data-act="back" aria-label="Back">${icon("back")}</button><span>Soundsquatch</span><span>${section}</span><span>No. ${issue} &middot; ${esc(when)}</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></header>`;
+  return `<header class="mag-run"><button class="backbtn" data-act="back" aria-label="Back">${icon("back")}</button><span>Soundsquatch</span><span>${section}</span><span>No. ${issue} &middot; ${edition()} &middot; ${esc(when)}</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></header>`;
 }
 VIEWS.mag = function (el, name) {
   el.innerHTML = `<div class="mag">${gathering()}</div>`;
@@ -1164,7 +1168,7 @@ VIEWS.front = function (el) {
     }
     const frontBody = body.join("\n");
     el.innerHTML = `<article class="mag fp">
-      <header class="fp-plate"><div class="fp-line"><span>Vol. 1 &middot; No. ${issue}</span><span>${esc(date)}</span><span>${A.albums.length.toLocaleString()} records on the shelves</span></div>
+      <header class="fp-plate"><div class="fp-line"><span>Vol. 1 &middot; No. ${issue} &middot; ${edition()}</span><span>${esc(date)}</span><span>${A.albums.length.toLocaleString()} records on the shelves</span></div>
         <h1>Sound<em>squatch</em></h1><div class="fp-line fp-tag"><span>Your music, connected.</span><button class="mast-search" data-act="searchOpen" aria-label="Search">${icon("search")}</button></div></header>
       <div class="fp-top">${lead ? story(lead, true) : `<p class="dim">No stories today.</p>`}<div class="fp-also">${rest.map(x => story(x, false)).join("")}
         <div class="fp-lucky"><button data-act="surprise">${icon("dice")} A record at random</button><button data-act="pickArtist">${icon("person")} An artist at random</button></div></div></div>
@@ -1927,7 +1931,7 @@ function npCredits(t) {
 function playlistsList() { return api("/api/playlists").then(r => { A.playlists = r.playlists; return r.playlists; }); }
 function forgetPlaylists() { Array.from(A.views.keys()).filter(h => h.indexOf("#/playlist") === 0).forEach(h => { const v = A.views.get(h); if (v !== current) { v.el.remove(); A.views.delete(h); } }); }
 VIEWS.playlists = function (el) {
-  el.innerHTML = `${pageBar("Playlists", ["Lyrion's playlists", "&nbsp;"], `<button class="pill" data-act="plNew" aria-label="New playlist">${icon("list")}<span class="pl">New playlist</span></button>`)}<div class="gtiles"></div>`;
+  el.innerHTML = `${pageBar("Playlists", [SERVER() + "'s playlists", "&nbsp;"], `<button class="pill" data-act="plNew" aria-label="New playlist">${icon("list")}<span class="pl">New playlist</span></button>`)}<div class="gtiles"></div>`;
   playlistsList().then(list => {
     $(".mast-line span:last-child", el).innerHTML = `${list.length} ${list.length === 1 ? "playlist" : "playlists"}`;
     $(".gtiles", el).innerHTML = list.length ? list.map(p => `<a class="gtile" href="#/playlist/${p.id}"><div class="gm">${p.arts.map(u => `<img loading="lazy" src="${esc(u)}" alt="">`).join("")}</div>
@@ -1958,7 +1962,7 @@ VIEWS.playlist = function (el, id) {
       <button class="nx-go" data-act="playPlaylist" data-v="${id}:${i}">${t.art ? `<img loading="lazy" src="${cover(t.art, 150)}" alt="">` : t.remote_art ? `<img loading="lazy" src="${esc(t.remote_art.charAt(0) === "/" ? t.remote_art : pic(t.remote_art, 160))}" alt="">` : `<span class="noimg"></span>`}
       <span><b>${esc(t.title)}</b><em>${esc(t.artist)}${t.album ? " &middot; " + esc(t.album) : ""}</em></span></button><span class="pd">${mmss(t.duration)}</span>
       <button class="nx-x" data-act="plRemove" data-v="${id}:${i}" aria-label="Remove">${icon("close")}</button></div>`).join("") : `<p class="dim">This playlist is empty.</p>`;
-  }).catch(() => { $(".pltracks", el).innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+  }).catch(() => { $(".pltracks", el).innerHTML = `<p class="dim">${SERVER()} didn't answer.</p>`; });
 };
 function openPlaylistPicker(what) {
   playlistsList().then(list => {
@@ -1987,7 +1991,7 @@ VIEWS.missing = function (el) {
   });
 };
 VIEWS.removed = function (el) {
-  el.innerHTML = `${pageBar("Recently removed", ["Off the shelves", "files kept in music-removed"], "", true)}<div class="hist"><div class="trk ph"></div></div>`;
+  el.innerHTML = `${pageBar("Recently removed", ["Off the shelves", isMA() ? "each can go back into Music Assistant's library" : "files kept in music-removed"], "", true)}<div class="hist"><div class="trk ph"></div></div>`;
   api("/api/removals").then(r => {
     if (!el.isConnected) return;
     $(".hist", el).innerHTML = r.removals.length ? r.removals.map(x => {
@@ -2005,6 +2009,7 @@ VIEWS.removed = function (el) {
 // the connections a house sets; the rest (music folders, removed music, house genres, the Qobuz player) are found
 // the connections a house sets; the rest (music folders, removed music, the Qobuz player) are found
 const CONN = [["lms_url", "Lyrion", "its address, as the server reaches it", "lms_ok"],
+  ["ma_url", "Music Assistant", "to use it as the music server instead of Lyrion: its address and a long-lived token (its Settings, Profile). Empty: Lyrion", "ma_ok"],
   ["listening_db", "Listening log", "a recorder of the house's own, if there is one; otherwise Soundsquatch keeps the log itself", "listening_ok"]];
 const FEATS = [["squatches", "Rate in squatches", "a walking sasquatch for each star; off, plain stars"], ["stations", "Stations", "radio seeded from artists you choose"], ["archive", "Internet Archive", "shows from the ArchiveLMA plugin"],
   ["history", "History", "the History tab, from the listening log"], ["credits", "Credits", "who made each album, from MusicBrainz"], ["lyrics", "Lyrics", "synced lyrics in Now Playing (LRCLIB)"],
@@ -2088,24 +2093,27 @@ const SET_TABS = [["device", "This device"], ["discover", "Discover"], ["house",
 const setTab = () => { const t = device.get("settab", "device"); return SET_TABS.some(x => x[0] === t) ? t : "device"; };
 const inTab = (t, html) => `<div class="set-tab" data-tab="${t}">${html}</div>`;
 // Discover's sections as a list in the page's order: a switch each, and a grip to drag one to another place
+// the Discover sections made from Lyrion plugins: a Music Assistant house has none of them, so they aren't offered
+const DISC_LYRION = ["a1001", "kexp", "sounds", "listenlater", "lbfresh", "pitchfork", "archive"];
+const discOffered = k => !(isMA() && DISC_LYRION.indexOf(k) >= 0);
 function discList(c) {
   const name = k => (DISC.find(d => d[0] === k) || [k, k])[1];
   return `<p class="plan-note">Drag a section by its grip to move it; its switch shows or hides it. Both looks, Classic and Magazine, follow this order; the cover stories always open the page.</p>
     <div class="disc-list">${toggle("setDisc", "cover", c.discover.cover, name("cover"), "always at the top")}
-    ${discOrder(magOn()).map(k => `<div class="dord" data-k="${k}"><span class="dgrip" aria-label="Move">${icon("grip")}</span>${toggle("setDisc", k, c.discover[k], name(k))}</div>`).join("")}</div>
+    ${discOrder(magOn()).filter(discOffered).map(k => `<div class="dord" data-k="${k}"><span class="dgrip" aria-label="Move">${icon("grip")}</span>${toggle("setDisc", k, c.discover[k], name(k))}</div>`).join("")}</div>
     ${(c.discover_order || []).length ? `<div class="acts"><button class="pill" data-act="discReset">Back to each look's own order</button></div>` : ""}`;
 }
 function drawSettings(el) {
-  const c = A.cfg, ok = t => /^(Lyrion |connected|found|a player|made when)/.test(t || "");
+  const c = A.cfg, ok = t => /^(Lyrion |Music Assistant |connected|found|a player|made when)/.test(t || "");
   const rooms = A.rooms, start = device.get("room", ""); // a group (Lyrion's Groups plugin) too: some houses play in one most of the time
   $(".settings", el).innerHTML = `
     ${c.update ? section("A new version", "Soundsquatch " + esc(c.update.version), `<div class="set-row update"><span><b>It's out</b><em>to update, on the machine it runs on, in its folder: <code>docker compose pull &amp;&amp; docker compose up -d</code>. Everything kept in ./data stays.</em></span><a class="pill" href="${esc(c.update.url)}" target="_blank" rel="noopener">What's new</a></div>`) : ""}
     <div class="seg set-tabs">${SET_TABS.map(t => `<button class="${t[0] === setTab() ? "on" : ""}" data-act="setTab" data-v="${t[0]}">${t[1]}</button>`).join("")}</div>
-    ${inTab("house", section("For every screen in the house", "Features", FEATS.filter(f => (f[0] !== "prefer_captured" || on("features", "turntable_capture") || A.albums.some(capSticker)) && (f[0] !== "capture_level" || on("features", "turntable_capture"))).map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
+    ${inTab("house", section("For every screen in the house", "Features", FEATS.filter(f => !(isMA() && MA_NOT.indexOf(f[0]) >= 0)).filter(f => (f[0] !== "prefer_captured" || on("features", "turntable_capture") || A.albums.some(capSticker)) && (f[0] !== "capture_level" || on("features", "turntable_capture"))).map(f => NEEDS[f[0]] && !has(NEEDS[f[0]])
       ? `<div class="set-row toggle missing"><span><b>${f[1]}</b><em>needs the ${PLUGIN_FOR[f[0]]} plugin in Lyrion</em></span><i class="sw"></i></div>`
       : toggle("setFeat", f[0], c.features[f[0]], f[1], f[2])).join("")))}
     ${inTab("house", section("For every screen in the house", "Rooms", rooms.map(p => { const r = c.rooms[p.playerid] || {};
-        return `<div class="set-row"><span><b>${esc(roomName(p.playerid))}</b><em>${r.name ? esc(p.name) + " in Lyrion" : "as Lyrion names it"}${r.fixed ? " &middot; volume set on the device" : ""}</em></span><button class="pill" data-act="roomEdit" data-v="${p.playerid}">Change</button></div>`; }).join("") || `<p class="dim">No players are connected to Lyrion.</p>`))}
+        return `<div class="set-row"><span><b>${esc(roomName(p.playerid))}</b><em>${r.name ? esc(p.name) + " in " + SERVER() : "as " + SERVER() + " names it"}${r.fixed ? " &middot; volume set on the device" : ""}</em></span><button class="pill" data-act="roomEdit" data-v="${p.playerid}">Change</button></div>`; }).join("") || `<p class="dim">No players are connected to Lyrion.</p>`))}
     ${inTab("discover", section("For every screen in the house", "Discover", discList(c)))}
     ${inTab("house", `<div id="set-bans"></div>`)}
     ${inTab("help", section("For every screen in the house", "Backups", `<p class="plan-note">Each night Soundsquatch keeps a copy of what it can't fetch again (ratings, stations, the never-play list, removals and settings); the last two weeks of them stay on the server.</p>
@@ -2118,17 +2126,18 @@ function drawSettings(el) {
       ${toggle("setDev", "still", device.get("still", false), "Reduce motion", "no slow zooms or shimmer, and the cover stories don't turn by themselves")}
       <div class="set-row"><span><b>Look</b><em>Classic, or set like a printed music magazine</em></span><div class="seg">${[["classic", "Classic"], ["magazine", "Magazine"]].map(l => `<button class="${(magOn() ? "magazine" : "classic") === l[0] ? "on" : ""}" data-act="setLook" data-v="${l[0]}">${l[1]}</button>`).join("")}</div></div>
       ${toggle("setOsk", "", oskOn(), "On-screen keyboard", "for a screen without a keyboard of its own, such as one on a wall")}`))}
-    ${inTab("house", section("For every screen in the house", "Lyrion's own settings", lyrionLinks()))}
+    ${isMA() ? "" : inTab("house", section("For every screen in the house", "Lyrion's own settings", lyrionLinks()))}
     ${inTab("house", section("For every screen in the house", "Connections", `${CONN.map(k => { const good = !!c.checks[k[3]];
         return `<div class="set-field conn ${good ? "" : "open"}" data-k="${k[0]}"><span><b>${k[1]}</b><em>${k[2]}</em></span>
         <span class="conn-now"><span class="check ${good ? "good" : "bad"}">${esc(c.checks[k[0]] || "")}</span><button class="pill" data-act="connEdit">Change</button></span>
         <input data-conn="${k[0]}" value="${esc(c.connections[k[0]] || "")}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         ${k[0] === "lms_url" && (c.checks.lms_auth || c.connections.lms_user) ? loginFields(c) : ""}
+        ${k[0] === "ma_url" ? `<input data-ma-token type="password" placeholder="${c.ma_token_set ? "its token (unchanged)" : "its long-lived token"}" autocomplete="off">` : ""}
         </div>`; }).join("")}
-      <div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>
+      ${isMA() ? "" : `<div class="set-field found"><span><b>Found by itself</b><em>nothing to set</em></span><span class="set-value">Music in ${esc(c.checks.music_dirs || "")} (Lyrion's own folders); removed albums go to ${esc(c.checks.removed_dir || "")}.${c.have && c.have.language && c.have.language !== "EN" ? ` Lyrion speaks ${esc(c.have.language)}: keeping and removing Qobuz albums need it set to English.` : ""}</span></div>`}
       <div class="acts conn-save"><button class="btn" data-act="saveConn">Save and check</button></div>`))}
     ${inTab("house", section("For every screen in the house", "Your records", discogsRow(c) + ttRow(c) + scrobbleRow(c)))}
-    ${inTab("house", section("What Lyrion adds", "Lyrion's plugins <span id=\"set-plugins\"></span>", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
+    ${isMA() ? "" : inTab("house", section("What Lyrion adds", "Lyrion's plugins <span id=\"set-plugins\"></span>", `<p class="plan-note">Soundsquatch needs only Lyrion. Each of these plugins adds to it, and is found by itself; what one would add is left out while it isn't there. Install them from Lyrion's own Settings, under Manage Plugins.</p>
       ${PLUGINS.map(x => `<div class="set-row plugin ${has(x[0]) ? "" : "absent"}"><span><b>${esc(x[1])}</b><em>${x[2]}</em></span><span class="check ${has(x[0]) ? "good" : "bad"}">${has(x[0]) ? "installed" : "not installed"}</span></div>`).join("")}`))}
     ${inTab("house", section("For every screen in the house", "PIN", `<div class="set-row"><span><b>${c.pin ? "A PIN is set" : "No PIN"}</b><em>${c.pin ? "settings and changes to music files ask for it, once on each device" : "anyone on the network can change settings and music files"}</em></span><button class="pill" data-act="pinEdit">${c.pin ? "Change" : "Set one"}</button></div>`))}
     ${inTab("help", section("When something's wrong", "Diagnostics", `<div class="set-row"><span><b>A report for the forum thread</b><em>versions, what was found, the last errors; no names, addresses or listening</em></span><button class="pill" data-act="diagnostics">Show it</button></div>`))}
@@ -2163,6 +2172,7 @@ function saveSettings(change, words) {
 }
 // what the house's settings change outside the pages that ask: the History tab, the Archive's shelf
 function applyHouse() {
+  const lm = $('#rail a[data-tab="lms"] span'); if (lm) lm.textContent = isMA() ? "Music Assistant" : "Lyrion"; // the music server's own page
   const hist = $('#rail a[data-tab="history"]'); if (hist) hist.hidden = !on("features", "history");
   if (!on("features", "archive")) A.archive = [];
 }
@@ -2318,6 +2328,7 @@ function lmDraw(box, where, r, title, info) {
     : text ? "" : `<p class="dim">Nothing here.</p>`) + (+r.count > LMV[where].items.length ? `<p class="dim center">${LMV[where].items.length} of ${r.count}</p>` : "");
 }
 VIEWS.lms = function (el, arg) {
+  if (isMA()) return maPage(el);
   const o = arg ? lmDec(arg) : null;
   if (!o || o.n) { // Lyrion's home menu for this room (as a Squeezebox Touch has it): My Music, Favorites, Apps, Radio, Settings
     el.innerHTML = o ? `${pageBar(esc(o.t || "Lyrion"), ["Lyrion", "&nbsp;"], "", true)}<div class="lm-page" id="lm-body">${gathering("small")}</div>`
@@ -2336,7 +2347,7 @@ VIEWS.lms = function (el, arg) {
   el.innerHTML = `${pageBar(esc(o.t || "Apps"), ["Lyrion", "&nbsp;"], "", true)}<div class="lm-page" id="lm-body">${gathering("small")}</div>`;
   el.lmWhere = "v" + Math.random().toString(36).slice(2, 8);
   lmItems(o.c, o.p).then(r => { if (el.isConnected) lmDraw($("#lm-body", el), el.lmWhere, r, o.t); })
-    .catch(() => { $("#lm-body", el).innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+    .catch(() => { $("#lm-body", el).innerHTML = `<p class="dim">${SERVER()} didn't answer.</p>`; });
 };
 function lmRefresh() { // the level on screen drawn again (a setting changed, an item added or removed)
   closeSheet(); A.lmMenu = null;
@@ -2351,7 +2362,7 @@ document.addEventListener("submit", e => {
   const val = inp.type === "time" ? String(+inp.value.split(":")[0] * 3600 + +inp.value.split(":")[1] * 60) : inp.value.trim();
   const params = {}; Object.keys(a.params).forEach(k => { params[k] = String(a.params[k]).replace("__TAGGEDINPUT__", val).replace("__INPUT__", val); });
   const cmd = a.cmd.map(c => String(c).replace("__TAGGEDINPUT__", val).replace("__INPUT__", val));
-  lms(A.room || "", lmArgs(cmd, params)).then(() => { toast("Done"); lmRefresh(); }).catch(() => toast("Lyrion didn't answer"));
+  lms(A.room || "", lmArgs(cmd, params)).then(() => { toast("Done"); lmRefresh(); }).catch(() => toast(SERVER() + " didn't answer"));
 }, true);
 // a search item: the words put where Lyrion asks for them, and its next level opened
 document.addEventListener("submit", e => {
@@ -2391,8 +2402,97 @@ function lmRun(v, name, words) {
     if (words) toast(words);
     if (playing) setTimeout(poll, 600);
     if (a.next || x.nextWindow || name === "do" || name === "go") lmRefresh();
-  }).catch(() => toast("Lyrion didn't answer"));
+  }).catch(() => toast(SERVER() + " didn't answer"));
 }
+/* ───────────────────────── Music Assistant's own settings ─────────────────────────
+   With Music Assistant as the music server, its page (where Lyrion's is) holds its settings, drawn here: they describe
+   themselves (type, label, options, range, category, advanced, what they depend on), so one drawing serves them all.
+   A change is saved as it's made. #/lms is the list; #/ma/<kind>/<id> one thing's settings. */
+const isMA = () => !!(A.cfg && A.cfg.backend === "ma");
+const edition = () => isMA() ? "Music Assistant Edition" : "Lyrion Edition";
+const SERVER = () => isMA() ? "Music Assistant" : "Lyrion"; // the music server, by name, in what the app says // on the masthead: which music server this one reads
+function maPage(el) {
+  el.innerHTML = `${pageBar("Music Assistant", ["Browse every source", "and its settings"], "")}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
+  Promise.all([api("/api/ma/browse"), api("/api/ma/config")]).then(got => {
+    const box = $("#ma-body", el), r = got[1]; if (!box) return;
+    box.innerHTML = `<div class="kicker lm-k2">Browse</div><div class="lm-list">${(got[0].items || []).map(i => `<a class="lm-row lm-go" href="#/mab/${encodeURIComponent(i.path)}"><span class="lm-w"><b>${esc(i.name)}</b></span>${icon("chev")}</a>`).join("")}</div>` + (r.groups || []).map(g => `<div class="kicker lm-k2">${esc(g.title)}</div><div class="lm-list">${g.items.map(i =>
+      `<a class="lm-row lm-go" href="#/ma/${i.kind}/${encodeURIComponent(i.id)}"><span class="lm-w"><b>${esc(i.name)}</b>${i.error ? `<em class="ma-err">${esc(i.error)}</em>` : i.enabled === false ? `<em>Switched off</em>` : ""}</span>${icon("chev")}</a>`).join("")}</div>`).join("")
+      + `<div class="kicker lm-k2">Music Assistant's own pages</div><div class="lm-list lm-web"><a class="lm-row lm-go" href="${esc(maWeb())}" target="_blank" rel="noopener"><span class="lm-noart">${icon("gear")}</span><span class="lm-w"><b>Adding a source or a sign-in</b><em>In Music Assistant's own pages: new music services and their logins</em></span></a></div>`;
+  }).catch(() => { const box = $("#ma-body", el); if (box) box.innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
+}
+const maWeb = () => (A.cfg && A.cfg.ma_url) || ("http://" + location.hostname + ":8095");
+const maCat = c => c === "generic" ? "" : /^protocol_/.test(c) ? "Through " + c.slice(9).replace(/^./, x => x.toUpperCase()).replace("Airplay", "AirPlay").replace("Dlna", "DLNA").replace("Wiim", "WiiM") : c.replace(/_/g, " ").replace(/^./, x => x.toUpperCase());
+const maShown = (e, vals) => !e.depends_on || (e.depends_on_value != null ? vals[e.depends_on] === e.depends_on_value : !!vals[e.depends_on]);
+function maEntry(e, i) {
+  const v = e.value != null ? e.value : e.default_value, ref = `data-i="${i}"`, about = e.description ? `<em>${esc(e.description.split("\n")[0])}</em>` : "";
+  const words = `<span class="lm-w"><b>${esc(e.label || e.key)}</b>${about}</span>`;
+  if (e.type === "label") return `<p class="plan-note ma-note">${esc(e.label)}</p>`;
+  if (e.type === "alert") return `<p class="plan-note ma-alert">${esc(e.label)}</p>`;
+  if (e.type === "action") return `<div class="lm-row ma-row">${words}<button class="pill" data-act="maAction" ${ref}>${esc(e.action_label || "Run")}</button></div>`;
+  if (e.type === "boolean") return `<button class="lm-row lm-switch ${v ? "on" : ""}" data-act="maSwitch" ${ref}>${words}<i class="sw"></i></button>`;
+  if ((e.options || []).length && e.multi_value) return `<div class="lm-row ma-row">${words}<span class="seg ma-multi">${e.options.map(o => `<button class="${(v || []).indexOf(o.value) >= 0 ? "on" : ""}" data-act="maMulti" ${ref} data-o="${esc(JSON.stringify(o.value))}">${esc(o.title)}</button>`).join("")}</span></div>`;
+  if ((e.options || []).length) return `<div class="lm-row ma-row">${words}<select class="ma-in" ${ref}>${e.options.map(o => `<option value="${esc(JSON.stringify(o.value))}" ${o.value === v ? "selected" : ""} ${o.disabled ? "disabled" : ""}>${esc(o.title)}</option>`).join("")}</select></div>`;
+  if (e.type === "integer" || e.type === "float") return `<div class="lm-row ma-row">${words}<input class="ma-in" type="number" ${ref} value="${esc(v == null ? "" : v)}" ${e.range ? `min="${e.range[0]}" max="${e.range[1]}"` : ""} step="${e.type === "float" ? "any" : 1}"></div>`;
+  if (e.type === "secure_string") return `<div class="lm-row ma-row">${words}<input class="ma-in" type="password" ${ref} placeholder="${e.is_set ? "Set: type to change" : "Not set"}" autocomplete="off"></div>`;
+  return `<div class="lm-row ma-row">${words}<input class="ma-in" type="text" ${ref} value="${esc(v == null ? "" : v)}" autocomplete="off"></div>`;
+}
+function maDraw(el, r) {
+  const box = $("#ma-body", el); if (!box) return;
+  el.ma = r;
+  const vals = {}; r.entries.forEach(e => { vals[e.key] = e.value != null ? e.value : e.default_value; });
+  const cats = []; r.entries.forEach(e => { if (cats.indexOf(e.category || "generic") < 0) cats.push(e.category || "generic"); });
+  const part = (list, title) => list.length ? `${title ? `<div class="kicker lm-k2">${esc(title)}</div>` : ""}<div class="lm-list">${list.map(e => maEntry(e, r.entries.indexOf(e))).join("")}</div>` : "";
+  const shown = e => maShown(e, vals);
+  box.innerHTML = cats.map(c => part(r.entries.filter(e => (e.category || "generic") === c && !e.advanced && shown(e)), maCat(c))).join("")
+    + (r.entries.some(e => e.advanced && shown(e)) ? `<details class="ma-adv"><summary class="kicker lm-k2">Advanced</summary>${cats.map(c => part(r.entries.filter(e => (e.category || "generic") === c && e.advanced && shown(e)), maCat(c))).join("")}</details>` : "")
+    || `<p class="dim">Nothing to set here.</p>`;
+}
+VIEWS.ma = function (el, arg) {
+  const kind = (arg || "").split("/")[0], id = (arg || "").slice(kind.length + 1);
+  el.innerHTML = `${pageBar("Music Assistant", ["Settings", "&nbsp;"], "", true)}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
+  api("/api/ma/config/item?" + new URLSearchParams({ kind, id })).then(r => {
+    if (r.error) { $("#ma-body", el).innerHTML = `<p class="dim">${esc(r.error)}</p>`; return; }
+    const t = $(".mast-name", el); if (t) t.textContent = r.name;
+    maDraw(el, r);
+  }).catch(() => { $("#ma-body", el).innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
+};
+// a level of a source's tree: folders open the next; artists and albums open Soundsquatch's own pages; songs, playlists
+// and radio play, play next or join the queue
+VIEWS.mab = function (el, path) {
+  el.innerHTML = `${pageBar(esc(path.replace(/^[^:]+:\/\/?/, "").split("/").pop().replace(/^./, c => c.toUpperCase()) || "Browse"), ["Music Assistant", "&nbsp;"], "", true)}<div class="lm-page" id="ma-body">${gathering("small")}</div>`;
+  api("/api/ma/browse?" + new URLSearchParams({ path })).then(r => {
+    const box = $("#ma-body", el); if (!box) return;
+    const art = i => i.image ? `<img loading="lazy" src="${esc(pic(i.image, 160))}" alt="" onerror="this.remove()">` : "";
+    const words = i => `<span class="lm-w"><b>${esc(i.name)}</b>${i.sub || i.year ? `<em>${esc([i.sub, i.year || ""].filter(Boolean).join(" · "))}</em>` : ""}</span>`;
+    const plays = i => `<span class="lm-acts"><button data-act="maPlay" data-v="${esc(i.uri)}" data-how="play" aria-label="Play">${icon("play")}</button><button data-act="maPlay" data-v="${esc(i.uri)}" data-how="next" aria-label="Play next">${icon("next_up")}</button><button data-act="maPlay" data-v="${esc(i.uri)}" data-how="add" aria-label="Add to the queue">${icon("queue")}</button></span>`;
+    box.innerHTML = (r.items || []).length ? `<div class="lm-list">${r.items.map(i =>
+      i.kind === "folder" ? `<a class="lm-row lm-go" href="#/mab/${encodeURIComponent(i.path)}">${art(i)}${words(i)}${icon("chev")}</a>`
+      : i.kind === "artist" ? `<a class="lm-row lm-go" href="${artistHref(i.name)}">${art(i)}${words(i)}${icon("chev")}</a>`
+      : i.kind === "album" ? `<div class="lm-row"><a class="lm-go" href="${awayHref(i.sub, i.name, i.image)}">${art(i)}${words(i)}</a>${plays(i)}</div>`
+      : `<div class="lm-row"><button class="lm-go" data-act="maPlay" data-v="${esc(i.uri)}" data-how="play">${art(i)}${words(i)}</button>${plays(i)}</div>`).join("")}</div>` : `<p class="dim">Nothing here.</p>`;
+  }).catch(() => { const box = $("#ma-body", el); if (box) box.innerHTML = `<p class="dim">Music Assistant didn't answer.</p>`; });
+};
+// one setting saved: the page drawn again with it (another may show or hide with it)
+function maSave(el, e, value) {
+  const r = el.ma; if (!r) return;
+  api("/api/ma/config/save", { kind: r.kind, id: r.id, values: { [e.key]: value } }).then(o => {
+    if (o.error) return toast(o.error.replace(/^\w+Error: /, ""));
+    e.value = value; if (e.type === "secure_string") { e.is_set = !!value; e.value = null; }
+    maDraw(el, r); toast("Saved");
+  }).catch(() => toast("Music Assistant didn't answer"));
+}
+const maAt = t => { const el = t.closest(".view"), r = el && el.ma; return r ? [el, r.entries[+t.dataset.i]] : [null, null]; };
+document.addEventListener("change", ev => {
+  const t = ev.target; if (!t.classList || !t.classList.contains("ma-in")) return;
+  const got = maAt(t), e = got[1]; if (!e) return;
+  let v = t.value;
+  if (t.tagName === "SELECT") v = JSON.parse(v);
+  else if (e.type === "integer") v = parseInt(v, 10);
+  else if (e.type === "float") v = parseFloat(v);
+  if (e.type === "secure_string" && !v) return;
+  if ((e.type === "integer" || e.type === "float") && (isNaN(v) || (e.range && (v < e.range[0] || v > e.range[1])))) return toast(`Between ${e.range[0]} and ${e.range[1]}`);
+  maSave(got[0], e, v);
+});
 /* ───────────────────────── Add to… and ⋯ ─────────────────────────
    An album's (or the playing song's) doings, in two sheets, so its page keeps three buttons: Spin it, Add to… (the
    library, the queue, a playlist, a station, Listen Later, Lyrion's Favorites) and ⋯ (the occasional: share, Lyrion's
@@ -2414,13 +2514,13 @@ function addToSheet(ctx) {
     ctx.k === "album" || (ctx.k === "np" && +ctx.id > 0) ? row("playlist", "list", "A playlist…") : "",
     on("features", "stations") && c.artist ? row("station", "radio_plus", `A station <span class="dim">(${esc(splitArtist(c.artist))})</span>`) : "",
     ctx.k === "album" && A.cfg && A.cfg.have && A.cfg.have.listenlater ? row("later", "clock", "Listen Later") : "",
-    ctx.k === "album" || (ctx.k === "np" && ctx.url) ? row("fav", "link", "Lyrion's Favorites") : ""].join("");
+    !isMA() && (ctx.k === "album" || (ctx.k === "np" && ctx.url)) ? row("fav", "link", "Lyrion's Favorites") : ""].join("");
   openSheet(`<div data-ctx="${ctxAttr(ctx)}"><div class="kicker">Add to…</div><h3>${esc(ctx.k === "np" ? ctx.song || c.title : c.title)}</h3><div class="acts col add-list">${rows}</div></div>`);
 }
 function moreOfSheet(ctx) {
   const c = ctxOf(ctx), id = c.id, a = A.byId.get(id) || [], row = (act, v, ic, words, cls) => `<button class="btn ghost ${cls || ""}" data-act="${act}" data-v="${esc(String(v))}">${icon(ic)} ${words}</button>`;
   openSheet(`<div><div class="kicker">${esc(c.artist)}</div><h3>${esc(c.title)}</h3><div class="acts col">
-    <span class="more-share"></span>${row("lmInfo", "album:" + id, "apps", "More from Lyrion")}
+    <span class="more-share"></span>${isMA() ? "" : row("lmInfo", "album:" + id, "apps", "More from Lyrion")}
     ${row("genreEdit", id, "tag", (a[8] || []).length ? "Edit genres" : "Add genres")}${on("features", "write_files") ? row("artEdit", id, "edit", "Change the cover") : ""}
     ${row("removeAsk", id, "trash", "Remove from the library", "danger")}</div></div>`);
   api("/api/share?album_id=" + id).then(r => { const box = $("#sheet .more-share"); if (r.url && box) box.outerHTML = `<button class="btn ghost" data-act="share" data-v="${esc(JSON.stringify({ title: c.title + " by " + c.artist, url: r.url }))}">${icon("share")} Share</button>`; }).catch(() => {});
@@ -2552,7 +2652,7 @@ function asTurntable(t) {
 }
 function trackArt(t, s) { if (!t) return ""; if (t.artwork_url) return t.artwork_url.charAt(0) === "/" ? t.artwork_url : pic(t.artwork_url); return t.coverid && String(t.coverid).charAt(0) !== "-" ? cover(t.coverid, s) : t.artwork_track_id ? cover(t.artwork_track_id, s) : ""; }
 function send(cmd, words) {
-  return lms(A.room, cmd).then(r => { if (words) toast(words); setTimeout(poll, 250); return r; }).catch(() => toast("Lyrion didn't answer"));
+  return lms(A.room, cmd).then(r => { if (words) toast(words); setTimeout(poll, 250); return r; }).catch(() => toast(SERVER() + " didn't answer"));
 }
 function inOrder() { return A.st && +A.st["playlist shuffle"] ? lms(A.room, ["playlist", "shuffle", 0]) : Promise.resolve(); }
 const ACT = {
@@ -2680,7 +2780,7 @@ const ACT = {
       openSheet(`<div class="kicker">Genres</div><h3>${esc(a[1] || "")}</h3><div class="dim">${esc(a[2] || "")}</div>
         <div class="gpicks">${r.choices.concat(r.genres.filter(g => r.choices.indexOf(g) < 0)).map(g => `<button class="gpick ${r.genres.indexOf(g) >= 0 ? "on" : ""}" data-act="gpick" data-v="${esc(g)}">${esc(g)}</button>`).join("")}</div>
         <div class="seed-add"><input id="g-new" type="text" maxlength="40" placeholder="Add a genre" autocomplete="off" autocorrect="off" spellcheck="false"><button class="btn ghost" data-act="genreNew">Add</button></div>
-        <p class="plan-note">Up to four. A genre you add is offered for every album from then on. Music in Lyrion's folders gets them in its files' genre tags too, and Lyrion looks again; streamed albums keep them here.${r.edited ? " Put back undoes it all: the files' own tags return and the genres are found afresh." : ""}</p>
+        <p class="plan-note">Up to four. A genre you add is offered for every album from then on. ${isMA() ? "They're kept in Soundsquatch, for every screen in the house." : "Music in Lyrion's folders gets them in its files' genre tags too, and Lyrion looks again; streamed albums keep them here."}${r.edited ? " Put back undoes it all: the files' own tags return and the genres are found afresh." : ""}</p>
         <div class="acts col"><button class="btn" data-act="genreSave" data-v="${v}">Save</button>${r.edited ? `<button class="btn ghost" data-act="genreUndo" data-v="${v}">Put back</button>` : ""}<button class="btn ghost" data-act="closeSheet">Not now</button></div>`);
       $("#g-new").addEventListener("keydown", e => { if (e.key === "Enter") ACT.genreNew(); });
     }).catch(() => toast("The server didn't answer"));
@@ -2699,9 +2799,9 @@ const ACT = {
     const s = A.settling; if (!s) return;
     openSheet(`<div class="kicker">Welcome to Soundsquatch</div><h3>It's getting to know your shelves</h3>
       <p class="plan-note">Your ${s.albums.toLocaleString()} albums are here to play now. What Soundsquatch knows about them comes in the background: each artist's story, photographs, members and kindred spirits; each album's genres, credits and review. It asks MusicBrainz, Wikipedia${has("mai") ? " and Lyrion's Music &amp; Artist Information" : ""} for them, and MusicBrainz answers one question a second.</p>
-      <p class="plan-note">For ${s.artists.toLocaleString()} artists that takes <b>about ${timeLeft(s.minutes)}</b>. Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
+      <p class="plan-note">For ${s.albums.toLocaleString()} albums that takes <b>${timeLeft(s.minutes)}</b> (a library of about 1,700 albums takes four or five hours). Pages fill in as it goes, and Discover gets richer through the day.${on("features", "stations") ? " Your stations are made from your own shelves, one for each of their biggest genres, once most of the genres are known." : ""} Nothing needs doing: it carries on with every screen closed.</p>
       <div class="settling settling-in"><span class="settling-t"><b>${s.profiled.toLocaleString()} of ${s.artists.toLocaleString()} artists</b><span>genres for ${(s.albums - s.genres_left).toLocaleString()} of ${s.albums.toLocaleString()} albums, credits for ${(s.albums - s.credits_left).toLocaleString()}</span></span></div>
-      ${PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
+      ${!isMA() && PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<p class="plan-note">Lyrion is without ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).map(x => esc(x[1])).join(", ")}: what ${PLUGINS.filter(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)).length === 1 ? "it adds is" : "they add is"} left out. Settings says what each plugin gives.</p>` : ""}
       <div class="acts col"><button class="btn" data-act="closeSheet">Have a look around</button>${PLUGINS.some(x => !x[3] && !has(x[0]) && !(x[0] === "qobuz" && A.cfg && A.cfg.service)) ? `<a class="btn ghost" href="#/settings/house" data-act="closeSheet">The plugins, in Settings</a>` : ""}</div>`);
   },
   // the diagnostics a tester pastes: shown to read, copied (the clipboard needs https, so a selection otherwise), and
@@ -2724,7 +2824,7 @@ const ACT = {
   },
   roomEdit: v => {
     const p = A.rooms.find(x => x.playerid === v) || {}, r = (A.cfg.rooms || {})[v] || {};
-    openSheet(`<div class="kicker">A room</div><h3>${esc(roomName(v))}</h3><div class="dim">${esc(p.name || "")} in Lyrion</div>
+    openSheet(`<div class="kicker">A room</div><h3>${esc(roomName(v))}</h3><div class="dim">${esc(p.name || "")} in ${SERVER()}</div>
       <div class="seed-add"><input id="room-name" type="text" maxlength="40" value="${esc(r.name || "")}" placeholder="${esc(p.name || "")}" autocomplete="off"></div>
       ${toggle("roomFixed", v, !!r.fixed, "Volume set on the device", "a player kept at full volume (a WiiM, an amplifier's input): no volume slider here")}
       <div class="acts col"><button class="btn" data-act="roomSave" data-v="${v}">Save</button><button class="btn ghost" data-act="closeSheet">Not now</button></div>`);
@@ -2868,7 +2968,9 @@ const ACT = {
   },
   saveConn: () => {
     const conn = {}; document.querySelectorAll("[data-conn]").forEach(i => { conn[i.dataset.conn] = i.value.trim(); });
-    saveSettings({ connections: conn }, "Saved; checks below");
+    const tok = $("[data-ma-token]"), body = { connections: conn }, was = isMA();
+    if (tok && tok.value.trim()) body.ma_token = tok.value.trim();
+    saveSettings(body, "Saved; checks below").then(() => { if (!!conn.ma_url !== was) setTimeout(() => location.reload(), 1500); }); // the other music server: the app starts again on it
   },
   setZoom: v => { device.set("zoom", +v); applyDevice(); if (current && current.kind === "settings") drawSettings(current.el); },
   setDev: v => { device.set(v, !device.get(v, false)); applyDevice(); if (current && current.kind === "settings") drawSettings(current.el); },
@@ -2879,7 +2981,7 @@ const ACT = {
       if (r.error) { t.disabled = false; return toast("Couldn't add it: " + r.error); }
       toast(r.result === "already" ? `${r.album || "It"} is in the library already` : `${r.album || "The album"} is on the shelves`); freshShelves();
       row.querySelectorAll('.keep-log[data-k="' + k.replace(/"/g, '\\"') + '"]').forEach(b => { b.outerHTML = `<span class="kept">${icon("check")}<span class="pl">In the library</span></span>`; });
-    }).catch(() => { t.disabled = false; toast("Lyrion didn't answer"); });
+    }).catch(() => { t.disabled = false; toast(SERVER() + " didn't answer"); });
   },
   share: v => shareIt(JSON.parse(v)),
   copyLink: () => { // a readonly field selected and copied: works on a plain http page, where the clipboard API does not
@@ -2937,7 +3039,7 @@ const ACT = {
       document.querySelectorAll(`.lr-stars[data-album="${id}"]`).forEach(b => lrPaint(b, r));
       if (!r.scanning) (A.rated = A.rated || {})[id] = r.stars; // the five-squatch shelf and filters follow at once
       toast(r.scanning ? "Lyrion is scanning: try again once it's done" : n ? `${r.count} tracks rated` : `${r.count} tracks cleared`);
-    }).catch(() => toast("Lyrion didn't answer"));
+    }).catch(() => toast(SERVER() + " didn't answer"));
   },
   histOpen: (v, t) => { const list = t.parentNode.querySelector(".hg-list"); list.hidden = !list.hidden; t.classList.toggle("on", !list.hidden); },
   ttDismiss: v => { closeSheet(); A.ttShowing = ""; api("/api/turntable/dismiss", { id: v }).then(r => { if (A.tt) A.tt.alert = r.alert; ttBadge(); }).catch(() => toast("The server didn't answer")); },
@@ -2964,6 +3066,13 @@ const ACT = {
     closeSheet();
     location.hash = lmHref(a.cmd, a.params, String(x.text || x.name || "").split("\n")[0]);
   },
+  maSwitch: (v, t) => { const got = maAt(t), e = got[1]; if (!e) return; const now = !(e.value != null ? e.value : e.default_value); t.classList.toggle("on", now); maSave(got[0], e, now); },
+  maMulti: (v, t) => { const got = maAt(t), e = got[1]; if (!e) return; const o = JSON.parse(t.dataset.o), cur = (e.value != null ? e.value : e.default_value || []).slice(), at = cur.indexOf(o); if (at >= 0) cur.splice(at, 1); else cur.push(o); maSave(got[0], e, cur); },
+  maAction: (v, t) => {
+    const got = maAt(t), e = got[1], r = got[0] && got[0].ma; if (!e) return;
+    t.disabled = true; toast(`${e.action_label || "Running"}…`);
+    api("/api/ma/config/action", { kind: r.kind, id: r.id, action: e.action }).then(o => { t.disabled = false; toast(o.error ? o.error.replace(/^\w+Error: /, "") : "Done"); }).catch(() => { t.disabled = false; toast("Music Assistant didn't answer"); });
+  },
   repairFind: v => {
     const x = (A.missing || []).find(m => m.k === v); if (!x) return;
     openSheet(`<div data-k="${esc(v)}"><div class="kicker">Gone from ${esc(SVC())}</div><h3>${esc(x.title)}</h3><div class="dim">${esc(x.artist)}</div><div class="repair-list">${gathering("small")}</div>
@@ -2989,6 +3098,10 @@ const ACT = {
     closeSheet();
     api("/api/repair", { k: v, dismiss: true }).then(() => { A.missing = (A.missing || []).filter(m => m.k !== v); if (current && current.kind === "missing") VIEWS.missing(current.el); toast("Dropped"); }).catch(() => toast("The server didn't answer"));
   },
+  maPlay: (v, t) => {
+    const how = t.dataset.how || "play";
+    inOrder().then(() => api("/api/ma/play", { uri: v, how, player: A.room })).then(r => { toast(r.error || { play: `Playing in ${roomName(A.room)}`, next: "Next up", add: "Added to the queue" }[how]); setTimeout(poll, 600); }).catch(() => toast("Music Assistant didn't answer"));
+  },
   addTo: v => addToSheet(JSON.parse(v)),
   moreOf: v => moreOfSheet(JSON.parse(v)),
   addToDo: (v, t) => {
@@ -3001,11 +3114,11 @@ const ACT = {
       if (v === "next") return ACT.nextAlbum(String(c.id));
       if (v === "queue") return ACT.queueAlbum(String(c.id));
       if (v === "later") return ACT.listenLater(String(c.id));
-      if (v === "fav") return lms("", ["favorites", "add", "url:db:album.title=" + encodeURIComponent(c.title) + "&contributor.name=" + encodeURIComponent(c.artist), "title:" + c.title]).then(() => toast(`${c.title} is in Lyrion's Favorites`)).catch(() => toast("Lyrion didn't answer"));
+      if (v === "fav") return lms("", ["favorites", "add", "url:db:album.title=" + encodeURIComponent(c.title) + "&contributor.name=" + encodeURIComponent(c.artist), "title:" + c.title]).then(() => toast(`${c.title} is in Lyrion's Favorites`)).catch(() => toast(SERVER() + " didn't answer"));
     }
     if (ctx.k === "np") {
-      if (v === "library") return api("/api/keep", { url: ctx.url, player: A.room, cover: ctx.cover || "" }).then(r => { toast(r.error ? "Couldn't add it: " + r.error : r.result === "already" ? `${r.album || "It"} is in the library already` : `${r.album || "The album"} is on the shelves`); if (!r.error) freshShelves(); }).catch(() => toast("Lyrion didn't answer"));
-      if (v === "fav") return lms("", ["favorites", "add", "url:" + ctx.url, "title:" + (ctx.song || "")]).then(() => toast(`${ctx.song || "It"} is in Lyrion's Favorites`)).catch(() => toast("Lyrion didn't answer"));
+      if (v === "library") return api("/api/keep", { url: ctx.url, player: A.room, cover: ctx.cover || "" }).then(r => { toast(r.error ? "Couldn't add it: " + r.error : r.result === "already" ? `${r.album || "It"} is in the library already` : `${r.album || "The album"} is on the shelves`); if (!r.error) freshShelves(); }).catch(() => toast(SERVER() + " didn't answer"));
+      if (v === "fav") return lms("", ["favorites", "add", "url:" + ctx.url, "title:" + (ctx.song || "")]).then(() => toast(`${ctx.song || "It"} is in Lyrion's Favorites`)).catch(() => toast(SERVER() + " didn't answer"));
     }
   },
   lmPlay: v => lmRun(v, "play", `Playing in ${roomName(A.room)}`),
@@ -3016,7 +3129,7 @@ const ACT = {
     const got = lmItem(v), x = got[0]; if (!x) return;
     const on = !+x.checkbox, a = (x.actions || {})[on ? "on" : "off"]; if (!a) return;
     x.checkbox = on ? 1 : 0; t.classList.toggle("on", on);
-    lms(A.room || "", lmArgs(a.cmd, a.params)).catch(() => toast("Lyrion didn't answer"));
+    lms(A.room || "", lmArgs(a.cmd, a.params)).catch(() => toast(SERVER() + " didn't answer"));
   },
   // Lyrion's own menu for a track or an album (what every plugin adds there: ratings, lyrics, favourites, its biography…)
   lmInfo: v => {
@@ -3024,9 +3137,9 @@ const ACT = {
     if (!inSheet || k !== "track") openSheet(`<div class="kicker">From Lyrion</div><h3>${k === "album" ? esc((A.byId.get(+id) || [])[1] || "The album") : k === "queue" ? esc((((A.st || {}).playlist_loop || []).find(x => +x["playlist index"] === +id) || {}).title || "The song") : "The track"}</h3><div id="lm-sheet">${gathering("small")}</div>`);
     else { inSheet.innerHTML = gathering("small"); const b = $(".lm-more-open"); if (b) b.remove(); }
     lmItems(k === "album" ? ["albuminfo", "items"] : ["trackinfo", "items"], k === "album" ? { album_id: id } : k === "queue" ? { playlist_index: id } : { track_id: id }, 0, 100)
-      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, "", true); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, "", true); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">${SERVER()} didn't answer.</p>`; });
   },
-  roomPower: (v, t) => { const on = t.classList.contains("on"); lms(v, ["power", on ? 0 : 1]).then(() => { t.classList.toggle("on", !on); toast(`${roomName(v)} ${on ? "off" : "on"}`); if (v === A.room) setTimeout(poll, 400); }).catch(() => toast("Lyrion didn't answer")); },
+  roomPower: (v, t) => { const on = t.classList.contains("on"); lms(v, ["power", on ? 0 : 1]).then(() => { t.classList.toggle("on", !on); toast(`${roomName(v)} ${on ? "off" : "on"}`); if (v === A.room) setTimeout(poll, 400); }).catch(() => toast(SERVER() + " didn't answer")); },
   sleepSheet: () => {
     const left = +(A.st || {}).will_sleep_in || 0;
     openSheet(`<div class="kicker">Sleep</div><h3>${esc(roomName(A.room))}</h3>${left ? `<div class="dim">Stops in ${Math.ceil(left / 60)} minutes.</div>` : ""}
@@ -3036,7 +3149,7 @@ const ACT = {
   sleepSet: v => {
     closeSheet();
     const st = A.st || {}, secs = v === "end" ? Math.max(1, Math.round((+st.duration || 0) - (+st.time || 0))) : +v;
-    lms(A.room, ["sleep", secs]).then(() => { toast(secs ? `Stops in ${Math.ceil(secs / 60)} minutes` : "Timer off"); setTimeout(poll, 400); }).catch(() => toast("Lyrion didn't answer"));
+    lms(A.room, ["sleep", secs]).then(() => { toast(secs ? `Stops in ${Math.ceil(secs / 60)} minutes` : "Timer off"); setTimeout(poll, 400); }).catch(() => toast(SERVER() + " didn't answer"));
   },
   shuffleSet: v => send(["playlist", "shuffle", v]),
   queueClear: () => openSheet(`<div class="kicker">The queue</div><h3>Clear it?</h3><div class="dim">Everything in ${esc(roomName(A.room))}'s queue goes, the song playing too.</div>
@@ -3044,19 +3157,19 @@ const ACT = {
   queueClearDo: () => { closeSheet(); send(["playlist", "clear"]); toast("Queue cleared"); },
   queueAll: () => { // the whole queue, not only what Now Playing shows
     openSheet(`<div class="kicker">The queue</div><h3>${esc(roomName(A.room))}</h3><div class="nx-all">${gathering("small")}</div>`);
-    lms(A.room, ["status", 0, 1000, "tags:aAlKcdjJNtyeu"]).then(st => { const box = $("#sheet .nx-all"); if (box) box.innerHTML = (st.playlist_loop || []).map(x => nxRow(x).replace('class="nx"', `class="nx ${+x["playlist index"] === +st.playlist_cur_index ? "now" : ""}"`)).join(""); }).catch(() => toast("Lyrion didn't answer"));
+    lms(A.room, ["status", 0, 1000, "tags:aAlKcdjJNtyeu"]).then(st => { const box = $("#sheet .nx-all"); if (box) box.innerHTML = (st.playlist_loop || []).map(x => nxRow(x).replace('class="nx"', `class="nx ${+x["playlist index"] === +st.playlist_cur_index ? "now" : ""}"`)).join(""); }).catch(() => toast(SERVER() + " didn't answer"));
   },
   lmChoice: v => {
     const p = v.split(":"), j = +p.pop(), got = lmItem(p.join(":")), x = got[0]; if (!x) return;
     const c = x.actions.do.choices[j]; if (!c) return;
-    lms(A.room || "", lmArgs(c.cmd, c.params || {})).then(() => { x.selectedIndex = j + 1; lmRefresh(); toast(x.choiceStrings[j]); }).catch(() => toast("Lyrion didn't answer"));
+    lms(A.room || "", lmArgs(c.cmd, c.params || {})).then(() => { x.selectedIndex = j + 1; lmRefresh(); toast(x.choiceStrings[j]); }).catch(() => toast(SERVER() + " didn't answer"));
   },
   lmMore: v => {
     const got = lmItem(v), x = got[0]; if (!x) return;
     const a = lmAction(x, got[1], "more"); if (!a) return;
     openSheet(`<div class="kicker">More</div><h3>${esc(String(x.text || "").split("\n")[0])}</h3><div id="lm-sheet">${gathering("small")}</div>`);
     lmItems(a.cmd, a.params, 0, 100)
-      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, "", /^(trackinfo|albuminfo|artistinfo|genreinfo|yearinfo)$/.test(a.cmd[0])); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">Lyrion didn't answer.</p>`; });
+      .then(r => { const box = $("#lm-sheet"); if (box) lmDraw(box, "sheet", r, "", /^(trackinfo|albuminfo|artistinfo|genreinfo|yearinfo)$/.test(a.cmd[0])); }).catch(() => { const box = $("#lm-sheet"); if (box) box.innerHTML = `<p class="dim">${SERVER()} didn't answer.</p>`; });
   },
   trackWho: (v, t) => { // a track's credits, opened under it (and closed again)
     const row = t.closest(".trk"), open = row.nextElementSibling;
@@ -3111,7 +3224,7 @@ const ACT = {
     lms(room, ["playerpref", "replayGainMode", v]).then(() => {
       t.parentNode.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === t));
       toast(`Volume levelling ${v === "0" ? "off" : "by " + LEVELS[+v][1].toLowerCase()} in ${roomName(room)}`);
-    }).catch(() => toast("Lyrion didn't answer"));
+    }).catch(() => toast(SERVER() + " didn't answer"));
   },
   discReset: () => saveSettings({ discover_order: [] }, "Each look has its own order again"),
   setTab: (v, t) => { device.set("settab", v); const box = t.closest(".settings"); box.setAttribute("data-on", v);
@@ -3161,7 +3274,7 @@ const ACT = {
     t.disabled = true; t.textContent = "Putting back…";
     api("/api/restore", { id: +v, player: A.room }).then(r => {
       if (r.error) { toast("Couldn't put it back"); t.disabled = false; t.textContent = "Put back"; return; }
-      toast(`${r.album} is going back on the shelves` + (r.kept ? ` (${r.kept} ${r.kept === 1 ? "file was" : "files were"} already there again, left as they are)` : "") + "; Lyrion shows it in a minute or two");
+      toast(`${r.album} is going back on the shelves` + (r.kept ? ` (${r.kept} ${r.kept === 1 ? "file was" : "files were"} already there again, left as they are)` : "") + "; " + SERVER() + " shows it in a minute or two");
       VIEWS.removed(current.el);
       setTimeout(() => loadLibrary().then(() => Array.from(A.views.keys()).forEach(h => { const view = A.views.get(h); if (view !== current) { view.el.remove(); A.views.delete(h); } })), 90000);
     }).catch(() => { toast("The server didn't answer"); t.disabled = false; t.textContent = "Put back"; });
@@ -3170,24 +3283,25 @@ const ACT = {
   removeAsk: v => {
     openSheet(`<div class="kicker">Remove from the library</div><h3>Looking&hellip;</h3>`);
     api("/api/removal?id=" + v).then(r => {
-      if (r.error) { closeSheet(); return toast("Couldn't find that album in Lyrion"); }
+      if (r.error) { closeSheet(); return toast(`Couldn't find that album in ${SERVER()}`); }
       const what = [];
-      if (r.qobuz) what.push(`Takes it out of your ${SVC()} favourites.`);
+      if (r.ma) what.push(r.local ? "Takes it out of Music Assistant's library. Its files stay where they are, so Music Assistant may bring it back when it next scans them." : `Takes it out of Music Assistant's library (and your ${SVC()} favourites, when Music Assistant syncs back to it).`);
+      if (r.qobuz && !r.ma) what.push(`Takes it out of your ${SVC()} favourites.`);
       if (r.files) what.push(`Moves its ${r.files} ${r.files === 1 ? "file" : "files"}${r.copies > 1 ? ` (${r.copies} copies)` : ""} to <b>${esc(r.to)}</b>, out of Lyrion's sight. Nothing is deleted: they can be put back.`);
-      if (!what.length) what.push("Lyrion holds nothing for it that this can remove.");
+      if (!what.length) what.push(`${SERVER()} holds nothing for it that this can remove.`);
       openSheet(`<div class="kicker">Remove from the library</div><h3>${esc(r.album)}</h3><div class="dim">${esc(r.artist)}</div>
         <ul class="plan">${what.map(w => `<li>${w}</li>`).join("")}${r.versions_left ? `<li>Only this pressing goes: ${r.versions_left === 1 ? "the other pressing stays" : `the other ${r.versions_left} pressings stay`} on the shelves.</li>` : ""}<li>Its rating is kept.</li></ul>
-        <div class="acts col">${r.qobuz || r.files ? `<button class="btn danger-solid" data-act="removeDo" data-v="${v}">${icon("trash")} Remove it</button>` : ""}<button class="btn ghost" data-act="closeSheet">Keep it</button></div>`);
-    }).catch(() => { closeSheet(); toast("Lyrion didn't answer"); });
+        <div class="acts col">${r.ma || r.qobuz || r.files ? `<button class="btn danger-solid" data-act="removeDo" data-v="${v}">${icon("trash")} Remove it</button>` : ""}<button class="btn ghost" data-act="closeSheet">Keep it</button></div>`);
+    }).catch(() => { closeSheet(); toast(SERVER() + " didn't answer"); });
   },
   removeDo: v => {
     const a = A.byId.get(+v); closeSheet(); toast(`Removing ${a ? a[1] : "the album"}…`);
     api("/api/remove", { id: +v, player: A.room }).then(r => {
-      if (r.error) return toast("Lyrion wouldn't remove it");
+      if (r.error) return toast(SERVER() + " wouldn't remove it");
       // the shelves as the server now has them (another version, if any, standing in), every page drawn again when next opened
       loadLibrary().then(() => { Array.from(A.views.keys()).forEach(h => { const view = A.views.get(h); if (view !== current) { view.el.remove(); A.views.delete(h); } }); back(); });
       toast(`${r.album} is off the shelves` + (r.qobuz ? ` and out of your ${SVC()} favourites` : "") + (r.moved ? `; ${r.moved} ${r.moved === 1 ? "file" : "files"} moved to music-removed` : "") + (r.problems.length ? ` (${r.problems[0]})` : ""));
-    }).catch(() => toast("Lyrion didn't answer"));
+    }).catch(() => toast(SERVER() + " didn't answer"));
   },
   setLook: v => {
     device.set("look", v); applyDevice();
@@ -3220,8 +3334,8 @@ const ACT = {
     if (!v) { body.name = (prompt("Name the new playlist:") || "").trim(); if (!body.name) return; }
     body[what[0] === "album" ? "album_id" : "track_id"] = +what[1];
     closeSheet();
-    api("/api/playlist-add", body).then(r => { if (r.error) return toast("Lyrion wouldn't add it"); toast(`Added ${r.added} ${r.added === 1 ? "track" : "tracks"}${body.name ? " to " + body.name : ""}`); forgetPlaylists(); })
-      .catch(() => toast("Lyrion didn't answer"));
+    api("/api/playlist-add", body).then(r => { if (r.error) return toast(SERVER() + " wouldn't add it"); toast(`Added ${r.added} ${r.added === 1 ? "track" : "tracks"}${body.name ? " to " + body.name : ""}`); forgetPlaylists(); })
+      .catch(() => toast(SERVER() + " didn't answer"));
   },
   playPlaylist: v => { const p = v.split(":"); inOrder().then(() => send(["playlistcontrol", "cmd:load", "playlist_id:" + p[0], "play_index:" + p[1]], "Spinning the playlist")); },
   plRemove: v => { const p = v.split(":"); api("/api/playlist-do", { what: "remove", playlist_id: +p[0], index: +p[1] }).then(() => { forgetPlaylists(); VIEWS.playlist(current.el, p[0]); }); },
@@ -3238,10 +3352,10 @@ const ACT = {
   plNew: () => {
     const name = (prompt("Name the new playlist:") || "").trim(); if (!name) return;
     api("/api/playlist-do", { what: "new", name: name }).then(r => {
-      if (r.error && !r.playlist_id) return toast("Lyrion wouldn't make it");
+      if (r.error && !r.playlist_id) return toast(SERVER() + " wouldn't make it");
       if (r.error) toast("There's one by that name already: here it is");
       forgetPlaylists(); playlistsList().then(() => { location.hash = "#/playlist/" + r.playlist_id; });
-    }).catch(() => toast("Lyrion didn't answer"));
+    }).catch(() => toast(SERVER() + " didn't answer"));
   },
   saveQueue: () => {
     const name = (prompt("Save the queue as a playlist called:") || "").trim(); if (!name) return;
@@ -3276,9 +3390,9 @@ const ACT = {
   moveTo: v => {
     toast(`Moving the music to ${roomName(v)}…`);
     api("/api/move", { from: A.room, to: v }).then(r => {
-      if (r.error) return toast(r.error === "nothing to move" ? "Nothing is playing here" : "Lyrion wouldn't move it");
+      if (r.error) return toast(r.error === "nothing to move" ? "Nothing is playing here" : SERVER() + " wouldn't move it");
       ACT.room(v); toast(`Now playing in ${roomName(v)}`);
-    }).catch(() => toast("Lyrion didn't answer"));
+    }).catch(() => toast(SERVER() + " didn't answer"));
   },
   room: v => { A.room = v; store.set("sq-room", v); closeSheet(); A.st = null; A.curKey = "\u0000"; poll(); loadView().then(() => { if (current && /^(albums|artists)$/.test(current.kind)) redraw(); }); },
   rooms: () => openRooms(),
@@ -3307,9 +3421,9 @@ function withRoom(go) {
   lms("", ["players", 0, 50]).then(r => {
     A.rooms = (r.players_loop || []).filter(p => p.connected);
     const p = A.rooms.find(x => x.modelname !== "Group") || A.rooms[0];
-    if (!p) return toast("No players are on. Turn on a speaker Lyrion knows, then try again");
+    if (!p) return toast(`No players are on. Turn on a speaker ${SERVER()} knows, then try again`);
     A.room = p.playerid; A.curKey = "\u0000"; poll(); go();
-  }).catch(() => toast("Lyrion isn't answering"));
+  }).catch(() => toast(SERVER() + " isn't answering"));
 }
 // an artist's page asked for as the finger lands, so it is often there by the time the tap ends
 document.addEventListener("touchstart", e => {
@@ -3344,7 +3458,7 @@ function openTrackMenu(v) {
       <div class="acts col"><button class="btn" data-act="trackDo" data-v="play">${icon("play")} Spin from here</button><button class="btn ghost" data-act="trackDo" data-v="next">${icon("next_up")} Spin it next</button>
       <button class="btn ghost" data-act="trackDo" data-v="queue">${icon("queue")} Add to the queue</button><button class="btn ghost" data-act="addToPlaylist" data-v="track:${t.id}">${icon("list")} Add to a playlist</button>
       <button class="btn ghost" data-act="banDo" data-v="track" data-artist="${esc(t.artist || d.artist)}" data-title="${esc(t.title)}">${icon("ban")} Never play this track</button><button class="btn ghost" data-act="trackDo" data-v="radio">${icon("radio")} Start a radio from it</button>${on("features", "write_files") ? `<button class="btn ghost" data-act="titleEdit" data-v="${t.id}" data-album="${esc(p[0])}">${icon("edit")} Fix the title</button>` : ""}</div>
-      <button class="lm-more-open" data-act="lmInfo" data-v="track:${t.id}">${icon("more")} More from Lyrion</button><div id="lm-sheet"></div></div>`);
+      ${isMA() ? "" : `<button class="lm-more-open" data-act="lmInfo" data-v="track:${t.id}">${icon("more")} More from Lyrion</button>`}<div id="lm-sheet"></div></div>`);
   });
 }
 function openSheet(html) { const s = $("#sheet"); s.innerHTML = `<div class="sheet-bg" data-act="closeSheet"></div><div class="sheet-card">${html}</div>`; s.hidden = false; requestAnimationFrame(() => s.classList.add("on")); }
@@ -3447,7 +3561,7 @@ function openRooms() {
         ${me ? "" : `<span class="room-acts">${joined ? `<button data-act="syncLeave" data-v="${p.playerid}" aria-label="Leave">${icon("close")}<span class="lb">Leave</span></button>` : inStep(p) && inStep(here[0]) ? `<button data-act="syncJoin" data-v="${p.playerid}" aria-label="Join">${icon("link")}<span class="lb">Join</span></button>` : ""}
           ${playing && !joined ? `<button data-act="moveTo" data-v="${p.playerid}" aria-label="Move music here">${icon("move")}<span class="lb">Move music here</span></button>` : ""}</span>`}</div>`;
     }).join("")}</div>
-    ${isGroup(here[0]) ? `<p class="plan-note">${esc(roomName(A.room))} is a group: the rooms in it play together, and which rooms they are is set in Lyrion's Groups plugin.</p>`
+    ${isGroup(here[0]) ? `<p class="plan-note">${esc(roomName(A.room))} is a group: the rooms in it play together, and which rooms they are is set in ${isMA() ? "Music Assistant's own Settings (its sync groups)" : "Lyrion's Groups plugin"}.</p>`
       : here[0] && !inStep(here[0]) ? `<p class="plan-note">${esc(roomName(A.room))} plays through a bridge (a Chromecast or the like), which can't keep in step with other rooms, so it can't be grouped.</p>`
       : r[2].some(p => p.playerid !== A.room && !inStep(p) && !isGroup(p)) ? `<p class="plan-note">Rooms without Join play through a bridge (a Chromecast or the like) and can't keep in step with others.</p>` : ""}
     ${has("radio") ? `<button class="radio-row radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")}<span><b>Radio in ${esc(roomName(A.room))}</b><em>When the queue runs out, more like it follows</em></span><i class="sw"></i></button>` : ""}`);
@@ -3468,7 +3582,7 @@ function poll() {
     if (/[?&]np\b/.test(location.search) && !A.npOnce) { A.npOnce = true; openNp(); } // ?np opens straight onto Now Playing
     if (/[?&]rooms\b/.test(location.search) && !A.roomsOnce) { A.roomsOnce = true; openRooms(); } // ?rooms, onto the rooms
     A.misses = 0; offline(false);
-  }).catch(e => { if (++A.misses >= 3) offline(e && e.lyrion ? "Lyrion isn't answering" : "Soundsquatch isn't answering"); })
+  }).catch(e => { if (++A.misses >= 3) offline(e && e.lyrion ? SERVER() + " isn't answering" : "Soundsquatch isn't answering"); })
     .then(() => { pollT = setTimeout(poll, A.misses >= 3 ? 4000 : $("#np").hidden ? 1500 : 1000); });
 }
 A.misses = 0;
@@ -3745,7 +3859,7 @@ function drawNp() {
       <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>${t.turntable && A.tt ? ttAsk(A.tt) : ""}
-        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${addToBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0, cover: /^https?:/.test(t.artwork_url || "") ? t.artwork_url : "" }).replace('class="add-to"', 'class="pill add-to" aria-label="Add to…"')}${has("radio") ? `<button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button><button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
+        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${addToBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0, cover: /^https?:/.test(t.artwork_url || "") ? t.artwork_url : "" }).replace('class="add-to"', 'class="pill add-to" aria-label="Add to…"')}${has("radio") ? `<button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${isMA() ? "" : `<button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>`}${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
       <div class="np-next"></div></div></div>`;
   drawNpSide();
@@ -3766,7 +3880,7 @@ function whoIs(full) {
   return ask(0).then(p => known(p) ? [full, p] : profile(first).then(q => [first, q]));
 }
 // a song in the queue: jump to it, drag it, take it out, or Lyrion's own menu for it
-const nxRow = x => `<div class="nx" data-i="${x["playlist index"]}"><span class="grip" aria-label="Drag to reorder">${icon("grip")}</span><button class="nx-go" data-act="jump" data-v="${x["playlist index"]}">${trackArt(x, 100) ? `<img loading="lazy" src="${esc(trackArt(x, 100))}" alt="">` : `<span class="noimg"></span>`}<span><b>${esc(x.title)}</b><em>${esc(x.artist || "")}</em></span></button><button class="nx-x nx-more" data-act="lmInfo" data-v="queue:${x["playlist index"]}" aria-label="More">${icon("more")}</button><button class="nx-x" data-act="drop" data-v="${x["playlist index"]}" aria-label="Remove">${icon("close")}</button></div>`;
+const nxRow = x => `<div class="nx" data-i="${x["playlist index"]}"><span class="grip" aria-label="Drag to reorder">${icon("grip")}</span><button class="nx-go" data-act="jump" data-v="${x["playlist index"]}">${trackArt(x, 100) ? `<img loading="lazy" src="${esc(trackArt(x, 100))}" alt="">` : `<span class="noimg"></span>`}<span><b>${esc(x.title)}</b><em>${esc(x.artist || "")}</em></span></button>${isMA() ? "" : `<button class="nx-x nx-more" data-act="lmInfo" data-v="queue:${x["playlist index"]}" aria-label="More">${icon("more")}</button>`}<button class="nx-x" data-act="drop" data-v="${x["playlist index"]}" aria-label="Remove">${icon("close")}</button></div>`;
 function upNext() {
   const st = A.st || {}, list = (st.playlist_loop || []).slice(1), total = +st.playlist_tracks || 0, cur = +st.playlist_cur_index || 0, left = Math.max(0, total - cur - 1), sh = +st["playlist shuffle"] || 0;
   const ctl = total ? `<div class="nx-ctl"><span>${left ? `${left} to come` : "The last song"}</span><span class="seg">${["Off", "Song", "Album"].map((w, i) => `<button class="${sh === i ? "on" : ""}" data-act="shuffleSet" data-v="${i}">${i ? "Shuffle " + w.toLowerCase() + "s" : "In order"}</button>`).join("")}</span>
@@ -3805,7 +3919,7 @@ function openSignalPath() {
   const t = curTrack(), room = A.room; if (!t) return;
   Promise.all([lms("", ["players", 0, 50]), lms(room, ["playerpref", "replayGainMode", "?"])]).then(r => {
     const p = (r[0].players_loop || []).find(x => x.playerid === room) || {}, level = String(r[1]._p2 || "0"), url = t.url || "";
-    const from = /^qobuz:/.test(url) ? "Qobuz" : /^tidal:/.test(url) ? "TIDAL" : /archive\.org/.test(url) ? "The Internet Archive" : /^file:/.test(url) ? "A file on the server" : /^https?:/.test(url) ? "A stream" : "Lyrion's library";
+    const from = /^qobuz/.test(url) ? "Qobuz" : /^tidal/.test(url) ? "TIDAL" : /^spotify/.test(url) ? "Spotify" : /archive\.org/.test(url) ? "The Internet Archive" : /^(file:|filesystem)/.test(url) ? "A file on the server" : /^https?:/.test(url) ? "A stream" : SERVER() + "'s library";
     const kind = String(t.type || "").toLowerCase(), lossless = LOSSLESS_TYPES.indexOf(kind) >= 0 || DSD_TYPES.indexOf(kind) >= 0;
     const format = formatWords(kind, t.samplesize, t.samplerate, t.bitrate), st = A.st || {};
     const told = !!st.type, out = told ? formatWords(st.type, st.samplesize, st.samplerate, st.bitrate) : "", changed = told && +st.is_transcoded;
@@ -3813,14 +3927,14 @@ function openSignalPath() {
     const step = (title, what, note) => `<div class="sp-step"><i></i><div><div class="kicker">${title}</div><b>${what}</b>${note ? `<em>${note}</em>` : ""}</div></div>`;
     openSheet(`<div class="kicker">Playing through</div><h3>${esc(t.title || "")}</h3><div class="dim">${esc(t.artist || "")}</div>
       <div class="sp">${step("Source", esc(from), esc(format) + (lossless ? " &middot; lossless" : " &middot; compressed"))}
-      ${step("Lyrion", changed ? `Converts it: sends ${esc(out)}` : told ? "Sends it as it is" : bridge ? "Streams it to a bridge" : "Streams it to the player",
+      ${isMA() ? step("Music Assistant", "Streams it to the speaker", "In the form that kind of speaker takes (a Chromecast, AirPlay, a WiiM…): Music Assistant speaks to each natively") : step("Lyrion", changed ? `Converts it: sends ${esc(out)}` : told ? "Sends it as it is" : bridge ? "Streams it to a bridge" : "Streams it to the player",
         [changed ? "Lyrion is transcoding or resampling for this player (its own settings: bitrate limit, sample-rate limit, format)" : "", bridge ? `The bridge hands it on to ${device} as its plugin is set up; the bridge can change the format on the way` : changed ? "" : "The player decodes it itself",
          told ? "" : "Lyrion 9.2 and later say here exactly what they send"].filter(Boolean).join(". "))}
       ${step("Room", esc(roomName(room)), esc(p.modelname || ""))}</div>
-      <div class="kicker sp-h">Volume levelling in ${esc(roomName(room))}</div>
+      ${isMA() ? `<div class="kicker sp-h">Volume levelling in ${esc(roomName(room))}</div><p class="plan-note">Set in the room's own Music Assistant settings (its volume normalisation): <a href="#/ma/player/${encodeURIComponent(room)}" data-close="1">${esc(roomName(room))}'s settings</a>.</p>` : `<div class="kicker sp-h">Volume levelling in ${esc(roomName(room))}</div>
       <div class="seg sp-seg">${LEVELS.map(l => `<button class="${l[0] === level ? "on" : ""}" data-act="levelSet" data-v="${l[0]}">${l[1]}</button>`).join("")}</div>
-      <p class="plan-note">Evens out loudness from the ReplayGain tags in the music. Track: every song alike. Album: an album's own ups and downs kept. Smart: album when an album plays through, track otherwise. Music without the tags plays as it is${bridge ? "; bridges may not apply it" : ""}.</p>`);
-  }).catch(() => toast("Lyrion didn't answer"));
+      <p class="plan-note">Evens out loudness from the ReplayGain tags in the music. Track: every song alike. Album: an album's own ups and downs kept. Smart: album when an album plays through, track otherwise. Music without the tags plays as it is${bridge ? "; bridges may not apply it" : ""}.</p>`}`);
+  }).catch(() => toast(SERVER() + " didn't answer"));
 }
 function paintNp() {
   if (ttLeads()) return;
@@ -3975,7 +4089,17 @@ function firstRun() {
     $("#main").innerHTML = `<div class="loading">${head}<p>${login ? "Lyrion asks for a username and password." : "Soundsquatch can't find Lyrion on the network. Where is it?"}</p>
       <div class="seed-add first-run"><input id="lms-at" type="url" placeholder="192.168.1.20:9000" value="${esc(c.connections.lms_url || "")}" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" id="lms-go">Look there</button></div>
       ${login ? `<div class="first-run">${loginFields(c)}</div>` : ""}
-      <p class="dim" id="lms-said">${login ? "" : esc(c.checks.lms_url || "")}</p></div>`;
+      <p class="dim" id="lms-said">${login ? "" : esc(c.checks.lms_url || "")}</p>
+      ${login ? "" : `<p><button class="pill" id="ma-show">Use Music Assistant instead</button></p><div class="first-run" id="ma-fields" hidden>
+        <input id="ma-at" type="url" placeholder="192.168.1.8:8095" value="${esc(c.ma_guess || "")}" autocomplete="off" autocapitalize="off" spellcheck="false"><input id="ma-tok" type="password" placeholder="a long-lived token (its Settings, Profile)" autocomplete="off">
+        <button class="btn" id="ma-go">Use it</button><p class="dim" id="ma-said"></p></div>`}</div>`;
+    const ms = $("#ma-show"); if (ms) ms.addEventListener("click", () => { $("#ma-fields").hidden = false; ms.hidden = true; $(c.ma_guess ? "#ma-tok" : "#ma-at").focus(); });
+    if (ms && c.ma_guess) ms.click(); // Music Assistant beside it (its add-on): offered first, its address filled in
+    const mg = $("#ma-go"); if (mg) mg.addEventListener("click", () => {
+      const u = $("#ma-at").value.trim(), t = $("#ma-tok").value.trim(); if (!u || !t) return;
+      $("#ma-said").textContent = "Asking…";
+      api("/api/settings", { connections: { ma_url: u }, ma_token: t }).then(r => { if (r.checks.ma_ok) location.reload(); else $("#ma-said").textContent = "Not answering: " + (r.checks.ma_url || ""); }).catch(stuck);
+    });
     const go = () => {
       let u = $("#lms-at").value.trim().replace(/\/+$/, "");
       if (!/^https?:\/\//.test(u)) u = "http://" + u;

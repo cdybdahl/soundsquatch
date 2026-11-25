@@ -1,9 +1,9 @@
 # Soundsquatch in a container: the service and the app, its data in /data (a volume).
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends tzdata ffmpeg && rm -rf /var/lib/apt/lists/* \
- && pip install --no-cache-dir pillow==11.3.0 mutagen==1.47.0 opencv-python-headless==4.10.0.84 shazamio==0.9.0  # opencv: finding faces in artist photographs. tzdata: the house's own day (TZ), for On this day and the log. ffmpeg and shazamio: the turntable (reading the music files, the songs it captures, the live stream; naming what the house has no file of)
+ && pip install --no-cache-dir pillow==11.3.0 mutagen==1.47.0 opencv-python-headless==4.10.0.84 shazamio==0.9.0 websocket-client==1.8.0  # websocket-client: Music Assistant (a trial). opencv: finding faces in artist photographs. tzdata: the house's own day (TZ), for On this day and the log. ffmpeg and shazamio: the turntable (reading the music files, the songs it captures, the live stream; naming what the house has no file of)
 WORKDIR /soundsquatch
-COPY soundsquatch.py turntable.py lms_qobuz.py lms_keep_album.py streaming.py library.py genres.py listening.py stage-photos.json face_detection_yunet_2023mar.onnx ./
+COPY soundsquatch.py turntable.py lms_qobuz.py lms_keep_album.py streaming.py library.py backend_ma.py genres.py listening.py stage-photos.json face_detection_yunet_2023mar.onnx ./
 COPY app/ app/
 ENV SOUNDSQUATCH_DATA=/data PYTHONUNBUFFERED=1
 VOLUME /data
