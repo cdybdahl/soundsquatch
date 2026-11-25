@@ -248,6 +248,10 @@ function useLibrary(lib) {
     lib.albums.forEach(a => (a[10] || []).forEach(v => { if (!A.byId.has(v[0])) A.byId.set(v[0], [v[0], v[1], a[2], v[3], v[4], a[5], v[2], a[7], a[8], v[5], [], v[6] || 0, a[0]]); })); // [11] when added, [12]: the album it is a pressing of
     A.byArtist = new Map();
     lib.albums.forEach(a => { const k = norm(a[2]); if (!A.byArtist.has(k)) A.byArtist.set(k, []); A.byArtist.get(k).push(a); });
+    // an album by several ("A & B", or both credited): each of them has it; the albums an artist only appears on, apart
+    A.joint = lib.joint || {};
+    Object.keys(A.joint).forEach(id => { const a = A.byId.get(+id); if (!a) return; A.joint[id].forEach(n => { const k = norm(n); if (!A.byArtist.has(k)) A.byArtist.set(k, []); if (A.byArtist.get(k).indexOf(a) < 0) A.byArtist.get(k).push(a); }); });
+    A.appears = new Map(Object.keys(lib.appears || {}).map(k => [k, lib.appears[k].map(id => A.byId.get(+id)).filter(Boolean)]));
     A.artists = lib.artists; // [name, id, albums, photo, kind]
     A.artistInfo = new Map(lib.artists.map(a => [norm(a[0]), a]));
     A.loose = new Map(); lib.artists.forEach(a => { if (!A.loose.has(loose(a[0]))) A.loose.set(loose(a[0]), norm(a[0])); });
@@ -338,6 +342,10 @@ const loose = s => norm(s).replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
 const ak = name => { const k = norm(name); return !A.artistInfo || A.artistInfo.has(k) || A.byArtist.has(k) ? k : (A.loose && A.loose.get(loose(name))) || k; };
 function shelfName(n) { const info = A.artistInfo && A.artistInfo.get(ak(n)); return info ? info[0] : n; }
 const onShelves = name => A.artistInfo.has(ak(name));
+// the albums an artist appears on (a guest, a song on a compilation), newest first; their own albums left out
+// the others an album is by (beside the shelves' artist), each a link: " & Angel Olsen"
+const alsoBy = (a, cls) => ((A.joint || {})[a[0]] || []).filter(n => norm(n) !== norm(a[2])).map(n => ` &amp; <a ${cls ? `class="${cls}" ` : ""}href="${artistHref(n)}">${esc(n)}</a>`).join("");
+const appearsOn = name => (A.appears && A.appears.get(ak(name)) || []).filter(a => albumsBy(name).indexOf(a) < 0).slice().sort((a, b) => (b[3] || 0) - (a[3] || 0));
 const albumsBy = name => (A.byArtist.get(ak(name)) || []).slice().sort((a, b) => (a[3] || 9999) - (b[3] || 9999));
 
 function profile(name) {
@@ -906,6 +914,7 @@ VIEWS.artist = function (el, name) {
         ${Object.keys(rels).map(w => `<div class="box"><div class="kicker">${esc(w.charAt(0).toUpperCase() + w.slice(1))}</div>${rels[w].slice(0, 12).map(r => `<a class="rel-name ${onShelves(r.name) ? "own" : ""}" href="${artistHref(r.name)}">${esc(r.name)}${r.begin ? ` <span>${r.begin}${r.end ? "–" + r.end : ""}</span>` : ""}</a>`).join("")}</div>`).join("")}
         ${p.mb && p.mb.homepage ? `<div class="box"><div class="kicker">Elsewhere</div><div class="dim">${esc(p.mb.homepage.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</div></div>` : ""}</aside></div>
       ${discography(mine, shows, p, realName)}
+      ${appearsOn(realName).length ? section("On other people's records", "Appears on", shelf(appearsOn(realName).map(a => albumCard(a)))) : ""}
       <div id="ar-arch">${archShelf(archArtistCache.get(norm(realName)) && archArtistCache.get(norm(realName)).done)}</div>
       ${(p.kexp || []).length ? section("Live on KEXP", "In the studio", shelf(p.kexp.map(kexpCard))) : ""}
       ${p.qobuz && p.qobuz.similar && p.qobuz.similar.length ? section("If you like " + esc(realName), "Similar artists", shelf(p.qobuz.similar.filter(s => !onShelves(s.name)).map(s => face(s.name, s.image, "new to you", "new")).concat(p.qobuz.similar.filter(s => onShelves(s.name)).map(s => face(s.name, s.image, "on your shelves"))))) : ""}
@@ -1034,7 +1043,8 @@ VIEWS.mag = function (el, name) {
           `<a class="mr" href="#/record/${r[0]}">${r[4] ? `<img loading="lazy" src="${esc(pic(r[4], 150))}" alt="">` : `<i class="mr-blank"></i>`}<span class="y">${r[3] || "&mdash;"}</span><b>${esc(r[1])}<em>${esc(r[5] || "")}</em></b></a>`).join("")}</div>` : ""}</aside>
       </div></div>
       <div class="mag-page" data-tab="records" ${tab === "records" ? "" : "hidden"}>
-      ${recKinds.length ? `<section class="mag-guide disc" data-f="${f}"><div class="mag-dept">Buyer's guide</div>${bar}${recKinds.map(k => guideK(k[0], k[1])).join("")}</section>` : `<p class="dim">None of their studio records on the shelves or on ${SVC()}.</p>`}</div>
+      ${recKinds.length ? `<section class="mag-guide disc" data-f="${f}"><div class="mag-dept">Buyer's guide</div>${bar}${recKinds.map(k => guideK(k[0], k[1])).join("")}</section>` : `<p class="dim">None of their studio records on the shelves or on ${SVC()}.</p>`}
+      ${appearsOn(realName).length ? `<section class="mag-guide"><div class="mag-dept">Appears on</div><ol class="mag-appears">${appearsOn(realName).map(a => `<li class="d-own"><a href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 300)}" alt=""><span class="y">${a[3] || "&mdash;"}</span><b>${esc(a[1])}</b><em>${esc(a[2])}</em></a></li>`).join("")}</ol></section>` : ""}</div>
       ${liveCount ? `<div class="mag-page" data-tab="live" ${tab === "live" ? "" : "hidden"}><section class="mag-guide"><div class="mag-dept">On stage</div>
         ${items.live.length ? `<div class="disc" data-f="${f}">${items.live.some(x => x.q) ? bar : ""}${guideK("live", "Live records")}</div>` : ""}
         ${shows.length ? `<h2>From the Internet Archive <span>${shows.length}</span></h2><div class="grid">${shows.map(x => archCard(x)).join("")}</div>` : ""}
@@ -1238,7 +1248,7 @@ MAG.album = function (el, id) {
       <figure class="mag-cover"><div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title ? capSticker(a) : ""}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div></figure>
       <div class="al-head"><div class="mag-dept mag-kind">The record</div>
         <h1 class="mag-head mag-head-album">${title ? hearted(title, mk("album", albumKey(a), "heart")) : "&hellip;"}</h1>
-        <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
+        <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>${alsoBy(a)}` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
         <div class="mag-by">${[a[6] && a[9] !== "vinyl" ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-heard"></div>
         <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button>${title ? addToBtn({ k: "album", id: a[0] }) + moreOfBtn({ k: "album", id: a[0] }) : ""}</div>
@@ -1306,7 +1316,7 @@ VIEWS.album = function (el, id) {
   el.innerHTML = `${pageBar(esc(title || "Album"), ["Album", esc(artist)], `<button class="pill" data-act="playAlbum" data-v="${a[0]}" aria-label="Spin it">${icon("play")}<span class="pl">Spin it</span></button>`, true)}<div class="album-bg">${a[4] ? `<img src="${cover(a[4], 150)}" alt="">` : ""}</div><div class="album">
     <div class="album-art">${a[4] ? `<img src="${cover(a[4], 800)}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`}${title ? capSticker(a) : ""}${title && on("features", "write_files") ? `<button class="art-edit" data-act="artEdit" data-v="${a[0]}" aria-label="Change the cover">${icon("edit")}</button>` : ""}</div>
     <div class="album-head"><div class="kicker al-kick">${[a[3] || "", a[6] ? `<span class="q">${esc(a[6])}</span>` : "", versionsOf(a).length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, versionsOf(a).length)}</button>` : "", vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
-      <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}</div>
+      <h1 class="al-title">${title ? hearted(title, mk("album", albumKey(a), "heart")) : ""}</h1><div class="byline">${artist ? hearted(artist, mk("artist", norm(artist), "heart"), `<a class="by al-by" href="${artistHref(artist)}">`, "</a>") : `<a class="by al-by" href="#/"></a>`}${title ? alsoBy(a, "by al-by") : ""}</div>
       <div class="al-heard"></div>
       ${title && (a[8] || []).length ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}</div>` : ""}
       ${title ? `<div class="al-marks">${albumStars(a)}</div>` : ""}
