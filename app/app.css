@@ -286,6 +286,15 @@ input[type=range].vol::-webkit-slider-thumb { -webkit-appearance: none; width: 2
 .np-ctl .shuf.on .ic { color: var(--accent); }
 .np-vol { display: flex; align-items: center; gap: 12px; margin-top: 18px; color: var(--dim); }
 .np-vol .vol { flex: 1; max-width: 380px; }
+.vol-each { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 17px; color: var(--dim); background: none; border: 0; }
+.vol-each svg { width: 20px; height: 20px; }
+.vol-each:hover, .vol-each:active { color: var(--ink); background: rgba(242, 236, 226, .08); }
+.vol-rooms { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.vol-room { display: grid; grid-template-columns: minmax(0, 9em) 1fr 2.2em; align-items: center; gap: 12px; min-height: 44px; }
+.vol-room b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vol-room em { color: var(--dim); font-style: normal; grid-column: 2 / 4; }
+.vol-room .vol { width: 100%; }
+.vol-n { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
 .np-side { grid-area: side; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 48px; align-self: start; }
 .np-side > .kicker { grid-column: 2; grid-row: 1; margin-bottom: 8px; }
 #np-about { grid-column: 1; grid-row: 1 / span 2; }

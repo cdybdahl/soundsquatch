@@ -41,6 +41,7 @@ const ICONS = {
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/>',
   vol: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9c1.5 1.5 1.5 4.5 0 6"/>',
+  mixer: '<path d="M6 4v6M6 14v6M12 4v2M12 10v10M18 4v10M18 18v2"/><path d="M4 12h4M10 8h4M16 16h4"/>',
   disc: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>',
   heart_on: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="currentColor"/>',
   squatch: '<path d="M13.4 1.8L15 2.8 15.7 4.6 15.3 6.2 16.4 7.6 16.8 10.6 16.2 13.2 17.6 16.6 17.7 20.4 19.4 21.2 19.4 22.2 15.8 22.2 15.9 17.4 13.8 15.2 12.2 18.2 10.2 21.2 11.4 22.2 7.8 22.2 8.4 20.6 9.6 17.4 9.8 13.6 9.4 11.6 7.6 14.2 6.4 14.6 6.2 13.6 7.2 11.2 8.6 7.6 10.2 4.8 11.6 2.6Z" stroke-width="1.4"/>',
@@ -2747,6 +2748,7 @@ const ACT = {
     const view = A.views.get("#/albums"); if (view) { A.views.delete("#/albums"); view.el.remove(); if (current === view) current = null; }
     if (location.hash === "#/albums") route(); else location.hash = "#/albums";
   },
+  volEach: () => volEachSheet(),
   histDays: v => { store.set("sq-hist-days", +v); VIEWS.history(current.el); },
   plugPlay: v => { const x = JSON.parse(v); inOrder().then(() => send([x.tag, "playlist", "play", "item_id:" + x.id], `Spinning ${x.name} in ${roomName(A.room)}`)); },
   listenLater: v => {
@@ -3648,7 +3650,7 @@ function paintPlayer() {
     const changedArtist = !A.curKey || (A.curKey.split("|")[2] !== (t && t.artist));
     A.curKey = k;
     // three parts, the transport always in the middle: what is playing; the buttons; its quality, the room and the volume
-    const right = `<div class="bar-right"><button class="bar-room" data-act="rooms">${icon("speaker")}<span class="room-label">${esc(groupLabel())}</span></button>${t && !fixedVolume(A.room) ? `<input class="vol" type="range" min="0" max="100" aria-label="Volume">` : ""}</div>`;
+    const right = `<div class="bar-right"><button class="bar-room" data-act="rooms">${icon("speaker")}<span class="room-label">${esc(groupLabel())}</span></button>${t && !fixedVolume(A.room) ? `<input class="vol" type="range" min="0" max="100" aria-label="Volume">` : ""}${volEachBtn()}</div>`;
     bar.innerHTML = t ? `<div class="bar-prog"><i></i></div><div class="bar-left"><button class="bar-art" data-act="openNp">${trackArt(t, 150) ? `<img src="${esc(trackArt(t, 150))}" alt="">` : ""}</button>
       <button class="bar-what" data-act="openNp"><b>${esc(t.title)}</b><em>${esc(t.artist || "")}${t.album ? " &middot; " + esc(t.album) : ""}</em></button><span class="bar-q" data-act="signalPath">${quality(t)}</span></div>
       <div class="bar-ctl"><button data-act="prev" aria-label="Previous">${icon("prev")}</button><button class="pp" data-act="toggle" aria-label="Play or pause"></button><button data-act="next" aria-label="Next">${icon("next")}</button></div>${right}`
@@ -3662,9 +3664,40 @@ function paintPlayer() {
   const label = groupLabel(), together = groupRooms().length > 1;
   document.querySelectorAll(".room-label").forEach(el => { if (el.textContent !== label) el.textContent = label; });
   document.querySelectorAll(".bar-room, .np-room").forEach(el => el.classList.toggle("grouped", together));
+  const each = volRooms().length > 1; document.querySelectorAll(".vol-each").forEach(b => { if (b.hidden === each) b.hidden = !each; });
   const vol = $(".vol", bar); if (vol && !vol.dragging) vol.value = Math.abs(+st["mixer volume"] || 0);
   const prog = $(".bar-prog i", bar); if (prog) prog.style.width = (st.duration ? position() / st.duration * 100 : 0) + "%";
   if (!$("#np").hidden) paintNp();
+}
+/* Each room's own volume in a group, as Material has it: a group player's members (Lyrion's Groups plugin), else the
+   rooms joined to this one. The group's slider moves them all; these set one room against the others. */
+function volRooms(st) {
+  st = st || A.st || {};
+  const members = String(st.members || "").split(",").filter(Boolean);
+  return members.length > 1 ? members : groupRooms(st).length > 1 ? groupRooms(st) : [];
+}
+const volEachBtn = () => `<button class="vol-each" data-act="volEach" aria-label="Each room's volume"${volRooms().length > 1 ? "" : " hidden"}>${icon("mixer")}</button>`;
+function volEachSheet() {
+  const ids = volRooms(); if (ids.length < 2) return;
+  const row = id => `<div class="vol-room"><b>${esc(roomName(id))}</b>${fixedVolume(id) ? `<em>Set on the device</em>` : `<input class="vol" type="range" min="0" max="100" data-room="${esc(id)}" aria-label="${esc(roomName(id))}'s volume">`}<span class="vol-n"></span></div>`;
+  openSheet(`<div class="kicker">Each room's volume</div><h3>${esc(groupLabel())}</h3><div class="vol-rooms">${ids.map(row).join("")}</div>`);
+  const box = $("#sheet .vol-rooms");
+  box.querySelectorAll(".vol").forEach(input => {
+    let t; const n = input.nextElementSibling;
+    const setv = () => { n.textContent = input.value; clearTimeout(t); t = setTimeout(() => lms(input.dataset.room, ["mixer", "volume", input.value]).catch(() => toast(`${roomName(input.dataset.room)} didn't answer`)), 120); };
+    input.addEventListener("input", () => { input.dragging = true; setv(); });
+    input.addEventListener("change", () => { input.dragging = false; setv(); });
+  });
+  // kept current while it's open: the group's own slider, or another screen, moves them too
+  const read = () => {
+    if (!box.isConnected || $("#sheet").hidden) return;
+    box.querySelectorAll(".vol").forEach(input => lms(input.dataset.room, ["status", "-", 0]).then(st => {
+      if (input.dragging) return;
+      input.value = Math.abs(+st["mixer volume"] || 0); input.nextElementSibling.textContent = input.value;
+    }).catch(() => {}));
+    setTimeout(read, 2000);
+  };
+  read();
 }
 function bindVolume(input) {
   let t;
@@ -3855,7 +3888,7 @@ function drawNp() {
     <div class="np-main"><div class="np-left"><div class="np-art">${art ? `<img src="${esc(art)}" alt="">` : ""}</div>
       <div class="np-transport"><div class="np-prog"><div class="track"><i></i></div><div class="times"><span class="at"></span><span class="left"></span></div></div>
         <div class="np-ctl"><button class="sm shuf" data-act="shuffleMode" aria-label="Shuffle">${icon("shuffle")}</button><button data-act="prev">${icon("prev")}</button><button class="pp big" data-act="toggle"></button><button data-act="next">${icon("next")}</button><button class="sm rep" data-act="repeat" aria-label="Repeat">${icon("repeat")}<i></i></button></div>
-        ${fixedVolume(A.room) ? "" : `<div class="np-vol">${icon("vol")}<input class="vol" type="range" min="0" max="100" aria-label="Volume"></div>`}</div></div>
+        ${fixedVolume(A.room) ? (volRooms().length > 1 ? `<div class="np-vol">${volEachBtn()}</div>` : "") : `<div class="np-vol">${icon("vol")}<input class="vol" type="range" min="0" max="100" aria-label="Volume">${volEachBtn()}</div>`}</div></div>
       <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>${t.turntable && A.tt ? ttAsk(A.tt) : ""}
