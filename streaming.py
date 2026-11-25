@@ -58,6 +58,10 @@ class Qobuz:
 
     def act(self, req, player):
         term = (req.get("term") or "").strip()[:120]
+        qid = lms_qobuz.album_id(req.get("cover")) or (req["qid"] if re.fullmatch(r"[A-Za-z0-9]{1,40}", str(req.get("qid") or "")) else None)
+        if qid and req.get("action") in ("play", "queue", "aplay", "aqueue"):  # Qobuz's id for it: that release exactly
+            out = self.play_album(qid, "play" if req["action"].endswith("play") else "queue", player)
+            return dict(out, album=lms_qobuz.real_title(req.get("album") or ""), artist=req.get("artist") or "")
         b64 = __import__("base64").b64encode(term.encode()).decode()
         args = [req.get("action"), b64, player] + ([str(int(req["index"]))] if req.get("index") is not None else [])
         if args[0] in ("aplay", "aqueue", "akeep") and req.get("album"):
@@ -70,18 +74,38 @@ class Qobuz:
             args[3:] = [str(at)]
         return lms_qobuz.main(args)
 
-    def release(self, artist, title, want, player):
-        term = f"{artist} {title}".strip()[:120]
-        _, found = lms_qobuz.releases(term, player)
-
+    def _find(self, terms, player, qid=None, artist="", want=""):
+        """The release in the first of the searches that lists it: (term, its place, (item id, name, cover, path)), or
+        None. With Qobuz's id for it (from its cover) the one with that id, exactly; without, the one of that title by
+        that artist."""
         def fit(r):
             a, t = split(r[1])
-            same_t = plain(re.sub(r"\s*[(\[].*$", "", t)) == want
+            same_t = plain(re.sub(r"\s*[(\[].*$", "", lms_qobuz.real_title(t))) == want
             return (same_t and (not artist or same_name(a, artist) or a.lower() == artist.lower())) * 2 + same_t
-        best = max(range(len(found)), key=lambda n: fit(found[n]), default=None)
-        if best is None or not fit(found[best]):
-            return None
-        item, name, img, path = found[best]
+        for term in dict.fromkeys(t for t in terms if t):
+            found = lms_qobuz.releases(term, player)[1]
+            at = (next((n for n, r in enumerate(found) if lms_qobuz.album_id(r[2]) == qid), None) if qid else
+                  max((n for n in range(len(found)) if fit(found[n])), key=lambda n: fit(found[n]), default=None))
+            if at is not None:
+                return term, at, found[at]
+        return None
+
+    @staticmethod
+    def _terms(artist, title):
+        """What to search for: the artist and Qobuz's own title, then (an edition the search lists under another) the
+        title without its asides ("(2023 Remaster)")."""
+        real = lms_qobuz.real_title(title)
+        bare = re.sub(r"\s*[(\[].*$", "", real).strip() or real
+        return [f"{artist} {real}".strip()[:120], f"{artist} {bare}".strip()[:120]]
+
+    def release(self, artist, title, want, player, cover=""):
+        qid = lms_qobuz.album_id(cover)
+        hit = self._find(self._terms(artist, title), player, qid, artist, want)
+        if not hit:
+            # Qobuz's id is known but no search lists that edition: it still plays, whole, by its id
+            return {"artist": artist, "album": lms_qobuz.real_title(title), "cover": lms_qobuz.cover(cover) or cover, "qid": qid, "term": "", "i": None,
+                    "tracks": [], "details": {}, "year": "", "kept": False} if qid else None
+        term, best, (item, name, img, path) = hit
         a, t = split(name)
         entries = rpc(player, "qobuz", "items", "0", "100", f"item_id:{path}", f"search:{term}").get("loop_loop") or []
         tracks, details = [], {}
@@ -93,11 +117,21 @@ class Qobuz:
             elif ": " in nm and nm.split(": ", 1)[0] in DETAILS:
                 details[DETAILS[nm.split(": ", 1)[0]]] = nm.split(": ", 1)[1]
         m = re.match(r"(\d+)/(\d+)/(\d{4})$", details.get("released", ""))
-        return {"artist": a or artist, "album": t, "cover": lms_qobuz.cover(img), "term": term, "i": best, "tracks": tracks, "details": details,
-                "year": m.group(3) if m else "", "kept": any((x.get("name") or "").startswith("Remove Release ") for x in entries)}
+        return {"artist": a or artist, "album": t, "cover": lms_qobuz.cover(img), "qid": lms_qobuz.album_id(img), "term": term, "i": best, "tracks": tracks,
+                "details": details, "year": m.group(3) if m else "", "kept": any((x.get("name") or "").startswith("Remove Release ") for x in entries)}
 
-    def play_release(self, term, i, track, how, player):
-        _, found = lms_qobuz.releases(term, player)
+    def play_album(self, qid, how, player):
+        """A whole release by Qobuz's id (the plugin's own playalbum/addalbum): no search, so never another edition."""
+        rpc(player, "qobuz", "playalbum" if how == "play" else "addalbum", qid)
+        return {"result": "playing" if how == "play" else "queued"}
+
+    def play_release(self, term, i, track, how, player, qid=None):
+        qid = qid if re.fullmatch(r"[A-Za-z0-9]{1,40}", qid or "") else None
+        if qid and track is None and how == "play":
+            return self.play_album(qid, "play", player)
+        found = lms_qobuz.releases(term, player)[1] if term else []
+        if qid:  # the release by its id in the search as it is now, not by its place when the page was made
+            i = next((n for n, r in enumerate(found) if lms_qobuz.album_id(r[2]) == qid), len(found))
         if i >= len(found):
             return {"error": "Qobuz no longer lists that release"}
         rpc(player, "qobuz", "playlist", how, f"item_id:{found[i][3]}.{track}" if track is not None else f"item_id:{found[i][0]}", f"search:{term}")
@@ -221,7 +255,7 @@ class Tidal:
             return {"result": "added", "album": album, "artist": artist}
         return {"error": "unknown command"}
 
-    def release(self, artist, title, want, player):
+    def release(self, artist, title, want, player, cover=""):
         term = f"{artist} {title}".strip()[:120]
         found = self._albums(term, player)
         fit = lambda x: (plain(re.sub(r"\s*[(\[].*$", "", self._name(x)[1])) == want) * (2 if not artist or same_name(self._name(x)[0], artist) else 1)
@@ -238,7 +272,7 @@ class Tidal:
                 "tracks": [{"n": n + 1, "title": (s.get("name") or "").split("\n")[0], "k": n} for n, s in enumerate(y for y in songs if y.get("isaudio") or y.get("type") == "audio")],
                 "year": facts.get("Year", ""), "kept": any("Remove from TIDAL favorites" in (y.get("text") or "") for y in info)}
 
-    def play_release(self, term, i, track, how, player):
+    def play_release(self, term, i, track, how, player, qid=None):
         found = self._albums(term, player)
         if i >= len(found):
             return {"error": "TIDAL no longer lists that release"}
