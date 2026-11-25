@@ -1705,3 +1705,8 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .add-list .btn .dim { font-weight: 400; }
 .acts.col .btn.danger { color: var(--danger, #e06c5a); }
 .star .ic { width: 1.25em; height: 1.25em; }
+/* albums the service dropped */
+.chip-link.warn { color: var(--accent); }
+.repair-list { margin: 14px 0 6px; }
+.repair-list .hrow img { width: 48px; height: 48px; border-radius: 4px; object-fit: cover; }
+.gone-acts { display: flex; gap: 8px; flex: none; }
