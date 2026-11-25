@@ -3594,7 +3594,7 @@ function offline(what) {
   if (!b) { b = document.createElement("div"); b.id = "offline"; document.body.appendChild(b); }
   b.textContent = what + ". Trying again…"; // a restart, an update, the power: it comes back by itself
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); ttPoll(); settleScreen(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); ttPoll(); settleScreen(); if (unreachable.t) { clearTimeout(unreachable.t); unreachable.t = 0; loadAll(); } } });
 // an iPhone's or iPad's home-screen app sometimes opens with the screen measured short (a black band at the foot, taps
 // landing off their buttons) until something makes it measure again: so measure again on opening, coming back and turning
 document.addEventListener("keydown", e => {
@@ -4109,14 +4109,29 @@ function start() {
     if (!A.rooms.some(p => p.playerid === A.room) && A.rooms.length) A.room = (A.rooms.find(p => p.playerid === home) || A.rooms.find(p => p.modelname !== "Group") || A.rooms[0]).playerid;
   }).catch(() => {}).then(() => { poll(); ttPoll(); });
   $("#main").addEventListener("scroll", watchHead, { passive: true });
-  Promise.all([loadLibrary(), loadMarks(), loadFocuses(), house, loadArchive(), loadStations().catch(() => null), loadView(), loadMissing()]).then(() => { applyHouse(); $("#main").innerHTML = ""; route(); window.addEventListener("hashchange", route); })
+  loadAll(house);
+}
+// everything the first page needs; the house's settings asked again when it's a second try
+function loadAll(house) {
+  Promise.all([loadLibrary(), loadMarks(), loadFocuses(), house || api("/api/settings").then(c => { A.cfg = c; }), loadArchive(), loadStations().catch(() => null), loadView(), loadMissing()])
+    .then(() => { applyHouse(); $("#main").innerHTML = ""; route(); window.addEventListener("hashchange", route); })
     .catch(firstRun);
+}
+/* Soundsquatch didn't answer at all (or turned this device away): a phone opening it just off the home network, on
+   mobile data while Wi-Fi comes back, or the server restarting. Said so, and tried again by itself until it answers,
+   so the page fills in the moment it can instead of waiting for a reload. */
+function unreachable() {
+  const head = `<img class="load-logo" src="logo.png" alt=""><div class="mast-name"><span>Sound<em>squatch</em></span></div>`;
+  $("#main").innerHTML = `<div class="loading">${head}<p>Soundsquatch isn't answering on this network yet. It answers at home: trying again&hellip;</p></div>`;
+  clearTimeout(unreachable.t);
+  unreachable.t = setTimeout(() => { unreachable.t = 0; loadAll(); }, document.hidden ? 8000 : 2500);
 }
 // the shelves didn't come: when it's because Lyrion can't be found (a first start, or it has moved), its address asked for
 function firstRun() {
   const head = `<img class="load-logo" src="logo.png" alt=""><div class="mast-name"><span>Sound<em>squatch</em></span></div>`;
   const stuck = () => { $("#main").innerHTML = `<div class="loading">${head}<p>The library isn't answering. <button class="btn" onclick="location.reload()">Try again</button></p></div>`; };
-  api("/api/settings").then(c => {
+  api("/api/settings").catch(() => null).then(c => {
+    if (!c) return unreachable(); // Soundsquatch itself isn't answering this device
     if (c.checks && c.checks.lms_ok) return stuck(); // Lyrion answers: the trouble is elsewhere
     const login = c.checks.lms_auth;
     $("#main").innerHTML = `<div class="loading">${head}<p>${login ? "Lyrion asks for a username and password." : "Soundsquatch can't find Lyrion on the network. Where is it?"}</p>
