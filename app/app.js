@@ -117,7 +117,7 @@ const artistHref = n => "#/artist/" + encodeURIComponent(shelfName(n)); // the s
 // an album just added and still joining the shelves (the server's negative id) opens from its service until Lyrion has it
 const albumHref = id => { const a = +id < 0 && A.byId && A.byId.get(+id); return a ? awayHref(a[2], a[1], a[4]) : "#/album/" + id; };
 // a record off the shelves has a page too (from Qobuz), opened the same way wherever it's shown; the cover rides along to draw it at once
-const awayChip = (artist, album) => `<button class="chip" data-act="awayChip" data-v="${esc(JSON.stringify([artist || "", album || ""]))}" aria-label="Spin it">${icon("play")}</button>`;
+const awayChip = (artist, album, cover) => `<button class="chip" data-act="awayChip" data-v="${esc(JSON.stringify([artist || "", album || "", cover || ""]))}" aria-label="Spin it">${icon("play")}</button>`;
 const awayHref = (artist, album, cover) => "#/away/" + encodeURIComponent(JSON.stringify([artist || "", album || "", cover || ""]));
 const roomName = id => houseRoom(id).name || ((A.rooms.find(r => r.playerid === id) || {}).name) || "a room";
 const mmss = s => { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
@@ -658,7 +658,7 @@ function newCard(r) {
   const when = new Date(r.date + "T12:00"), soon = when > new Date();
   const date = (soon ? "Out " : "") + when.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return `<a class="card q" href="${awayHref(r.artist, r.title, r.cover)}"><div class="art"><img loading="lazy" decoding="async" src="${esc(pic(r.cover, 320))}" alt="">
-    ${r.owned ? `<span class="badge">On your shelves</span>` : r.qobuz ? `<span class="badge">${SVC()}</span>` : ""}${soon ? "" : awayChip(r.artist, r.title)}</div><div class="t">${esc(r.title)}</div><div class="s">${esc(r.artist)} &middot; ${date}</div></a>`;
+    ${r.owned ? `<span class="badge">On your shelves</span>` : r.qobuz ? `<span class="badge">${SVC()}</span>` : ""}${soon ? "" : awayChip(r.artist, r.title, r.cover)}</div><div class="t">${esc(r.title)}</div><div class="s">${esc(r.artist)} &middot; ${date}</div></a>`;
 }
 /* the cover: the day's stories, a spread each, turning every ten seconds (still while touched; swipe or tap a dot) */
 const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
@@ -855,12 +855,14 @@ VIEWS.away = function (el, arg) {
       <div class="acts aw-acts">${acts(true)}</div>${rows}</div></div>
     <div class="aw-story"></div>${more.length ? section("Already on your shelves", "More by " + esc(artist), shelf(more.map(a => albumCard(a)))) : ""}`;
   const img = $(".album-art img", el); if (img) tint(img, el);
-  api("/api/away?" + new URLSearchParams({ artist: artist, album: title, player: A.room || "" })).then(r => {
+  api("/api/away?" + new URLSearchParams({ artist: artist, album: title, cover: x[2] || "", player: A.room || "" })).then(r => {
     if (!el.isConnected) return;
     if (r.album_id) { history.replaceState(null, "", albumHref(r.album_id)); A.views.delete(location.hash); return route(); } // on the shelves after all
     el.away = r;
     const t = $(".tracks", el);
-    if (r.error || !r.tracks.length) {
+    if (!r.error && !r.tracks.length && r.qid) { // Qobuz plays it by its id, but no search lists this edition's songs
+      if (t) t.outerHTML = `<p class="dim">${SVC()} doesn't list this edition's songs here. Spin it plays the whole record.</p>`;
+    } else if (r.error || !r.tracks.length) {
       if (t) t.outerHTML = `<p class="dim">${r.error === "no Qobuz" ? `Not on your shelves, and Lyrion has no ${SVC()} plugin to find it on.` : r.error === "failed" ? `${SVC()} didn't answer this time.` : `${SVC()} doesn't have this one.`} <a href="#/search" data-act="findWork" data-v="${esc(artist + " " + title)}">Search for it</a></p>`;
       $(".aw-acts", el).hidden = true;
     } else {
@@ -956,7 +958,7 @@ function archShelf(shows) {
 }
 function qCard(r) {
   const art = r.cover ? `<img loading="lazy" decoding="async" src="${esc(pic(r.cover, 320))}" alt="">` : `<div class="noart">${esc(r.album.slice(0, 1))}</div>`;
-  return `<a class="card q" href="${awayHref(r.artist, r.album, r.cover)}"><div class="art">${art}<span class="badge">${SVC()}</span>${awayChip(r.artist, r.album)}</div><div class="t">${esc(r.album)}</div><div class="s">${esc(r.artist)}</div></a>`;
+  return `<a class="card q" href="${awayHref(r.artist, r.album, r.cover)}"><div class="art">${art}<span class="badge">${SVC()}</span>${awayChip(r.artist, r.album, r.cover)}</div><div class="t">${esc(r.album)}</div><div class="s">${esc(r.artist)}</div></a>`;
 }
 
 /* ───────────────────────── the magazine (a mock-up, at #/mag/NAME) ─────────────────────────
@@ -2537,7 +2539,7 @@ function send(cmd, words) {
 function inOrder() { return A.st && +A.st["playlist shuffle"] ? lms(A.room, ["playlist", "shuffle", 0]) : Promise.resolve(); }
 const ACT = {
   back: () => back(),
-  playAlbum: v => { const a = A.byId.get(+v); if (+v < 0) return a && ACT.awayChip(JSON.stringify([a[2], a[1]])); inOrder().then(() => send(["playlistcontrol", "cmd:load", "album_id:" + v], `Spinning ${a ? a[1] : "the album"} in ${roomName(A.room)}`)); },
+  playAlbum: v => { const a = A.byId.get(+v); if (+v < 0) return a && ACT.awayChip(JSON.stringify([a[2], a[1], a[4] || ""])); inOrder().then(() => send(["playlistcontrol", "cmd:load", "album_id:" + v], `Spinning ${a ? a[1] : "the album"} in ${roomName(A.room)}`)); },
   nextAlbum: v => { const a = A.byId.get(+v); send(["playlistcontrol", "cmd:insert", "album_id:" + v], `${a ? a[1] : "The album"} plays next`); },
   queueAlbum: v => { const a = A.byId.get(+v); if (+v < 0) return toast("Still joining the shelves: a moment"); send(["playlistcontrol", "cmd:add", "album_id:" + v], `${a ? a[1] : "The album"} is queued`); },
   playTrack: v => { const p = v.split(":"); inOrder().then(() => send(["playlistcontrol", "cmd:load", "album_id:" + p[0], "play_index:" + p[1]])); },
@@ -2636,9 +2638,10 @@ const ACT = {
       .then(() => { delete A.plug.LLHome; toast(`${a[1]} saved to Listen Later`); }).catch(() => toast("Listen Later didn't answer"));
   },
   awayAct: (v, t) => {
-    const r = current && current.el.away; if (!r || !r.term) return;
+    const r = current && current.el.away; if (!r || !(r.term || r.qid)) return;
+    if (!r.term && (v === "next" || v === "keep")) return toast(v === "keep" ? "Spin it, then add it to the library from Now Playing" : `${SVC()} only lets this edition be spun or queued`);
     const words = { play: `Spinning ${r.album} in ${roomName(A.room)}`, next: `${r.album} plays next`, queue: `${r.album} is queued`, keep: "Adding it to the library…" }[v];
-    const call = v === "next" ? api("/api/away-play", { term: r.term, index: r.i, how: "insert", player: A.room }) : api("/api/qobuz", { action: v, term: r.term, index: r.i, player: A.room, cover: r.cover || "", year: r.year || 0 });
+    const call = v === "next" ? api("/api/away-play", { term: r.term, index: r.i, qid: r.qid || "", how: "insert", player: A.room }) : api("/api/qobuz", { action: v, term: r.term || "", index: r.i, qid: r.qid || "", album: r.album, artist: r.artist, player: A.room, cover: r.cover || "", year: r.year || 0 });
     toast(words);
     inOrder().then(() => call).then(o => {
       if (o.error) return toast(o.error);
@@ -2646,9 +2649,9 @@ const ACT = {
       setTimeout(poll, 800);
     }).catch(() => toast("The server didn't answer"));
   },
-  awayTrack: v => { const r = current && current.el.away; if (!r) return; inOrder().then(() => api("/api/away-play", { term: r.term, index: r.i, track: +v, how: "play", player: A.room })).then(() => { toast(`Playing in ${roomName(A.room)}`); setTimeout(poll, 800); }).catch(() => toast("The server didn't answer")); },
+  awayTrack: v => { const r = current && current.el.away; if (!r) return; inOrder().then(() => api("/api/away-play", { term: r.term, index: r.i, qid: r.qid || "", track: +v, how: "play", player: A.room })).then(() => { toast(`Playing in ${roomName(A.room)}`); setTimeout(poll, 800); }).catch(() => toast("The server didn't answer")); },
   awayChip: (v, t, e) => { if (e) { e.preventDefault(); e.stopPropagation(); } const x = JSON.parse(v); toast("Starting it…");
-    api("/api/away?" + new URLSearchParams({ artist: x[0], album: x[1], player: A.room || "" })).then(r => r.album_id ? ACT.playAlbum(String(r.album_id)) : r.term ? inOrder().then(() => api("/api/qobuz", { action: "play", term: r.term, index: r.i, player: A.room })).then(() => { toast(`Spinning ${r.album} in ${roomName(A.room)}`); setTimeout(poll, 800); }) : toast(`${SVC()} doesn't have this one`)).catch(() => toast("The server didn't answer")); },
+    api("/api/away?" + new URLSearchParams({ artist: x[0], album: x[1], cover: x[2] || "", player: A.room || "" })).then(r => r.album_id ? ACT.playAlbum(String(r.album_id)) : r.term || r.qid ? inOrder().then(() => api("/api/qobuz", { action: "play", term: r.term || "", index: r.i, qid: r.qid || "", album: r.album, artist: r.artist, player: A.room })).then(() => { toast(`Spinning ${r.album} in ${roomName(A.room)}`); setTimeout(poll, 800); }) : toast(`${SVC()} doesn't have this one`)).catch(() => toast("The server didn't answer")); },
   newRelease: v => { const r = JSON.parse(v); if (r.qobuz) openQobuz({ artist: r.qobuz.artist, album: r.qobuz.album, cover: r.cover, i: r.qobuz.i, page: r.artist }); else location.hash = artistHref(r.artist); },
   trackMenu: v => openTrackMenu(v),
   // an album's genres, chosen from the house's list: kept here, and written into its files when it has some

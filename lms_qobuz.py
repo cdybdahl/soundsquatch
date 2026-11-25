@@ -216,6 +216,24 @@ def cover(img):
     return urllib.parse.unquote(m.group(1)) if m else ""
 
 
+def album_id(img):
+    """Qobuz's own id for a release, from its cover's address (…/images/covers/wa/fk/gt2xqlvjffkwa_600.jpg, through
+    Lyrion's image proxy or not): what identifies it exactly, whatever the plugin calls it. None when it isn't Qobuz's."""
+    m = re.search(r"/images/covers/[^/]+/[^/]+/([A-Za-z0-9]+)_[a-z0-9]+\.jpg", urllib.parse.unquote(img or ""))
+    return m.group(1) if m else None
+
+
+def real_title(title):
+    """A release's title as Qobuz has it, without what the plugin adds to its name: " (Hi-Res)" (every language
+    has it so), the year on a line of its own, " [E]", " [AI]", and the "* " of one not streamable. Qobuz's search knows
+    none of them: "Solar Fields Ourdom (Hi-Res)" finds nothing."""
+    t = re.sub(r"\s*\n\(\d{4}\)", "", title or "")
+    t = re.sub(r"^\*\s+", "", t)
+    for _ in range(3):  # in the order the plugin adds them, from the end
+        t = re.sub(r"\s+(?:\[E\]|\[AI\]|\(Hi-Res\))$", "", t)
+    return t.strip()
+
+
 def split(name):  # "Mogwai - The Bad Fire" → ("Mogwai", "The Bad Fire")
     artist, _, album = name.partition(" - ")
     return (artist, album) if album else ("", name)
