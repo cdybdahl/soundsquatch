@@ -845,7 +845,7 @@ VIEWS.away = function (el, arg) {
   let x; try { x = JSON.parse(arg); } catch (e) { x = ["", arg, ""]; }
   const artist = x[0] || "", title = x[1] || "", mag = magOn(), more = artist ? albumsBy(artist).filter(a => !a.archive) : [];
   const art = c => c ? `<img src="${esc(pic(c, 800))}" alt="">` : `<div class="noart big">${esc((title || "?").slice(0, 1))}</div>`;
-  const acts = big => (big ? `<button class="btn" data-act="awayAct" data-v="play">${icon("play")} Spin it</button>` : `<button class="al-spin" data-act="awayAct" data-v="play">${icon("play")} Spin it</button>`) + addToBtn({ k: "away" }, big);
+  const acts = big => (big ? `<button class="btn" data-act="awayAct" data-v="play">${icon("play")} Spin it</button>` : `<button class="al-spin" data-act="awayAct" data-v="play">${icon("play")} Spin it</button>`) + addToBtn({ k: "away" }, big) + banBtn({ k: "away" }, big);
   const rows = `<div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div>`;
   const by = artist ? `<a href="${artistHref(artist)}">${esc(artist)}</a>` : "";
   el.innerHTML = mag ? `<article class="mag mag-al">${magRun("The Records")}
@@ -910,7 +910,7 @@ VIEWS.artist = function (el, name) {
         <div class="acts">${mine.length ? `<button class="btn" data-act="shuffleArtist" data-v="${esc(name)}">${icon("shuffle")} Shuffle</button>` : ""}
         ${mine.length ? `<button class="btn ghost" data-act="artistRadio" data-v="${esc(name)}">${icon("radio")} Artist radio</button>` : ""}
         ${mine.length ? `<button class="btn ghost" data-act="playAlbum" data-v="${mine[mine.length - 1][0]}">${icon("play")} Latest on the shelves</button>` : ""}
-        <button class="btn ghost" data-act="artistBan" data-v="${esc(realName)}" aria-label="Never play them">${icon("ban")}</button>
+        ${banBtn({ k: "artist", artist: realName }, true)}
         ${on("features", "stations") ? `<button class="btn ghost seed-btn ${isSeed(realName) ? "on" : ""}" data-act="seedSheet" data-v="${esc(realName)}" aria-label="Add to a station">${icon("radio_plus")}</button>` : ""}</div></div></div>
       <div class="cols"><article class="story">${p.partial && !text ? `<p class="dim">Gathering their story&hellip;</p>` : folded(paras(text), 2, realName)}
         ${(p.qobuz || p.wiki) && has("mai") ? `<button class="more-story" data-act="story" data-v="${esc(realName)}">Wikipedia's full story</button><div class="full-story"></div>` : ""}
@@ -1029,7 +1029,7 @@ VIEWS.mag = function (el, name) {
       <nav class="mag-tabs">${[["story", "The story", ""], ["records", "The records", studioCount], ["live", "Live", liveCount]].filter(t => t[0] !== "live" || t[2]).map(t =>
         `<button class="${t[0] === tab ? "on" : ""}" data-act="magTab" data-v="${t[0]}">${t[1]}${t[2] ? ` <span>${t[2]}</span>` : ""}</button>`).join("")}
         <div class="mag-actbar">${mine.length ? `<button data-act="shuffleArtist" data-v="${esc(name)}">${icon("play")} Spin a record</button><button data-act="artistRadio" data-v="${esc(name)}">${icon("radio")} Their radio</button>` : ""}
-          ${on("features", "stations") ? `<button class="seed-btn ${isSeed(realName) ? "on" : ""}" data-act="seedSheet" data-v="${esc(realName)}">${icon("radio_plus")} Add to a station</button>` : ""}<button data-act="artistBan" data-v="${esc(realName)}">${icon("ban")} Never play</button>
+          ${on("features", "stations") ? `<button class="seed-btn ${isSeed(realName) ? "on" : ""}" data-act="seedSheet" data-v="${esc(realName)}">${icon("radio_plus")} Add to a station</button>` : ""}<button data-act="banMenu" data-v="${ctxAttr({ k: "artist", artist: realName })}">${icon("ban")} Never play</button>
           ${p.hero ? "" : `<button data-act="artistPic">${icon("person")} Choose a picture</button>`}</div></nav>
       <div class="mag-page" data-tab="story" ${tab === "story" || (tab === "live" && !liveCount) ? "" : "hidden"}>
       ${p.hero ? `<figure class="mag-fig"><button class="pic-edit" data-act="artistPic" aria-label="Change their picture">${icon("edit")}</button><img src="${esc(pic(p.hero, 1600))}" data-focus="${esc(p.hero)}" alt=""><figcaption>${esc(realName)}${mb.area ? ", of " + esc(mb.area) : ""}${mb.begin ? `, ${mb.begin}${mb.end ? "–" + mb.end : " to the present"}` : ""}.</figcaption></figure>` : ""}
@@ -1256,7 +1256,7 @@ MAG.album = function (el, id) {
         <p class="mag-deck mag-album-deck">${artist ? `By <a href="${artistHref(artist)}">${esc(artist)}</a>${alsoBy(a)}` : ""}${a[3] ? `, ${a[3]}` : ""}.</p>
         <div class="mag-by">${[a[6] && a[9] !== "vinyl" ? `<b>${esc(a[6])}</b>` : "", `<span class="mag-len"></span>`, vers.length > 1 ? `<button class="ver-chip" data-act="versions" data-v="${a[0]}">${versionWords(a, vers.length)}</button>` : cap(sourceWords(a[9])), vinylChip(a)].filter(Boolean).join(" &middot; ")}</div>
         <div class="al-heard"></div>
-        <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button>${title ? addToBtn({ k: "album", id: a[0] }) + moreOfBtn({ k: "album", id: a[0] }) : ""}</div>
+        <div class="al-acts"><button class="al-spin" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button>${title ? addToBtn({ k: "album", id: a[0] }) + moreOfBtn({ k: "album", id: a[0] }) + banBtn({ k: "album", id: a[0] }) : ""}</div>
         <dl class="al-marks"><div><dt>Genres</dt><dd class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("") || `<span class="dim">None yet</span>`}</dd></div>
           ${title ? `<div><dt>Your rating</dt><dd class="al-marks-in">${albumStars(a)}</dd></div>` : ""}</dl></div>
     </div>
@@ -1325,7 +1325,7 @@ VIEWS.album = function (el, id) {
       <div class="al-heard"></div>
       ${title && (a[8] || []).length ? `<div class="genres">${(a[8] || []).map(g => `<a href="#/genre/${encodeURIComponent(g)}">${esc(g)}</a>`).join("")}</div>` : ""}
       ${title ? `<div class="al-marks">${albumStars(a)}</div>` : ""}
-      <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button>${title ? addToBtn({ k: "album", id: a[0] }, true) + moreOfBtn({ k: "album", id: a[0] }, true) : ""}</div>
+      <div class="acts"><button class="btn" data-act="playAlbum" data-v="${a[0]}">${icon("play")} Spin it</button>${title ? addToBtn({ k: "album", id: a[0] }, true) + moreOfBtn({ k: "album", id: a[0] }, true) + banBtn({ k: "album", id: a[0] }, true) : ""}</div>
       <div class="tracks loading-rows">${"<div class='trk ph'></div>".repeat(8)}</div></div></div>
     <div id="al-review"></div><div id="al-credits"></div><div id="al-plays"></div><div id="al-sounds"></div>
     ${more.length ? section("Also on your shelves", "More by " + esc(artist), shelf(more.map(x => albumCard(x)))) : ""}<div id="al-sim"></div>`;
@@ -2500,6 +2500,8 @@ document.addEventListener("change", ev => {
    own menu, genres, the cover, removing it; other pressings are the chip by the album's facts). ctx: {k: "album", id} | {k: "away"} | {k: "np", …the song}. */
 const ctxAttr = ctx => esc(JSON.stringify(ctx));
 const addToBtn = (ctx, big) => `<button class="${big ? "btn ghost " : ""}add-to" data-act="addTo" data-v="${ctxAttr(ctx)}">${icon("plus")}<span>Add to…</span></button>`;
+// never play, or take it off the shelves: one quiet button, its menu what applies here
+const banBtn = (ctx, big) => `<button class="${big ? "btn ghost " : ""}ban-of" data-act="banMenu" data-v="${ctxAttr(ctx)}" aria-label="Never play, or remove">${icon("ban")}</button>`;
 const moreOfBtn = (ctx, big) => `<button class="${big ? "btn ghost " : ""}more-of" data-act="moreOf" data-v="${ctxAttr(ctx)}" aria-label="More">${icon("more")}</button>`;
 function ctxOf(ctx) { // what the sheets need: artist, title, whether it's on the shelves, and its id there
   if (ctx.k === "album") { const a = A.byId.get(+ctx.id) || []; return { artist: a[2] || "", title: a[1] || "", id: +ctx.id, kept: +ctx.id > 0 }; }
@@ -2522,8 +2524,7 @@ function moreOfSheet(ctx) {
   const c = ctxOf(ctx), id = c.id, a = A.byId.get(id) || [], row = (act, v, ic, words, cls) => `<button class="btn ghost ${cls || ""}" data-act="${act}" data-v="${esc(String(v))}">${icon(ic)} ${words}</button>`;
   openSheet(`<div><div class="kicker">${esc(c.artist)}</div><h3>${esc(c.title)}</h3><div class="acts col">
     <span class="more-share"></span>${isMA() ? "" : row("lmInfo", "album:" + id, "apps", "More from Lyrion")}
-    ${row("genreEdit", id, "tag", (a[8] || []).length ? "Edit genres" : "Add genres")}${on("features", "write_files") ? row("artEdit", id, "edit", "Change the cover") : ""}
-    ${row("removeAsk", id, "trash", "Remove from the library", "danger")}</div></div>`);
+    ${row("genreEdit", id, "tag", (a[8] || []).length ? "Edit genres" : "Add genres")}${on("features", "write_files") ? row("artEdit", id, "edit", "Change the cover") : ""}</div></div>`);
   api("/api/share?album_id=" + id).then(r => { const box = $("#sheet .more-share"); if (r.url && box) box.outerHTML = `<button class="btn ghost" data-act="share" data-v="${esc(JSON.stringify({ title: c.title + " by " + c.artist, url: r.url }))}">${icon("share")} Share</button>`; }).catch(() => {});
 }
 /* ───────────────────────── search ───────────────────────── */
@@ -2926,12 +2927,17 @@ const ACT = {
     closeSheet();
     api("/api/artist-tags", { artist: t.name, hidden }).then(r => { if (r.error) return toast(r.error); redraw(); toast("Saved"); }).catch(() => toast("The server didn't answer"));
   },
-  banSheet: () => {
-    const t = curTrack(); if (!t) return;
-    openSheet(`<div class="kicker">Never play</div><h3>${esc(t.title)}</h3><div class="dim">${esc(t.artist || "")}</div>
-      <p class="plan-note">Skipped now, and kept out of whatever the radio and the stations bring from now on. Music you put on yourself plays whole. Lift it in Settings.</p>
-      <div class="acts col"><button class="btn" data-act="banDo" data-v="track" data-artist="${esc(t.artist || "")}" data-title="${esc(t.title)}">${icon("ban")} Never play this track</button>
-      <button class="btn ghost" data-act="banDo" data-v="artist" data-artist="${esc(splitArtist(t.artist || ""))}">${icon("ban")} Never play ${esc(splitArtist(t.artist || ""))}</button><button class="btn ghost" data-act="closeSheet">Not now</button></div>`);
+  banMenu: v => {
+    const ctx = JSON.parse(v);
+    if (ctx.k === "artist") return ACT.artistBan(ctx.artist); // an artist: only they can be kept out
+    const c = ctxOf(ctx), who = splitArtist(c.artist || ""), shelf = ctx.k === "album" ? (+ctx.id > 0 ? +ctx.id : 0) : ctx.k === "np" ? +ctx.lib || 0 : 0;
+    const row = (act, val, ic, words, extra) => `<button class="btn ghost ${extra && extra.cls || ""}" data-act="${act}" data-v="${esc(String(val))}"${extra && extra.attrs || ""}${extra && extra.off ? " disabled" : ""}>${icon(ic)} ${words}</button>`;
+    openSheet(`<div><div class="kicker">Never play, or remove</div><h3>${esc(ctx.k === "np" ? ctx.song || c.title : c.title)}</h3><div class="dim">${esc(c.artist || "")}</div>
+      <div class="acts col">
+      ${row("removeAsk", shelf, "trash", shelf ? "Remove from the library" : `Remove from the library <span class="dim">(it isn't in it)</span>`, { cls: shelf ? "danger" : "", off: !shelf })}
+      ${who ? row("artistBan", who, "ban", `Never play ${esc(who)}`) : ""}
+      ${ctx.k === "np" && ctx.song ? row("banDo", "track", "ban", "Never play this track", { attrs: ` data-artist="${esc(c.artist || "")}" data-title="${esc(ctx.song)}"` }) : ""}</div>
+      <p class="plan-note">Never play keeps it out of whatever the radio and the stations bring, in every room. Music you put on yourself plays whole. Lift it in Settings.</p></div>`);
   },
   banDo: (v, t) => {
     closeSheet();
@@ -3892,7 +3898,7 @@ function drawNp() {
       <div class="np-right"><div class="np-info"><div class="kicker">${t.turntable ? `${icon("disc")} The turntable, in` : "Now playing in"} <span class="room-label">${esc(groupLabel())}</span></div><h1>${hearted(t.title, mk("track", trackKey(t), "heart"))}</h1>
         <div class="byline">${artist ? hearted(t.artist || artist, mk("artist", norm(artist), "heart"), `<a class="by" href="${artistHref(artist)}" data-close="1">`, "</a>") : ""}</div>${t.album ? (t.href || libAlbum ? `<a class="alb" href="${t.href || albumHref(libAlbum[0])}" data-close="1">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</a>` : `<div class="alb">${esc(t.album)}${t.year && +t.year ? " &middot; " + t.year : ""}</div>`) : ""}
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>${t.turntable && A.tt ? ttAsk(A.tt) : ""}
-        <div class="np-extra"><button class="pill" data-act="banSheet" aria-label="Never play">${icon("ban")}</button>${addToBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0, cover: /^https?:/.test(t.artwork_url || "") ? t.artwork_url : "" }).replace('class="add-to"', 'class="pill add-to" aria-label="Add to…"')}${has("radio") ? `<button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${isMA() ? "" : `<button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>`}${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
+        <div class="np-extra">${banBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0 }).replace('class="ban-of"', 'class="pill ban-of"')}${addToBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0, cover: /^https?:/.test(t.artwork_url || "") ? t.artwork_url : "" }).replace('class="add-to"', 'class="pill add-to" aria-label="Add to…"')}${has("radio") ? `<button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${isMA() ? "" : `<button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>`}${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
       <div class="np-next"></div></div></div>`;
   drawNpSide();
