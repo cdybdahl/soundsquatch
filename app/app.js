@@ -1119,6 +1119,7 @@ VIEWS.front = function (el) {
         shelf: ["From the record shelf", x.rec && shelfWhen(x.rec), x.title, x.artist + (x.year ? ", " + x.year : ""), x.rec && recordHref(x.rec), x.art && pic(x.art, big ? 1200 : 600)],
         pickArtist: ["Picked at random", "From your shelves", x.name, (albumsBy(x.name).length) + " records on the shelves", artistHref(x.name), ""],
         born: ["Born on this day", cap(inWords(x.years)) + " today", x.name, x.member ? "Of " + x.artist : "", artistHref(x.member ? x.artist : x.name), x.pic ? pic(x.pic, big ? 1600 : 640) : ""],
+        shelfpick: [x.dept, x.when, x.title, x.artist + (x.year ? ", " + x.year : ""), albumHref(x.album_id), cover(x.art, big ? 1600 : 600)],
         died: ["Remembered", `${years} ago today`, x.name, (x.member ? "Of " + x.artist + " · " : "") + (x.born ? x.born + "–" + x.died : ""), artistHref(x.member ? x.artist : x.name), x.pic ? pic(x.pic, big ? 1600 : 640) : ""] }[x.kind];
       if (!k) return "";
       const text = x.text ? standfirst(x.text, big ? 300 : 150) : x.kind === "night" && x.others ? `One of ${x.others + 1} shows in your Archive collections recorded on this date.`
@@ -1137,10 +1138,25 @@ VIEWS.front = function (el) {
         <div class="grid">${theirs.slice(-n).reverse().map(a => albumCard(a)).join("")}</div></div>`;
     };
     const picked = A.heroAlbum && A.byId.get(A.heroAlbum);
-    const lead = picked ? { kind: "pick", album_id: picked[0], title: picked[1], artist: picked[2], art: picked[4], year: picked[3], text: "" }
+    let lead = picked ? { kind: "pick", album_id: picked[0], title: picked[1], artist: picked[2], art: picked[4], year: picked[3], text: "" }
       : A.heroPick ? { kind: "pickArtist", name: A.heroPick } : stories[0];
     const rest = shelfStories().concat(picked || A.heroPick ? stories : stories.slice(1)); // the record shelf's, when there is one, at the head of the column
     const cards = ids => ids.map(id => A.byId.get(id)).filter(Boolean);
+    // a column never left bare: without a record shelf (Discogs) or the Archive's shows, often only the lead comes, so
+    // it's made up to three from what every house has, its shelves: an anniversary, the newest arrival, the decade and
+    // the genre of the day, then a record at random (the same all day)
+    const used = new Set([lead && lead.album_id].concat(rest.map(x => x.album_id)).filter(Boolean));
+    const want = lead ? 3 : 4; // with no lead story, the first of them leads
+    const add = (a, dept, when) => { if (rest.length < want && a && a[4] && !used.has(a[0])) { used.add(a[0]); rest.push({ kind: "shelfpick", dept: dept, when: when, album_id: a[0], title: a[1], artist: a[2], year: a[3], art: a[4] }); } };
+    if (rest.length < want) {
+      const day = seeded("column" + (h.date || ""));
+      ((h.round || [])[0] ? cards(h.round[0].albums) : []).slice(0, 1).forEach(a => add(a, "Round numbers", `${cap(inWords(h.round[0].age))} years old this month`));
+      A.albums.filter(a => a[11]).sort(SORTS.added[1]).slice(0, 1).forEach(a => add(a, "Just in", "New on the shelves"));
+      if (h.decade) shuffled(cards(h.decade_albums || []), day).forEach(a => add(a, "A decade, drawn at random", `The ${h.decade}s`));
+      if (h.genre) shuffled(A.albums.filter(a => (a[8] || []).indexOf(h.genre) >= 0), day).forEach(a => add(a, "Genre of the day", h.genre));
+      shuffled(A.albums, day).forEach(a => add(a, "Picked at random", "From your shelves"));
+    }
+    if (!lead) lead = rest.shift();
     const mini = (a, sub) => `<a class="fp-mini" href="${albumHref(a[0])}"><img loading="lazy" src="${cover(a[4], 150)}" alt=""><span><b>${esc(a[1])}</b><em>${esc(sub || a[2])}</em></span></a>`;
     const round = [].concat.apply([], (h.round || []).map(g => cards(g.albums).map(a => [g.age, a]))).slice(0, 6);
     const sections = [["radio", "On the radio"], ["playing", "What the house is playing"], ["new", "New records"], ["round", "Round numbers"], ["lately", "Not heard lately"], ["artist", "Artist of the day"]];
