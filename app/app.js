@@ -2153,7 +2153,8 @@ function drawSettings(el) {
       ${toggle("setDev", "lite", device.get("lite", false), "Lighter drawing", "no frosted glass or big blurs: smoother on a modest machine")}
       ${toggle("setDev", "still", device.get("still", false), "Reduce motion", "no slow zooms or shimmer, and the cover stories don't turn by themselves")}
       <div class="set-row"><span><b>Look</b><em>Classic, or set like a printed music magazine</em></span><div class="seg">${[["classic", "Classic"], ["magazine", "Magazine"]].map(l => `<button class="${(magOn() ? "magazine" : "classic") === l[0] ? "on" : ""}" data-act="setLook" data-v="${l[0]}">${l[1]}</button>`).join("")}</div></div>
-      ${toggle("setOsk", "", oskOn(), "On-screen keyboard", "for a screen without a keyboard of its own, such as one on a wall")}`))}
+      ${toggle("setOsk", "", oskOn(), "On-screen keyboard", "for a screen without a keyboard of its own, such as one on a wall")}
+      ${document.documentElement.classList.contains("wall") ? toggle("setNpViz", "", npVizOn(), "Now Playing visual", "the record turning, its tonearm crossing the side, and the side as a timeline, in Now Playing's empty space") : ""}`))}
     ${isMA() ? "" : inTab("house", section("For every screen in the house", "Lyrion's own settings", lyrionLinks()))}
     ${inTab("house", section("For every screen in the house", "Connections", `${CONN.map(k => { const good = !!c.checks[k[3]];
         return `<div class="set-field conn ${good ? "" : "open"}" data-k="${k[0]}"><span><b>${k[1]}</b><em>${k[2]}</em></span>
@@ -2211,6 +2212,7 @@ function applyDevice() {
   root.classList.toggle("lite", device.get("lite", false) || /[?&]lite\b/.test(location.search));
   root.classList.toggle("still", device.get("still", false));
   root.classList.toggle("mag", magOn());
+  root.classList.toggle("npviz", npVizOn());
 }
 
 /* ───────────────────────── history ───────────────────────── */
@@ -3010,6 +3012,7 @@ const ACT = {
     saveSettings(body, "Saved; checks below").then(() => { if (!!conn.ma_url !== was) setTimeout(() => location.reload(), 1500); }); // the other music server: the app starts again on it
   },
   setZoom: v => { device.set("zoom", +v); applyDevice(); if (current && current.kind === "settings") drawSettings(current.el); },
+  setNpViz: () => { device.set("npviz", !npVizOn()); applyDevice(); if (!$("#np").hidden) drawNp(); if (current && current.kind === "settings") drawSettings(current.el); },
   setDev: v => { device.set(v, !device.get(v, false)); applyDevice(); if (current && current.kind === "settings") drawSettings(current.el); },
   keepLog: (v, t) => {
     const k = t.dataset.k, row = t.closest(".hist") || document;
@@ -3808,6 +3811,105 @@ function ttVisual() {
   };
   A.ttEs.onerror = () => { if (A.ttEs) A.ttEs.close(); A.ttEs = null; };
 }
+/* ── the wall's Now Playing visual (Settings → This device, shown on the wall only): in the room the songs leave, the
+   record turning at 33⅓ with the cover as its label and the tonearm crossing it as the side plays (a stream: as the
+   song plays), and under it the side as a timeline, each song a bar as long as the song, the needle where it is now.
+   One canvas, about 30 frames a second, the disc drawn once and turned; still with "Reduce motion" set. ── */
+const npVizOn = () => document.documentElement.classList.contains("wall") && device.get("npviz", true);
+const npVizHtml = () => npVizOn() ? `<div class="np-viz"><canvas></canvas></div>` : "";
+const mmssSec = d => { const m = /^(\d+):(\d{2})$/.exec(String(d || "").trim()); return m ? +m[1] * 60 + +m[2] : 0; };
+// what to draw: the cover, playing or not, the songs ([{n, title, dur}]), which one is now, and how far into it (s)
+function npVizData() {
+  if (ttLeads()) {
+    const t = A.tt || {}, r = t.record || {}, song = t.song || {}, tracks = (r.id && A.ttTracks[r.id]) || [];
+    const sideOf = pos => ((/^[A-Za-z]+/.exec(pos || "") || [""])[0]).toUpperCase(), side = sideOf(song.pos) || t.side || "";
+    const items = tracks.filter(x => sideOf(x.pos) === side).map(x => ({ n: x.pos, title: x.title, dur: mmssSec(x.dur) || 210 }));
+    const key = r.id + "/" + (song.pos || ""); if (!A.vizSeen || A.vizSeen.k !== key) A.vizSeen = { k: key, at: Date.now() / 1000 };
+    const began = song.began || A.vizSeen.at, cur = items.findIndex(x => x.n === song.pos);
+    return { art: ttArt(t, 600), playing: t.state === "playing", items, cur, el: Math.max(0, Date.now() / 1000 - began) };
+  }
+  const st = A.st || {}, t = curTrack();
+  const items = (st.playlist_loop || []).slice(0, 7).map((x, i) => ({ n: i ? "" : "Now", title: x.title || "", dur: +x.duration || 0 })).filter(x => x.dur > 0);
+  return { art: t ? trackArt(t, 600) : "", playing: st.mode === "play", items, cur: items.length ? 0 : -1, el: position() };
+}
+function npVizStart() {
+  if (!npVizOn() || A.vizRaf) return;
+  let last = 0;
+  const step = ts => {
+    const c = $("#np .np-viz canvas");
+    if (!c || $("#np").hidden || !npVizOn()) { A.vizRaf = 0; return; }
+    A.vizRaf = requestAnimationFrame(step);
+    if (ts - last < 32) return; // about 30 a second
+    try { npVizFrame(c, ts, ts - (last || ts)); } catch (e) {}
+    last = ts;
+  };
+  A.vizRaf = requestAnimationFrame(step);
+}
+// the disc, drawn once for its size and cover: grooves, the run-out, the label (the cover in a circle), the spindle
+function npVizDisc(D, img) {
+  const k = D + "|" + (img ? img.src : "");
+  if (A.vizDisc && A.vizDisc.k === k) return A.vizDisc.c;
+  const c = document.createElement("canvas"); c.width = c.height = D; const g = c.getContext("2d"), R = D / 2;
+  const body = g.createRadialGradient(R, R, R * .2, R, R, R); body.addColorStop(0, "#161514"); body.addColorStop(1, "#070707");
+  g.fillStyle = body; g.beginPath(); g.arc(R, R, R, 0, 7); g.fill();
+  for (let r = R * .38; r < R * .97; r += 2.2) { g.strokeStyle = `rgba(255,255,255,${(r % 9 < 2.2 ? .05 : .022)})`; g.lineWidth = 1; g.beginPath(); g.arc(R, R, r, 0, 7); g.stroke(); }
+  [.52, .66, .8].forEach(f => { g.strokeStyle = "rgba(0,0,0,.9)"; g.lineWidth = 3; g.beginPath(); g.arc(R, R, R * f, 0, 7); g.stroke(); }); // the gaps between songs
+  const L = R * .34;
+  g.save(); g.beginPath(); g.arc(R, R, L, 0, 7); g.clip();
+  if (img && img.complete && img.naturalWidth) g.drawImage(img, R - L, R - L, L * 2, L * 2); else { g.fillStyle = "#b4893c"; g.fillRect(R - L, R - L, L * 2, L * 2); }
+  g.restore();
+  g.fillStyle = "#0a0a0a"; g.beginPath(); g.arc(R, R, D * .012, 0, 7); g.fill();
+  if (img && img.complete && img.naturalWidth) A.vizDisc = { k, c };
+  return c;
+}
+function npVizFrame(c, ts, dt) {
+  const box = c.parentNode, W = box.clientWidth, H = box.clientHeight;
+  if (W < 200 || H < 160) { c.style.visibility = "hidden"; return; }
+  c.style.visibility = "";
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const g = c.getContext("2d"), d = npVizData(), np = $("#np"), cs = getComputedStyle(np);
+  const acc = (cs.getPropertyValue("--accent") || "").trim() || "#d8b26a", ink = "rgba(242,236,226,";
+  g.clearRect(0, 0, W, H);
+  // the cover, loaded once per address
+  if (d.art && (!A.vizImg || A.vizImg.dataset.src !== d.art)) { const im = new Image(); im.dataset.src = d.art; im.src = d.art; A.vizImg = im; }
+  const img = d.art ? A.vizImg : null;
+  // the timeline along the foot
+  const TH = d.items.length ? 64 : 0, D = Math.floor(Math.min(H - TH - 16, W * .62)), R = D / 2, cx = W / 2 - D * .14, cy = R + 4;
+  // progress: through the side (or the song), 0 to 1
+  const total = d.items.reduce((n, x) => n + x.dur, 0) || 1, before = d.items.slice(0, Math.max(0, d.cur)).reduce((n, x) => n + x.dur, 0);
+  const curDur = d.cur >= 0 && d.items[d.cur] ? d.items[d.cur].dur : 0, el = Math.min(d.el, curDur || d.el);
+  const prog = ttLeads() ? (d.cur >= 0 ? (before + el) / total : 0) : (curDur ? el / curDur : 0);
+  // the disc, turning while it plays
+  if (d.playing && !document.documentElement.classList.contains("still")) A.vizAng = ((A.vizAng || 0) + (dt / 1000) * (100 / 3 / 60) * Math.PI * 2) % (Math.PI * 2);
+  g.save(); g.translate(cx, cy); g.rotate(A.vizAng || 0); g.drawImage(npVizDisc(D, img), -R, -R); g.restore();
+  // a still sheen across it, as a lamp on vinyl
+  if (g.createConicGradient) { const sh = g.createConicGradient(-.6, cx, cy); sh.addColorStop(0, "rgba(255,255,255,0)"); sh.addColorStop(.06, "rgba(255,255,255,.07)"); sh.addColorStop(.12, "rgba(255,255,255,0)"); sh.addColorStop(.5, "rgba(255,255,255,0)"); sh.addColorStop(.56, "rgba(255,255,255,.05)"); sh.addColorStop(.62, "rgba(255,255,255,0)"); sh.addColorStop(1, "rgba(255,255,255,0)");
+    g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 7); g.arc(cx, cy, R * .35, 0, 7, true); g.fillStyle = sh; g.fill(); g.restore(); }
+  // the tonearm: from its pivot off the disc's upper right, its stylus at the groove for where the side has got to
+  const px = cx + D * .62, py = cy - D * .38, dx = cx - px, dy = cy - py, dd = Math.hypot(dx, dy), La = dd * .93;
+  const rr = d.playing || prog > 0 ? R * (.95 - .55 * Math.min(1, Math.max(0, prog))) : R * 1.1; // parked off the record
+  const a = (La * La - rr * rr + dd * dd) / (2 * dd), h = Math.sqrt(Math.max(0, La * La - a * a));
+  const sx = px + a * dx / dd + h * dy / dd, sy = py + a * dy / dd - h * dx / dd, ang = Math.atan2(sy - py, sx - px);
+  g.lineCap = "round";
+  g.strokeStyle = "#2a2826"; g.lineWidth = D * .05; g.beginPath(); g.moveTo(px - Math.cos(ang) * D * .1, py - Math.sin(ang) * D * .1); g.lineTo(px - Math.cos(ang) * D * .06, py - Math.sin(ang) * D * .06); g.stroke(); // the counterweight
+  g.strokeStyle = "#cfc8bc"; g.lineWidth = Math.max(3, D * .016); g.beginPath(); g.moveTo(px, py); g.lineTo(sx, sy); g.stroke();
+  g.save(); g.translate(sx, sy); g.rotate(ang + .35); g.fillStyle = "#e6e0d6"; g.fillRect(-D * .02, -D * .028, D * .06, D * .056); g.restore(); // the headshell
+  g.fillStyle = "#1d1c1b"; g.beginPath(); g.arc(px, py, D * .065, 0, 7); g.fill(); g.strokeStyle = "rgba(255,255,255,.18)"; g.lineWidth = 2; g.stroke();
+  g.fillStyle = "#cfc8bc"; g.beginPath(); g.arc(px, py, D * .022, 0, 7); g.fill();
+  if (!TH) return;
+  // the side: a bar a song, as long as the song; heard ones in the cover's colour, the one now filling, the rest faint
+  const y = H - TH + 8, gap = 6, span = W - gap * (d.items.length - 1);
+  let x = 0; g.font = "600 15px Inter, system-ui, sans-serif"; g.textBaseline = "top";
+  d.items.forEach((it, i) => {
+    const w = Math.max(2, span * it.dur / total), now = i === d.cur, done = d.cur >= 0 && i < d.cur;
+    g.fillStyle = done ? acc : ink + ".16)"; g.globalAlpha = done ? .55 : 1; g.fillRect(x, y, w, 8); g.globalAlpha = 1;
+    if (now) { g.fillStyle = acc; g.fillRect(x, y, w * Math.min(1, el / (it.dur || 1)), 8); }
+    if (w > 54) { g.save(); g.beginPath(); g.rect(x, y + 14, w - 4, 40); g.clip();
+      g.fillStyle = now ? acc : ink + (done ? ".45)" : ".6)"); g.fillText((it.n ? it.n + "  " : "") + it.title, x, y + 16); g.restore(); }
+    x += w + gap;
+  });
+  if (ttLeads() && d.cur >= 0) { const nx = Math.min(W - 1, prog * W); g.fillStyle = acc; g.beginPath(); g.moveTo(nx - 7, y - 10); g.lineTo(nx + 7, y - 10); g.lineTo(nx, y - 1); g.fill(); }
+}
 function drawTtNp() {
   const t = A.tt, np = $("#np"), song = t.song, art = ttArt(t, 800), r = t.record || {};
   np.innerHTML = `<div class="np-bg">${art ? `<img src="${esc(art)}" alt="">` : ""}</div><button class="np-close" data-act="closeNp" aria-label="Close">${icon("down")}</button>
@@ -3818,9 +3920,9 @@ function drawTtNp() {
         <div class="np-q tt-q">Vinyl${song && song.pos ? " &middot; side " + esc(song.side) + ", " + esc(song.pos) : ""}${r.plays ? ` &middot; played ${r.plays} ${r.plays === 1 ? "time" : "times"}` : ""}</div>
         <div class="np-extra"><button class="pill" data-act="ttRooms">${icon("speaker")} Hear it in a room</button><button class="pill" data-act="ttNew">${icon("disc")} New record</button></div></div>
         ${ttAsk(t)}
-        <div class="np-next">${ttTracklist(t) || (t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : "")}${ttSuggest(t)}</div></div></div>`;
+        <div class="np-next">${ttTracklist(t) || (t.songs.length ? `<div class="tt-heard"><div class="kicker">Heard so far</div><ol>${t.songs.map(s => `<li><span>${esc(s[1] || "")}</span>${esc(s[0])}</li>`).join("")}</ol></div>` : "")}${ttSuggest(t)}</div></div>${npVizHtml()}</div>`;
   const img = $(".np-art img", np); if (img) tint(img, np);
-  ttVisual();
+  ttVisual(); npVizStart();
 }
 /* the record's tracklist from Discogs, by side: the song playing marked, those heard ticked; with oneSide, only the side
    playing. Read once a record (the server keeps it a month); drawn again when it comes */
@@ -3929,8 +4031,8 @@ function drawNp() {
         <button class="np-q" data-act="signalPath" aria-label="Playing through">${t.turntable ? "" : trackSource(t)}${quality(t)}</button>${t.turntable && A.tt ? ttAsk(A.tt) : ""}
         <div class="np-extra">${banBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0 }).replace('class="ban-of"', 'class="pill ban-of"')}${addToBtn({ k: "np", artist: t.artist || artist || "", album: t.album || "", song: t.title || "", url: t.url || "", id: +t.id || 0, lib: libAlbum ? libAlbum[0] : 0, cover: /^https?:/.test(t.artwork_url || "") ? t.artwork_url : "" }).replace('class="add-to"', 'class="pill add-to" aria-label="Add to…"')}${has("radio") ? `<button class="pill radio-btn ${A.radio[A.room] ? "on" : ""}" data-act="radioToggle">${icon("radio")} Radio</button>` : ""}<button class="pill np-room" data-act="rooms">${icon("speaker")} <span class="room-label">${esc(groupLabel())}</span></button>${isMA() ? "" : `<button class="pill ${+(A.st || {}).sleep ? "on" : ""}" data-act="sleepSheet" aria-label="Sleep">${icon("moon")}${+(A.st || {}).sleep ? ` ${Math.ceil(+(A.st || {}).will_sleep_in / 60 || +(A.st || {}).sleep / 60)} min` : ""}</button>`}${qobuzLink(t.artwork_url) ? `<button class="pill" data-act="share" data-v="${esc(JSON.stringify({ title: (t.album || t.title) + " by " + (t.artist || ""), url: qobuzLink(t.artwork_url) }))}">${icon("share")} Share</button>` : ""}</div></div>
       <div class="np-tabs"><button data-act="npTab" data-v="next">Up next</button>${on("features", "lyrics") ? `<button data-act="npTab" data-v="lyrics">Lyrics</button>` : ""}${on("features", "credits") ? `<button data-act="npTab" data-v="credits">Credits</button>` : ""}<button data-act="npTab" data-v="about">The artist</button><button class="np-save" data-act="saveQueue">Save queue</button></div>
-      <div class="np-next"></div></div></div>`;
-  drawNpSide();
+      <div class="np-next"></div></div>${npVizHtml()}</div>`;
+  drawNpSide(); npVizStart();
   readRadio(A.room).then(paintRadio).catch(() => {});
   if ($(".vol", np)) bindVolume($(".vol", np));
   const img = $(".np-art img", np); if (img) tint(img, np);

@@ -5293,6 +5293,18 @@ def tt_song_before(rec, pos):
     return (tracks[i - 1]["pos"], tracks[i - 1]["title"], secs) if secs else None
 
 
+def tt_began(spin, song):
+    """When the song playing began, by the wall clock (seconds), while the side is followed by the clock; else None (the
+    wall's Now Playing visual then reckons from when the song was named)."""
+    try:
+        if not spin.get("timeline") or not EAR:
+            return None
+        b = next((b for t, b in tt_schedule(spin) if t["pos"] == song.get("pos")), None)
+        return None if b is None else round(time.time() - (EAR.clock - b), 1)
+    except Exception:
+        return None
+
+
 def tt_schedule(spin):
     """The side playing, by the clock, from the song the house named and when it began: [(track, began)], the songs
     before it worked back from it, those after forward, each by its length and a two-second gap. It stops where a
@@ -6003,7 +6015,7 @@ def turntable_state():
                        "href": f"#/album/{rec[8]}" if rec[8] else f"#/record/{rec[0]}", "plays": plays.get("n", 0), "last": plays.get("last", ""),
                        "new": bool(len(rec) > 9 and (rec[9] or {}).get("new"))} if rec else
                       ({"id": 0, "title": spin["title"], "artist": spin["artist"]} if spin else None),
-            "song": {k: song.get(k) for k in ("title", "artist", "pos", "side", "how")} if song and spin else None,
+            "song": dict({k: song.get(k) for k in ("title", "artist", "pos", "side", "how")}, began=tt_began(spin, song)) if song and spin else None,
             "songs": [[x["title"], x["pos"]] for x in spin["songs"]] if spin else [],
             "side": song.get("side", "") if song and spin else "", "suggest": spin["suggest"] if spin else [], "side_over_at": TT["side_over_at"],
             "unnamed": {"guess": un[1] and {"pos": un[1]["pos"], "title": un[1]["title"]}} if un else None,

@@ -1421,6 +1421,15 @@ html.wall .np-info .by { font-size: 30px; }
 html.wall .np-info .alb { font-size: 20px; }
 html.wall .np-next.lyr p { font-size: 32px; }
 html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
+/* the wall's Now Playing visual (npVizFrame): its own row at the foot, the songs above it only as tall as they need, the
+   visual taking the rest (never less than 300px: a long list scrolls instead) */
+.np-viz { display: none; }
+@media (min-width: 641px) and (max-aspect-ratio: 1/1) {
+  html.wall.npviz .np-main { grid-template-rows: auto auto auto auto minmax(0, auto) minmax(300px, 1fr);
+    grid-template-areas: "art info" "tr tr" "tabs tabs" "ask ask" "next next" "viz viz"; }
+  html.wall.npviz .np-viz { display: block; grid-area: viz; position: relative; min-height: 0; margin-top: 18px; }
+  html.wall.npviz .np-viz canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+}
 /* the phone: one page that scrolls as a whole, in reading order: the cover, the song, the buttons, then the tabs */
 @media (max-width: 640px) {
   .np-main { display: flex; flex-direction: column; gap: 0; }
