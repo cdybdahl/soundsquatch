@@ -635,7 +635,7 @@ class Service:
             return {"result": self.keep(album), "album": name, "artist": artist, "year": album.get("year") or 0, "cover": picture(album)}
         return {"error": "unknown command"}
 
-    def release(self, artist, title, want, player=""):
+    def release(self, artist, title, want, player="", cover=""):
         term = f"{artist} {title}".strip()[:120]
         found = self._albums(term)
         fit = lambda a: (_norm(a.get("name")) == _norm(title)) * (2 if not artist or _norm((a.get("artists") or [{}])[0].get("name")) == _norm(artist) else 1)
@@ -650,7 +650,7 @@ class Service:
                 "tracks": [{"n": s.get("track_number") or n + 1, "title": s.get("name") or "", "k": n} for n, s in enumerate(songs)],
                 "year": a.get("year") or "", "kept": a.get("provider") == "library" or any(m.get("in_library") for m in a.get("provider_mappings") or [])}
 
-    def play_release(self, term, i, track, how, player):
+    def play_release(self, term, i, track, how, player, qid=None):
         found = self._albums(term)
         if i >= len(found):
             return {"error": f"{self.label} no longer lists that release"}
