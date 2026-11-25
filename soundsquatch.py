@@ -5373,14 +5373,16 @@ def tt_quiet(seconds):
     """From the Ear while it is quiet. Half a minute after a song, a side is over; it's the record that's over (what to
     play next is wanted) when that side ended on the record's last song, or nothing follows for five minutes (it wasn't
     flipped), or the lid is shut. The spin ends with the lid shut or a quarter of an hour of quiet; "record over" is kept
-    ten minutes, then the turntable is idle."""
+    ten minutes, then the turntable is idle. The turntable's room starting to stream doesn't end it: that only stops
+    the naming (tt_clip) while it plays, since the amplifier may well still be on the record (a 10:00 mix started in
+    the room mid-side once ended the spin, lost the side's songs and said "That's the record")."""
     with tt_lock:
         spin = TT["spin"]
         if not spin:
             if TT["state"] == "record over" and time.time() - TT.get("over_at", 0) > 600:
                 TT.update(state="idle", done=None)
             return
-        if tt_not_record() or seconds > 900:
+        if tt_lid() is False or seconds > 900:  # the lid shut, or a quarter of an hour of nothing: the record is done
             tt_end_spin()
         elif seconds > 30 and TT["state"] == "playing":
             last = tt_last_song(spin)
