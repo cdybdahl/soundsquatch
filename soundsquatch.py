@@ -1794,6 +1794,63 @@ def part_rgs(mb):
     return sorted(out, key=lambda g: g["date"], reverse=True)[:100]  # enough to know every record on the shelves by its kind
 
 
+GENRE_FILLER = {"music", "and", "the", "of", "n"}
+
+
+def genre_words(tags):
+    return {w for t in tags for w in re.split(r"[^a-z0-9]+", t.lower()) if w and w not in GENRE_FILLER}
+
+
+def vet_similar(name, d):
+    """Qobuz's similar artists, when its page for the name is several artists' at once (releases on it aren't theirs,
+    or, for a sheet kept before that was noted, MusicBrainz knows several of the name). Such a page is all of them (its "rex" is a slowcore band, a German rapper, a Chinese idol and
+    more), and its similar artists are the whole pile's: each is kept only when it's on the shelves or MusicBrainz's
+    genres for it meet the artist's own, the rest left out (better none than someone else's). The sheet is marked
+    vetted; True when it was looked at now."""
+    q = d.get("qobuz") or {}
+    if not q.get("similar") or q.get("vetted"):
+        return False
+    if q["shared"] if "shared" in q else lms_qobuz.mb_namesakes(name) > 1:  # the page is namesakes' too (kept before that was noted: MusicBrainz knows several)
+        mine, keep = genre_words((d.get("mb") or {}).get("genres") or []), []
+        for x in q["similar"]:
+            with lib_lock:
+                shelved = key(x["name"]) in library["artists"]
+            if shelved:
+                keep.append(x)
+                continue
+            if not mine:
+                continue
+            try:
+                found = mb_get("artist", query=f'artist:"{x["name"]}"', limit=5).get("artists", [])
+            except Exception:
+                continue
+            a = next((a for a in found if (a.get("name") or "").lower() == x["name"].lower()), None)
+            if a and genre_words([t.get("name") or "" for t in a.get("tags") or []]) & mine:
+                keep.append(x)
+        q["similar"] = keep
+    q["vetted"] = True
+    return True
+
+
+def vet_kept_similar():
+    """Once, for the profiles kept before similar artists were vetted: each looked at, its date left as it was."""
+    if kv_get("similar-vetted"):
+        return
+    for k in list(profiles):
+        d, fetched, complete = profiles.get(k, (None, 0, 0))
+        if not d or "mb" not in d:
+            continue
+        try:
+            if vet_similar(d.get("name") or k, d):
+                profiles[k] = (d, fetched, complete)
+                with db_lock, db() as c:
+                    c.execute("update artists set data = ? where k = ?", (json.dumps(d, ensure_ascii=False), k))
+                payload["version"] += 1
+        except Exception as e:
+            note_error(f"vetting {k}: {type(e).__name__}: {e}"[:200])
+    kv_set("similar-vetted", True)
+
+
 def build(name, only=None):
     """Fetches the parts of an artist's profile it lacks (or all, when stale), keeping what it has if a part fails. The
     photographs (through Music & Artist Information) outlast a stale profile: found once, they are kept; an artist with
@@ -1829,8 +1886,13 @@ def build(name, only=None):
             d.setdefault("_tried", {})[p] = time.time()
             crawl_state["errors"] += 1
             note_error(f"{name} {p}: {type(e).__name__}: {e}"[:200])
-        if p == "qobuz" and "qobuz" in d and only is None:
-            put_profile(name, d, False)  # the app can show this much while the rest comes
+        if p == "qobuz" and "qobuz" in d and only is None:  # the app can show this much while the rest comes, its similar
+            put_profile(name, dict(d, qobuz=dict(d["qobuz"], similar=[])), False)  # artists once they're vetted
+    if "qobuz" in d and "mb" in d:
+        try:
+            vet_similar(name, d)
+        except Exception as e:
+            note_error(f"{name} similar: {type(e).__name__}: {e}"[:200])
     put_profile(name, d, all(p in d for p in PARTS))
     for url, width in ((pick_photo(d), 1600), (pick_photo(d, "thumb"), 320)):  # the pictures the app will ask for, ready
         try:
@@ -6500,7 +6562,7 @@ if __name__ == "__main__":
     start_recorder()
     start_turntable()
     lapsed_local_artwork()
-    for job in (lambda: (replaygain_captures(), mark_captures()), lambda: (carry_ratings(), retire_hearts()), lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
+    for job in (lambda: (replaygain_captures(), mark_captures(), vet_kept_similar()), lambda: (carry_ratings(), retire_hearts()), lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does

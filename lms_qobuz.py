@@ -124,6 +124,23 @@ def mb_get(path, **query):
         return json.load(r)
 
 
+def mb_namesakes(name):
+    """How many MusicBrainz artists are named just so (there are 22 Rexes); a month."""
+    path = os.path.join(MB_CACHE, "n-" + hashlib.sha1(name.lower().encode()).hexdigest() + ".json")
+    try:
+        if time.time() - os.path.getmtime(path) < 30 * 86400:
+            with open(path) as f:
+                return json.load(f)
+    except OSError:
+        pass
+    n = sum(1 for a in mb_get("artist", query=f'artist:"{name}"', limit=100).get("artists", []) if (a.get("name") or "").lower() == name.lower())
+    os.makedirs(MB_CACHE, exist_ok=True)
+    with open(path + ".tmp", "w") as f:
+        json.dump(n, f)
+    os.replace(path + ".tmp", path)
+    return n
+
+
 def mb_releases(name):
     """Every MusicBrainz artist named just so, with the titles of their releases: [(id, what they are, {titles})]; a month."""
     path = os.path.join(MB_CACHE, hashlib.sha1(name.lower().encode()).hexdigest() + ".json")
@@ -205,7 +222,7 @@ def artist_sheet(name, player):
         bio = (got[0].get("name") if got else "") or ""
     similar = (rpc(player, "qobuz", "items", "0", "24", f"item_id:{parts['Similar Artists']}", f"search:{name}").get("loop_loop") or []) if parts.get("Similar Artists") else []
     photo = cover(img).replace("/covers/small/", "/covers/medium/")  # Qobuz's own; Music & Artist Information's photo lookup hangs as often as not
-    return {"name": title, "bio": bio.strip(), "photo": photo, "heard": heard(title),
+    return {"name": title, "bio": bio.strip(), "photo": photo, "heard": heard(title), "shared": len(own) < len(every),  # other artists' releases on it: namesakes, one page
             "releases": [{"i": i, "group": g, "artist": split(n)[0], "album": split(n)[1], "cover": cover(c)} for i, (item, g, n, c, _) in enumerate(every) if item in own],
             "similar": [{"name": x.get("name") or "", "image": cover(x.get("image") or "")} for x in similar if x.get("name")]}
 
