@@ -5219,6 +5219,17 @@ def tt_lengths(rec):
     return out
 
 
+def tt_song_before(rec, pos):
+    """The song before `pos` on the same side of a record, (position, title, seconds), from its tracklist and lengths;
+    None when it's the side's first or a length isn't known."""
+    tracks = [t for t in discogs_release(rec[0]).get("tracks") or [] if t["type"] == "track"]
+    i = next((n for n, t in enumerate(tracks) if t["pos"] == pos), 0)
+    if i < 1 or re.sub(r"\d.*", "", tracks[i - 1]["pos"]) != re.sub(r"\d.*", "", pos):
+        return None
+    secs = (tt_lengths(next((r for r in physical_now()[1] if r[0] == rec[0]), None) or list(rec)) or {}).get(tracks[i - 1]["pos"])
+    return (tracks[i - 1]["pos"], tracks[i - 1]["title"], secs) if secs else None
+
+
 def tt_schedule(spin):
     """The side playing, by the clock, from the song the house named and when it began: [(track, began)], the songs
     before it worked back from it, those after forward, each by its length and a two-second gap. It stops where a
@@ -5551,6 +5562,14 @@ def tt_side(path, s0, s1, gaps):
             start = min(near, key=lambda g: abs(g - start)) - 0.3 if near else start - 0.5
             songs.append((max(s0, start), ms[-1]))
         songs.sort(key=lambda x: x[0])
+        first = songs[0][1] if songs else None
+        if first and first.get("rec") and first.get("pos") and songs[0][0] - s0 > 8:
+            try:  # a short song before the first one named (too short for Shazam): the tracklist says what it is
+                prev = tt_song_before(first["rec"], first["pos"])
+            except Exception:
+                prev = None
+            if prev and abs(songs[0][0] - s0 - prev[2]) < max(8, prev[2] * 0.25):
+                songs.insert(0, (s0, dict(first, title=prev[1], pos=prev[0])))
         if songs and songs[0][0] - s0 > 30:  # a stretch nothing named, long enough to be a song
             songs.insert(0, (s0, None))
         safe = lambda t: re.sub(r'[\\/:*?"<>|]+', "-", t).strip(" .")[:120] or "-"
@@ -5570,9 +5589,10 @@ def tt_side(path, s0, s1, gaps):
                         lengths[rec0[0]] = tt_lengths(next((r for r in physical_now()[1] if r[0] == rec0[0]), None) or [rec0[0], rec0[1], rec0[2]])
                     except Exception:
                         lengths[rec0[0]] = {}
-                if lengths[rec0[0]].get(m["pos"]):
-                    end = min(end, start + lengths[rec0[0]][m["pos"]] + 6)
-            if end - start < 20:
+            known = lengths.get(rec0[0], {}).get(m["pos"]) if rec0 and m.get("pos") else 0
+            if known:
+                end = min(end, start + known + 6)
+            if end - start < (min(20, max(5, known - 4)) if known else 20):  # a fragment; a song known to be short is kept
                 continue
             rec = (m or {}).get("rec") or (songs[-1][1] or {}).get("rec")
             artist = rec[2] if rec else (m or {}).get("artist") or "Unknown"
