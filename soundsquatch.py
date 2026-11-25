@@ -2150,14 +2150,15 @@ def library_loop():
 # ───────────────────────── albums, stories, home ─────────────────────────
 def album_tracks(album_id):
     """An album's tracks, kept until the library is next scanned."""
-    scan = str(library["scan"])
+    scan = str(library["scan"]) + ":h"  # :h, kept since they carry their grouping (a session, "Bonus tracks")
     with db() as c:
         got = c.execute("select data from tracks where id = ? and scan = ?", (album_id, scan)).fetchone()
     if got:
         return json.loads(got[0])
-    found = rpc("", "titles", "0", "300", f"album_id:{album_id}", "sort:tracknum", "tags:atdyJoTIrsiqA", timeout=20).get("titles_loop") or []
+    found = rpc("", "titles", "0", "300", f"album_id:{album_id}", "sort:tracknum", "tags:atdyJoTIrsiqAh", timeout=20).get("titles_loop") or []
     out = [{"id": t.get("id"), "n": t.get("tracknum") or "", "disc": t.get("disc") or "", "title": t.get("title") or "", "artist": t.get("artist") or "",
-            "album": t.get("album") or "", "duration": float(t.get("duration") or 0), "composer": t.get("composer") or "", "year": t.get("year") or ""} for t in found]
+            "album": t.get("album") or "", "duration": float(t.get("duration") or 0), "composer": t.get("composer") or "", "year": t.get("year") or "",
+            "grouping": (t.get("grouping") or "").strip()[:200]} for t in found]
     with db_lock, db() as c:
         c.execute("insert or replace into tracks values (?,?,?)", (album_id, scan, json.dumps(out, ensure_ascii=False)))
     return out

@@ -195,6 +195,9 @@ span.q.hi { color: var(--accent); }
 .grid .card, .faces > div { content-visibility: auto; contain-intrinsic-size: 176px 250px; } /* covers off the screen aren't drawn (newer Safari) */
 .faces > div { padding-top: 6px; } /* which also clips what reaches past each one: room for a face's ring above it */
 .disc { padding: 22px 4px 8px; font: 600 11.5px var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+.grouping { display: flex; align-items: baseline; gap: 12px; padding: 18px 4px 6px; border-bottom: 1px solid var(--rule); }
+.grouping b { flex: 1; min-width: 0; font: italic 16px/1.3 var(--serif); color: var(--accent); }
+.grouping span { flex: none; font: 12.5px var(--sans); color: var(--faint); font-variant-numeric: tabular-nums; }
 .review { max-width: 900px; column-gap: 40px; }
 .review .kicker { margin-bottom: 14px; }
 h4.sub { margin: 1.4em 0 .5em; font: 600 12px var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
@@ -1452,7 +1455,7 @@ html.wall .np-next .nx b, html.wall .np-next { font-size: 18px; }
 .mag-al .mag-tabs { margin-top: 40px; }
 @media (min-width: 900px) {
   .mag-al .mag-tracks { }
-  .mag-al .mag-tracks .trk, .mag-al .mag-tracks .disc { break-inside: avoid; -webkit-column-break-inside: avoid; }
+  .mag-al .mag-tracks .trk, .mag-al .mag-tracks .disc, .mag-al .mag-tracks .grouping { break-inside: avoid; -webkit-column-break-inside: avoid; }
   .mag-al .mag-review { max-width: none; }
 }
 .mag-al .mag-review { font: 18px/1.6 var(--serif); }

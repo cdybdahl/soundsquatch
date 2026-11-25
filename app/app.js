@@ -1286,10 +1286,9 @@ MAG.album = function (el, id) {
     if (!el.isConnected) return;
     const by = d.artist || artist, multi = d.tracks.some(t => t.disc && t.disc !== d.tracks[0].disc), various = d.tracks.some(t => t.artist && norm(t.artist) !== norm(by));
     const total = d.tracks.reduce((s, t) => s + t.duration, 0);
-    let disc = null;
+    const head = trackHeads(d.tracks, multi, n => `Side ${esc(a[9] === "vinyl" && +n ? String.fromCharCode(64 + +n) : n)}`); // a captured record's sides by their letters
     $(".mag-tracks", el).outerHTML = `<div class="tracks mag-tracks">${d.tracks.map((t, i) => {
-      const head = multi && t.disc !== disc ? `<div class="disc">Side ${esc(a[9] === "vinyl" && +t.disc ? String.fromCharCode(64 + +t.disc) : t.disc)}</div>` : ""; disc = t.disc; // a captured record's sides by their letters
-      return `${head}<div class="trk" data-act="playTrack" data-v="${d.id}:${i}"><span class="n">${esc(t.n || i + 1)}</span><span class="tt">${esc(t.title)}${various && t.artist ? `<em>${esc(t.artist)}</em>` : ""}</span>${mk("track", trackKey(t), "loved")}<span class="d">${mmss(t.duration)}</span><button class="trk-more" data-act="trackMenu" data-v="${d.id}:${i}" aria-label="More">${icon("more")}</button></div>`;
+      return `${head(t, i)}<div class="trk" data-act="playTrack" data-v="${d.id}:${i}"><span class="n">${esc(t.n || i + 1)}</span><span class="tt">${esc(t.title)}${various && t.artist ? `<em>${esc(t.artist)}</em>` : ""}</span>${mk("track", trackKey(t), "loved")}<span class="d">${mmss(t.duration)}</span><button class="trk-more" data-act="trackMenu" data-v="${d.id}:${i}" aria-label="More">${icon("more")}</button></div>`;
     }).join("")}</div>`;
     const len = $(".mag-len", el); if (len) len.textContent = `${d.tracks.length} tracks, ${Math.round(total / 60)} minutes`;
     if (!title) { $(".mag-head", el).textContent = d.album; }
@@ -1341,10 +1340,9 @@ VIEWS.album = function (el, id) {
     const by = d.artist || artist, multi = d.tracks.some(t => t.disc && t.disc !== d.tracks[0].disc);
     const variousArtists = d.tracks.some(t => t.artist && norm(t.artist) !== norm(by));
     const total = d.tracks.reduce((s, t) => s + t.duration, 0);
-    let disc = null;
+    const head = trackHeads(d.tracks, multi, n => `Disc ${esc(n)}`);
     $(".tracks", el).outerHTML = `<div class="tracks">${d.tracks.map((t, i) => {
-      const head = multi && t.disc !== disc ? `<div class="disc">Disc ${esc(t.disc)}</div>` : ""; disc = t.disc;
-      return `${head}<div class="trk" data-act="playTrack" data-v="${d.id}:${i}"><span class="n">${esc(t.n || i + 1)}</span><span class="tt">${esc(t.title)}${variousArtists && t.artist ? `<em>${esc(t.artist)}</em>` : ""}</span>${mk("track", trackKey(t), "loved")}<span class="d">${mmss(t.duration)}</span><button class="trk-more" data-act="trackMenu" data-v="${d.id}:${i}" aria-label="More">${icon("more")}</button></div>`;
+      return `${head(t, i)}<div class="trk" data-act="playTrack" data-v="${d.id}:${i}"><span class="n">${esc(t.n || i + 1)}</span><span class="tt">${esc(t.title)}${variousArtists && t.artist ? `<em>${esc(t.artist)}</em>` : ""}</span>${mk("track", trackKey(t), "loved")}<span class="d">${mmss(t.duration)}</span><button class="trk-more" data-act="trackMenu" data-v="${d.id}:${i}" aria-label="More">${icon("more")}</button></div>`;
     }).join("")}</div>`;
     $(".al-kick", el).insertAdjacentHTML("beforeend", (a[3] || a[6] ? " &middot; " : "") + d.tracks.length + " tracks &middot; " + Math.round(total / 60) + " min");
     if (!title) { $(".al-title", el).textContent = d.album; $(".al-by", el).textContent = by; $(".al-by", el).setAttribute("href", artistHref(by)); }
@@ -4119,6 +4117,25 @@ function begin(house) {
   }).catch(() => {}).then(() => { poll(); ttPoll(); });
   $("#main").addEventListener("scroll", watchHead, { passive: true });
   loadAll(house);
+}
+/* An album's headings among its tracks: each disc (or side) as it starts, when there's more than one, and each grouping
+   (the GROUPING tag: a recording session, "Bonus tracks") as it starts, with its songs' count and length, as Material
+   shows them. Returns (track, index) → the headings before it. */
+function trackHeads(tracks, multi, discName) {
+  const grouped = tracks.some(t => t.grouping);
+  let disc = null, grp = null;
+  return (t, i) => {
+    let h = "";
+    if (multi && t.disc !== disc) { h += `<div class="disc">${discName(t.disc)}</div>`; grp = null; }
+    disc = t.disc;
+    if (grouped && (t.grouping || "") !== grp) {
+      grp = t.grouping || "";
+      let n = 0, len = 0;
+      for (let j = i; j < tracks.length && (tracks[j].grouping || "") === grp && tracks[j].disc === t.disc; j++) { n++; len += tracks[j].duration; }
+      if (grp) h += `<div class="grouping"><b>${esc(grp)}</b><span>${n} ${n === 1 ? "track" : "tracks"} &middot; ${mmss(len)}</span></div>`;
+    }
+    return h;
+  };
 }
 // everything the first page needs; the house's settings asked again when it's a second try
 function loadAll(house) {
