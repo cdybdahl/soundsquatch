@@ -1395,14 +1395,15 @@ html.mag .mast-line span { letter-spacing: .24em; }
 /* upright (a tablet held tall, the wall): the cover with the song beside it, the time and the buttons across, then the
    tabs filling the rest */
 @media (min-width: 641px) and (max-aspect-ratio: 1/1) {
-  .np-main { display: grid; --art: min(44vw, 34vh, 560px); grid-template-columns: var(--art) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr);
-    grid-template-areas: "art info" "tr tr" "tabs tabs" "next next"; gap: 0 32px; }
+  .np-main { display: grid; --art: min(44vw, 34vh, 560px); grid-template-columns: var(--art) minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    grid-template-areas: "art info" "tr tr" "tabs tabs" "ask ask" "next next"; gap: 0 32px; }
   .np-left, .np-right { display: contents; }
   .np-art { grid-area: art; width: var(--art); }
   .np-info { grid-area: info; align-self: center; }
   .np-transport { grid-area: tr; }
   .np-tabs { grid-area: tabs; }
-  .np-next, .np-right > .tt-ask { grid-area: next; }
+  .np-next { grid-area: next; }
+  .np-right > .tt-ask { grid-area: ask; } /* its own row above the songs: in theirs, the songs lay over it and took its taps */
   .np-ctl { max-width: 560px; margin-left: auto; margin-right: auto; }
 }
 /* the wall: a large screen across the room, so bigger everything, and the words as the tab it opens on */
