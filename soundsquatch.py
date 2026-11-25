@@ -1368,7 +1368,7 @@ def load_library(force=False):
     found = sorted(rpc("", "albums", "0", str(total + 50), "tags:lajyS", timeout=120).get("albums_loop", []), key=lambda a: -int(a["id"]))
     tracks, step = [], 25000  # a page at a time: a large library in one answer is more than Lyrion likes to build
     while True:
-        got = rpc("", "titles", str(len(tracks)), str(step), "tags:eoIrTuDR", timeout=180).get("titles_loop", [])
+        got = rpc("", "titles", str(len(tracks)), str(step), "tags:eoIrTuDRk", timeout=180).get("titles_loop", [])
         tracks += got
         if len(got) < step:
             break
@@ -1377,9 +1377,8 @@ def load_library(force=False):
         if int(t.get("rating") or 0) > 0:
             rates.setdefault(str(t.get("album_id")), []).append(int(t["rating"]))
     rated = {int(k): round(sum(v) / len(v) / 10) / 2 for k, v in rates.items() if k.isdigit()}
-    cap = urllib.parse.quote(capture_dir())  # the turntable's own recordings: versions of their own ("Your vinyl")
-    for t in tracks:
-        if cap in (t.get("url") or ""):
+    for t in tracks:  # the turntable's own recordings, by their comment (a capture made by any Soundsquatch): versions of their own
+        if is_capture(t.get("comment")):
             captured.add(str(t.get("album_id")))
         added[str(t.get("album_id"))] = max(added.get(str(t.get("album_id")), 0), int(float(t.get("addedTime") or 0)))  # when it joined the shelves
         by_album.setdefault(str(t.get("album_id")), Counter())[quality(t)] += 1
@@ -5318,8 +5317,7 @@ def tt_side(path, s0, s1, gaps):
             try:
                 from mutagen.flac import FLAC
                 f = FLAC(tmp)
-                f.update({"title": title, "artist": (m or {}).get("artist") or artist, "albumartist": artist, "album": album,
-                          "comment": "From the turntable, " + time.strftime("%Y-%m-%d")})
+                f.update(dict(capture_tags(), title=title, artist=(m or {}).get("artist") or artist, albumartist=artist, album=album))
                 if pos:  # "B3": side B as the second disc, the third song on it (Lyrion keeps only numbers); the position kept as it is
                     f.update(vinyl_numbers(pos))
                 if rec:
@@ -5404,6 +5402,53 @@ def tag_replaygain(folder):
         t.update({"replaygain_track_gain": f"{-18 - i:+.2f} dB", "replaygain_track_peak": f"{peak:.6f}",
                   "replaygain_album_gain": f"{-18 - album:+.2f} dB", "replaygain_album_peak": f"{album_peak:.6f}"})
         t.save()
+
+
+CAPTURE_NOTE = "Captured from vinyl by Soundsquatch"  # every capture's comment begins so: any Soundsquatch, on any server, knows it
+
+
+def capture_tags(day=None):
+    """What marks a song as the turntable's own recording, in the file itself so it travels with it: the comment (the one
+    field Lyrion and Music Assistant both pass on, so any Soundsquatch reading either knows a capture wherever it was
+    made), and the standard medium and encoder tags other software reads (Picard, Roon, Plex)."""
+    return {"comment": f"{CAPTURE_NOTE}, {day or time.strftime('%Y-%m-%d')}", "media": "Vinyl", "encodedby": "Soundsquatch"}
+
+
+def is_capture(comment):
+    """A song's comment says it's a capture: the mark above, or the one captures carried before it ("From the
+    turntable, 2026-11-21")."""
+    c = " ".join(comment) if isinstance(comment, list) else str(comment or "")
+    return bool(re.search(r"captured from vinyl by soundsquatch|^from the turntable, \d{4}-\d\d-\d\d", c.strip(), re.I))
+
+
+def mark_captures():
+    """Once: the captures made before the mark get it, their day kept (the old comment's, else the file's)."""
+    if kv_get("captures-marked"):
+        return
+    from mutagen.flac import FLAC
+    root, done = capture_dir(), 0
+    for d, _, files in os.walk(root) if os.path.isdir(root) else []:
+        for name in files:
+            if not name.endswith(".flac"):
+                continue
+            path = os.path.join(d, name)
+            try:
+                f = FLAC(path)
+                old = " ".join(f.get("comment") or [])
+                if old.startswith(CAPTURE_NOTE) and f.get("media") and f.get("encodedby"):
+                    continue
+                m = re.search(r"\d{4}-\d\d-\d\d", old)
+                f.update(capture_tags(m.group(0) if m else time.strftime("%Y-%m-%d", time.localtime(os.path.getmtime(path)))))
+                f.save()
+                done += 1
+            except Exception as e:
+                note_error(f"marking captures: {name}: {type(e).__name__}: {e}"[:200])
+    kv_set("captures-marked", {"at": time.time(), "songs": done})
+    if done:
+        try:
+            rpc("", "rescan")  # Lyrion reads the new comments
+        except Exception:
+            pass
 
 
 def replaygain_captures():
@@ -6138,7 +6183,7 @@ if __name__ == "__main__":
     start_recorder()
     start_turntable()
     lapsed_local_artwork()
-    for job in (replaygain_captures, lambda: (carry_ratings(), retire_hearts()), lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
+    for job in (lambda: (replaygain_captures(), mark_captures()), lambda: (carry_ratings(), retire_hearts()), lyrion_pictures_loop, kexp_loop, home_loop, library_loop, crawler, watcher, warmer, trim_pictures, sweeper, backups_loop, radio_events, update_loop, discogs_loop, morning_loop, scrobble_loop, vinyl_qobuz_loop):
         threading.Thread(target=job, name=job.__name__, daemon=True).start()
     threading.Thread(target=credits_loop, name="credits", daemon=True).start()
     threading.Thread(target=lifedates_loop, name="credits", daemon=True).start()  # stands aside at MusicBrainz as the credits pass does
