@@ -1617,9 +1617,10 @@ CREDITED_ROLES = ("albumartist", "artist", "trackartist", "band")  # who plays i
 
 
 def album_people(albums, tracks):
-    """Every artist on each album, as Lyrion has them by role: the ones it is by (its album artists, "A & B" taken apart
-    where each is known, and anyone the artist on half its songs or more) and the ones who appear on it (an artist on a
-    few of its songs: a guest, a featured singer). Returns ({album id: [the others it is by]}, {artist key: [album ids
+    """Every artist on each album, as Lyrion has them by role: the ones it is by and the ones who appear on it. As Lyrion
+    reads them: an album whose songs are tagged with album artists is by those (and "A & B" taken apart where each is
+    known); everyone else on it appears on it, however many of its songs they play. An album with no album artist tagged
+    is by anyone the artist on half its songs or more; an artist on fewer appears on it (a guest, a featured singer). Returns ({album id: [the others it is by]}, {artist key: [album ids
     they appear on]}), the album's own artist (the shelves') left out of both."""
     names = {}
     try:
@@ -1650,7 +1651,8 @@ def album_people(albums, tracks):
             n, p, l = of.get(i, (0, Counter(), set()))
             total, plays, leads = total + n, plays + p, leads | l
         by = [names[i] for i in leads if names.get(i)]
-        by += [names[i] for i, n in plays.items() if names.get(i) and total and n >= total / 2]
+        if not leads:  # album artists tagged: only they are its artists (Lyrion's rule); untagged, the ones on half its songs
+            by += [names[i] for i, n in plays.items() if names.get(i) and total and n >= total / 2]
         parts = re.split(r"\s+(?:&|and|with|x)\s+", e[2])  # "A & B" taken apart only when each part is an artist of its own
         by += [known[key(p)] for p in parts] if len(parts) > 1 and all(key(p) in known for p in parts) else []
         seen = set()
@@ -1659,7 +1661,7 @@ def album_people(albums, tracks):
             joint[e[0]] = by
         for i, n in plays.items():
             who = names.get(i)
-            if who and total and n < total / 2 and bare(who) != main and bare(who) not in seen and key(who) not in NOT_ARTISTS:
+            if who and total and (leads or n < total / 2) and bare(who) != main and bare(who) not in seen and key(who) not in NOT_ARTISTS:
                 appears.setdefault(key(who), []).append(e[0])
     return joint, appears
 
