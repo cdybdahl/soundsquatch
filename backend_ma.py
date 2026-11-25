@@ -146,6 +146,29 @@ def artist_names(item):
     return " & ".join(a.get("name", "") for a in item.get("artists") or [] if a.get("name"))
 
 
+IS_CAPTURE = lambda comment: False  # Soundsquatch's own test of a song's comment (soundsquatch.is_capture), set when it starts
+CAPTURES = {}  # album id → (its local files, whether they are a capture): asked once an album, again when its files change
+
+
+def captured(a):
+    """An album whose own files are the turntable's recording, by any Soundsquatch: its local songs' comment says so (Music
+    Assistant passes it on as the song's description). Music Assistant files a capture and the service's edition as one
+    album, so it's the local songs that are asked."""
+    local = sorted(m.get("item_id") or "" for m in a.get("provider_mappings") or [] if str(m.get("provider_domain", "")).startswith("filesystem"))
+    if not local:
+        return False
+    hit = CAPTURES.get(a["item_id"])
+    if hit and hit[0] == local:
+        return hit[1]
+    try:
+        tracks = client().call("music/albums/album_tracks", item_id=str(a["item_id"]), provider_instance_id_or_domain="library") or []
+    except Exception:
+        return False  # asked again next time
+    mine = next((t for t in tracks if any(str(m.get("provider_domain", "")).startswith("filesystem") for m in t.get("provider_mappings") or [])), None)
+    CAPTURES[a["item_id"]] = (local, bool(mine and IS_CAPTURE((mine.get("metadata") or {}).get("description"))))
+    return CAPTURES[a["item_id"]][1]
+
+
 # ───────────────────────── the shelves ─────────────────────────
 def library_rows():
     """Every album in Music Assistant's library as the shelves' rows: [id, title, artist, year, cover, rank, quality,
@@ -168,7 +191,7 @@ def library_rows():
         first = (a.get("artists") or [{}])[0]  # the album's first artist, as Soundsquatch files albums
         rows.append([int(a["item_id"]), a.get("name") or "", first.get("name") or "", int(a.get("year") or 0), picture(a), rank,
                      quality_words(best_format(a)), int(first.get("item_id") or 0) if str(first.get("item_id", "")).isdigit() else 0,
-                     [], source_of(a), [], 0])  # when added: Music Assistant says only the order (its rank)
+                     [], "vinyl" if captured(a) else source_of(a), [], 0])  # when added: Music Assistant says only the order (its rank)
     return rows
 
 

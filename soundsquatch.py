@@ -1502,7 +1502,13 @@ def load_library_ma(force=False):
     """The shelves from Music Assistant's library (its rows already in the shelves' shape), with the house's genres."""
     if not force and library["albums"] and time.time() - library.get("ma_at", 0) < 600:
         return
+    backend_ma.IS_CAPTURE = is_capture
+    if not backend_ma.CAPTURES:  # what was asked before a restart: only albums new since are asked
+        backend_ma.CAPTURES.update(kv_get("ma-captures", {}) or {})
+    asked = len(backend_ma.CAPTURES)
     albums = backend_ma.library_rows()
+    if len(backend_ma.CAPTURES) != asked:
+        kv_set("ma-captures", backend_ma.CAPTURES)
     with db() as c:
         genres = {k: json.loads(g) for k, g in c.execute("select k, genres from album_genres")}
     for e in albums:
