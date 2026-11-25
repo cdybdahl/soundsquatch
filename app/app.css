@@ -415,6 +415,11 @@ input[type=range].vol::-webkit-slider-thumb { -webkit-appearance: none; width: 2
 .star { width: 30px; height: 36px; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); }
 .star .ic { width: 20px; height: 20px; }
 .star.on { color: var(--accent); }
+.star.hop .ic { -webkit-animation: squatch-hop .5s cubic-bezier(.3, .7, .4, 1) calc(var(--i, 0) * 70ms) both; animation: squatch-hop .5s cubic-bezier(.3, .7, .4, 1) calc(var(--i, 0) * 70ms) both; }
+@-webkit-keyframes squatch-hop { 0%, 100% { -webkit-transform: translateY(0); } 35% { -webkit-transform: translateY(-9px) rotate(-6deg); } 60% { -webkit-transform: translateY(0) scaleY(.88); } 80% { -webkit-transform: translateY(-2px); } }
+@keyframes squatch-hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-9px) rotate(-6deg); } 60% { transform: translateY(0) scaleY(.88); } 80% { transform: translateY(-2px); } }
+.noart.sq .ic { width: 34%; height: 34%; opacity: .55; }
+.squatch-note { font-style: italic; padding: 18px 0; }
 .mk-tags { flex-wrap: wrap; gap: 6px; margin-left: 10px; }
 .tag { display: inline-flex; align-items: center; height: 30px; padding: 0 4px 0 12px; border-radius: 15px; background: var(--bg3); font: 500 13px var(--sans); color: var(--dim); }
 .tag button { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); }
