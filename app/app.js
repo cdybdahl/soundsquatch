@@ -382,12 +382,12 @@ function mkInner(type, m) {
   if (type === "stars") return [1, 2, 3, 4, 5].map(n => `<button class="star ${n <= m[1] ? "on" : ""}" data-act="rate" data-v="${n}" aria-label="${rateWord(n)}">${rateIcon(n <= m[1])}</button>`).join("");
   return ""; // hearts and tags are retired (0.14): a rating, Lyrion's where it can be, is the one mark
 }
-/* Five squatches: the row of them does a little hop, one after another (not with Reduce motion, on this device or the system's). */
-function hopIn(box) {
+/* A rating given: the squatches it lights do a little hop, one after another (not with Reduce motion, on this device or the system's). */
+function hopIn(box, n) {
   if (document.documentElement.classList.contains("still") || (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
-  box.querySelectorAll(".star").forEach((b, i) => { b.style.setProperty("--i", i); b.classList.remove("hop"); void b.offsetWidth; b.classList.add("hop"); });
+  Array.prototype.slice.call(box.querySelectorAll(".star"), 0, n || 5).forEach((b, i) => { b.style.setProperty("--i", i); b.classList.remove("hop"); void b.offsetWidth; b.classList.add("hop"); });
 }
-function squatchHop(mark) { document.querySelectorAll(".mk[data-mark]").forEach(el => { if (el.dataset.mark === mark) hopIn(el); }); }
+function squatchHop(mark, n) { document.querySelectorAll(".mk[data-mark]").forEach(el => { if (el.dataset.mark === mark) hopIn(el, n); }); }
 function refreshMarks(kind, k) {
   document.querySelectorAll(`[data-mark="${kind}|${k}"]`).forEach(el => { el.innerHTML = mkInner(el.dataset.mk, markOf(kind, k)); });
 }
@@ -2735,7 +2735,7 @@ const ACT = {
   },
   closeSheet: (v, t) => { closeSheet(); const h = t && t.getAttribute("href"); if (h && h.charAt(0) === "#") location.hash = h; }, // a link in a sheet still goes where it says
   heart: (v, t) => { const m = markAt(t); setMark(m[0], m[1], { heart: !markOf(m[0], m[1])[0] }); },
-  rate: (v, t) => { const m = markAt(t), was = markOf(m[0], m[1])[1]; setMark(m[0], m[1], { rating: +v === was ? 0 : +v }); if (+v === 5 && was !== 5) squatchHop(m[0] + "|" + m[1]); }, // the same star again clears it
+  rate: (v, t) => { const m = markAt(t), was = markOf(m[0], m[1])[1]; const now = +v === was ? 0 : +v; setMark(m[0], m[1], { rating: now }); if (now) squatchHop(m[0] + "|" + m[1], now); }, // the same star again clears it
   // your own labels for an album (#roadtrip, #sunday), to find them again on the Albums page; the genres are the pencil's
   addTag: (v, t) => {
     const m = markAt(t), have = markOf(m[0], m[1])[2], a = A.albums.find(x => albumKey(x) === m[1]);
@@ -3057,7 +3057,7 @@ const ACT = {
     closeSheet();
     api("/api/rate-album", { album_id: +id, stars: n }).then(r => {
       if (r.error) return toast(r.error);
-      document.querySelectorAll(`.lr-stars[data-album="${id}"]`).forEach(b => { lrPaint(b, r); if (n === 5) hopIn(b); });
+      document.querySelectorAll(`.lr-stars[data-album="${id}"]`).forEach(b => { lrPaint(b, r); if (n) hopIn(b, n); });
       if (!r.scanning) (A.rated = A.rated || {})[id] = r.stars; // the five-squatch shelf and filters follow at once
       toast(r.scanning ? "Lyrion is scanning: try again once it's done" : n ? `${r.count} tracks rated` : `${r.count} tracks cleared`);
     }).catch(() => toast(SERVER() + " didn't answer"));
