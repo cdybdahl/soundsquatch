@@ -4108,6 +4108,9 @@ function start() {
     // a new release: said once on each screen, and kept at the top of Settings
     if (c.update && store.get("sq-update-told", "") !== c.update.version) { store.set("sq-update-told", c.update.version); setTimeout(() => toast("Soundsquatch " + c.update.version + " is out: see Settings"), 4000); }
   }).catch(() => {});
+  house.then(() => { if (A.cfg && A.cfg.choose) chooseServer(); else begin(house); });
+}
+function begin(house) {
   // the room this screen controls: its own choice, else the last used, else the one the house plays in most
   Promise.all([lms("", ["players", 0, 50]), house]).then(r => {
     A.rooms = (r[0].players_loop || []).filter(p => p.connected);
@@ -4131,6 +4134,27 @@ function unreachable() {
   $("#main").innerHTML = `<div class="loading">${head}<p>Soundsquatch isn't answering on this network yet. It answers at home: trying again&hellip;</p></div>`;
   clearTimeout(unreachable.t);
   unreachable.t = setTimeout(() => { unreachable.t = 0; loadAll(); }, document.hidden ? 8000 : 2500);
+}
+/* A first start where Lyrion and Music Assistant both answer (the add-on beside Music Assistant's, on a house that also
+   runs Lyrion): which one Soundsquatch reads is the house's to say, asked once. Settings can change it later. */
+function chooseServer() {
+  const c = A.cfg, head = `<img class="load-logo" src="logo.png" alt=""><div class="mast-name"><span>Sound<em>squatch</em></span></div>`;
+  $("#main").innerHTML = `<div class="loading">${head}<p>Two music servers answer here. Which one should Soundsquatch read?</p>
+    <p><button class="pill" id="pick-lms">Lyrion</button> <span class="dim">${esc(c.checks.lms_url || "")}</span></p>
+    <p><button class="pill" id="pick-ma">Music Assistant</button> <span class="dim">${/127\.0\.0\.1|localhost/.test(c.ma_guess) ? "on this Home Assistant" : esc(c.ma_guess)}</span></p>
+    <div class="first-run" id="ma-fields" hidden><input id="ma-tok" type="password" placeholder="a long-lived token (its Settings, Profile)" autocomplete="off">
+      <button class="btn" id="ma-go">Use it</button></div><p class="dim" id="pick-said">You can change this later in Settings.</p></div>`;
+  const said = t => { $("#pick-said").textContent = t; };
+  $("#pick-lms").addEventListener("click", () => { said("One moment…"); api("/api/settings", { server: "lyrion" }).then(() => location.reload()).catch(() => said("Soundsquatch didn't answer. Try again.")); });
+  $("#pick-ma").addEventListener("click", () => { $("#ma-fields").hidden = false; $("#ma-tok").focus(); said("Music Assistant asks for a token: make a long-lived one in its Settings, Profile."); });
+  const go = () => {
+    const t = $("#ma-tok").value.trim(); if (!t) return;
+    said("Asking…");
+    api("/api/settings", { connections: { ma_url: c.ma_guess }, ma_token: t, server: "ma" })
+      .then(r => { if (r.checks.ma_ok) location.reload(); else said("Music Assistant turned that down: " + (r.checks.ma_url || "")); }).catch(() => said("Soundsquatch didn't answer. Try again."));
+  };
+  $("#ma-go").addEventListener("click", go);
+  $("#ma-tok").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
 }
 // the shelves didn't come: when it's because Lyrion can't be found (a first start, or it has moved), its address asked for
 function firstRun() {

@@ -322,6 +322,7 @@ def load_settings():
     for group, values in DEFAULTS.items():
         settings[group] = dict(values, **{k: v for k, v in (saved.get(group) or {}).items() if k in values})
     settings["found_by_hand"] = bool(saved.get("found_by_hand", "connections" in saved))  # settings from before it was noted: set by hand
+    settings["server_chosen"] = bool(saved.get("server_chosen", "connections" in saved))  # a house from before the choice was asked: chosen
     apply_settings()
     read_music_dirs()
 
@@ -633,13 +634,14 @@ def vinyl_qobuz_loop():
 
 
 def settings_for_app():
-    checks = check_settings()
+    checks, guess = check_settings(), ma_guess()
     conn = dict(settings["connections"], lms_password="")  # the password is never sent back
     return {"connections": conn, "lms_password_set": bool(settings["connections"]["lms_password"]), "features": settings["features"], "discover": settings["discover"], "discover_order": settings["house"]["discover_order"],
             "rooms": settings["house"]["rooms"], "pin": bool(settings["house"]["pin"]), "home_room": home_room(), "version": VERSION, "update": UPDATE or None,
             "turntable": turntable_for_settings(), "scrobble": scrobble_for_settings(), "discogs": dict({k: v for k, v in (kv_get("discogs", {}) or {}).items() if k != "records"}, set=bool(discogs_token()), records=len((kv_get("discogs", {}) or {}).get("records", []))),
             "have": dict(HAVE, ratings=HAVE.get("ratings") and ratings_ready()), "backend": "ma" if backend_ma.ON else "lyrion", "ma_url": backend_ma.MA_URL if backend_ma.ON else "",
-            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "ma_token_set": os.path.exists(MA_TOKEN), "ma_guess": ma_guess(), "checks": checks}
+            "service": {"key": svc().key, "label": svc().label} if svc() else None, "token_set": os.path.exists(HA_TOKEN), "ma_token_set": os.path.exists(MA_TOKEN), "ma_guess": guess, "checks": checks,
+            "choose": bool(guess and checks.get("lms_ok") and not settings.get("server_chosen"))}  # Lyrion and Music Assistant both answer on a first start: the house picks
 
 
 def ma_guess():
@@ -684,6 +686,8 @@ def save_settings(req):
                 settings[group][k] = v.strip()[:500] if isinstance(v, str) else v
     if (req.get("connections") or {}).get("lms_url") and not req.get("found"):
         settings["found_by_hand"] = True  # set on the Settings page or the first-start screen: never replaced by one found
+    if req.get("server") in ("lyrion", "ma") or "ma_url" in (req.get("connections") or {}) or settings.get("found_by_hand"):
+        settings["server_chosen"] = True  # the music server picked by the house: the first screen doesn't ask again
     for pid, r in (req.get("rooms") or {}).items():
         if lms_qobuz.PLAYER.match(pid) and isinstance(r, dict):
             room = {"name": re.sub(r"\s+", " ", str(r.get("name") or "")).strip()[:40], "fixed": bool(r.get("fixed"))}
@@ -734,7 +738,7 @@ def save_settings(req):
         os.chmod(HA_TOKEN + ".tmp", 0o600)
         os.replace(HA_TOKEN + ".tmp", HA_TOKEN)
     with open(SETTINGS_FILE + ".tmp", "w") as f:
-        json.dump(dict({g: settings[g] for g in DEFAULTS}, found_by_hand=bool(settings.get("found_by_hand"))), f, indent=1)
+        json.dump(dict({g: settings[g] for g in DEFAULTS}, found_by_hand=bool(settings.get("found_by_hand")), server_chosen=bool(settings.get("server_chosen"))), f, indent=1)
     os.chmod(SETTINGS_FILE + ".tmp", 0o600)
     os.replace(SETTINGS_FILE + ".tmp", SETTINGS_FILE)
     apply_settings()
