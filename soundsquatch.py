@@ -2137,10 +2137,11 @@ AWAY = {}  # (artist, title) → (when asked, the page), a day
 AWAY_DETAILS = {"Genre": "genre", "Qobuz Release Type": "type", "Duration": "length", "Released at": "released", "Music Label": "label"}
 
 
-def away_album(artist, title, player, fresh=False):
+def away_album(artist, title, player, fresh=False, cover=""):
     """A record off the shelves, as a page: on the shelves after all → its album id; else Qobuz's release of that name by
     that artist (the plugin's search, then the release's own menu): its songs, the facts its menu lists, whether it's a
-    favourite, and the search and place that play, queue or keep it."""
+    favourite, and the search and place that play, queue or keep it. A card's cover from Qobuz names the release
+    exactly (its id): that one, never another edition of the same name."""
     artist, title = (artist or "").strip()[:200], (title or "").strip()[:200]
     if not title:
         return {"error": "no record named"}
@@ -2148,7 +2149,7 @@ def away_album(artist, title, player, fresh=False):
     for a in list(library["albums"]):
         if (not artist or key(a[2]) == key(artist)) and lms_qobuz.plain(re.sub(r"\s*[(\[].*$", "", a[1])) == want:
             return {"album_id": a[0]}
-    k = (key(artist), want)
+    k = (key(artist), want, lms_qobuz.album_id(cover))
     hit = AWAY.get(k)
     if hit and not fresh and time.time() - hit[0] < 86400:
         return hit[1]
@@ -2158,7 +2159,7 @@ def away_album(artist, title, player, fresh=False):
         return dict(out, error="no Qobuz")
     out["service"] = svc().label
     try:
-        page = svc().release(artist, title, want, player)
+        page = svc().release(artist, title, want, player, cover=cover)
     except Exception as e:
         note_error(f"{svc().label} for {artist} - {title}: {type(e).__name__}: {e}")
         return dict(out, error="failed")
@@ -2262,12 +2263,12 @@ def retire_hearts():
 def away_play(req):
     """One song of a record off the shelves, played from there on (its place in the release's menu)."""
     term, player = (req.get("term") or "")[:120], req.get("player") or PLAYER
-    if not lms_qobuz.PLAYER.match(player) or not term:
+    if not lms_qobuz.PLAYER.match(player) or not (term or req.get("qid")):
         return {"error": "no such player or record"}
     if not svc():
         return {"error": "no streaming service"}
     return svc().play_release(term, int(req.get("index") or 0), int(req["track"]) if req.get("track") is not None else None,
-                              req.get("how") if req.get("how") in ("play", "insert") else "play", player)
+                              req.get("how") if req.get("how") in ("play", "insert") else "play", player, qid=str(req.get("qid") or "")[:40] or None)
 
 
 def review(album_id, again=False):
@@ -2982,7 +2983,7 @@ def home():
 
 def qobuz(req):
     action, term, player = req.get("action"), (req.get("term") or "").strip()[:120], req.get("player") or PLAYER
-    if not lms_qobuz.PLAYER.match(player) or not term:
+    if not lms_qobuz.PLAYER.match(player) or not (term or req.get("qid")):
         return {"error": "no such player or nothing to ask"}
     if not svc():
         return {"error": "Lyrion has no streaming plugin", "releases": [], "artists": []}
@@ -4081,8 +4082,8 @@ share_cache = {}
 
 def qobuz_album_link(cover):
     """Qobuz's public page for an album, from its cover's address (…/covers/9b/jn/kk6wx5x06jn9b_600.jpg)."""
-    m = re.search(r"/images/covers/[^/]+/[^/]+/([A-Za-z0-9]+)_\d+\.jpg", urllib.parse.unquote(cover or ""))
-    return f"https://open.qobuz.com/album/{m.group(1)}" if m else ""
+    qid = lms_qobuz.album_id(cover)
+    return f"https://open.qobuz.com/album/{qid}" if qid else ""
 
 
 def share_link(album_id):
@@ -6018,7 +6019,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/away" and not library_ready():
                 return self.reply({"error": "starting", "starting": True}, status=503)
             if url.path == "/api/away":
-                return self.reply(away_album(qs.get("artist", ""), qs.get("album", ""), qs.get("player", ""), fresh=qs.get("again") == "1"))
+                return self.reply(away_album(qs.get("artist", ""), qs.get("album", ""), qs.get("player", ""), fresh=qs.get("again") == "1", cover=qs.get("cover", "")[:500]))
             if url.path == "/api/review" and qs.get("album"):  # a record off the shelves, by its names
                 text, why = review_lookup(qs.get("artist", "")[:200], qs["album"][:200], again=qs.get("again") == "1")
                 return self.reply({"review": text or "", "why": why or "none"}, cache="max-age=86400" if text else "no-store")
