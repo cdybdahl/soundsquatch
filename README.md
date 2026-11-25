@@ -20,7 +20,7 @@ through, and keeps a profile of every artist on the shelves.
   played it, and each track how often.
 - **The Internet Archive**, through the ArchiveLMA Lyrion plugin: favourites on
   the shelves, each artist's shows, a show page with its setlist and recording notes.
-- **Playing**: rooms (join, leave, move the music), Now Playing with synced lyrics
+- **Playing**: rooms (join, leave, move the music, each room's own volume in a group), Now Playing with synced lyrics
   (LRCLIB) and credits, queue reordering, playlists, radio (Don't Stop the Music),
   stations seeded like a chill mix.
 - **Ratings**, shown as squatches (or stars: Settings → Features): Lyrion's own, through Ratings Light, where it's
@@ -99,30 +99,6 @@ When a new version is out, Soundsquatch says so (once on each screen, and at the
 that folder: `docker compose pull && docker compose up -d`. Everything Soundsquatch keeps (settings, ratings,
 stations, the listening log, pictures, nightly backups) lives in `./data`.
 
-### With Music Assistant instead of Lyrion
-
-Soundsquatch can use **Music Assistant** (2.10 or later) as its music server instead of Lyrion. The masthead says which
-edition you're looking at: *Lyrion Edition* or *Music Assistant Edition*.
-
-To use it, give Soundsquatch Music Assistant's address (for example `192.168.1.8:8095`) and a long-lived token from
-Music Assistant's **Settings → Profile**. You can do this on the first-start screen ("Use Music Assistant instead") or later in
-**Settings → Connections**. No change to the compose file is needed. Leave the address empty to go back to Lyrion.
-
-What's the same: the shelves, album and artist pages, Discover's own sections, ratings, credits and stories, rooms, the
-queue, playlists, stations and radio, History and scrobbling, the turntable, and *Gone from Qobuz*. Search and **Add to the
-library** reach every service Music Assistant has (Qobuz, Spotify, TIDAL, Plex and others).
-
-What's different:
-- The **Music Assistant** page (where the Lyrion page is) has every source's own tree to browse, and Music Assistant's settings
-  drawn here: sources, rooms and speakers, plugins, metadata and its core. Adding a service that needs a sign-in opens
-  Music Assistant's own pages.
-- Albums Music Assistant can no longer play (the service stopped streaming them) are listed under *Gone* straight away.
-- The features that come from Lyrion plugins aren't there: 1001 Albums, Live on KEXP, Sounds like this (Bliss Mixer),
-  Listen Later, ListenBrainz, Pitchfork, the Internet Archive, Ratings Light (ratings stay Soundsquatch's own) and the
-  Sleep timer.
-- If most albums show up credited to several artists, Music Assistant's library was mixed up by an older version of it.
-  Settings and Diagnostics say so. Reset its library database (its Settings, Core, Music) and let it scan again.
-
 ### Changing music files
 
 Soundsquatch can write genres, track titles and covers into your files, and **Remove from the library** moves an
@@ -187,7 +163,8 @@ This is *Pink Moon*, side A to side B, as Soundsquatch had it, with nothing done
 
    Each song carries the artist, the record, its side (as the disc) and number, its position as printed (B3), the
    year the music came out, Discogs's genres and the release, beside the record's cover. In the library it's a
-   pressing of its own, **Vinyl, captured by Soundsquatch**, next to the digital copies and never in their place.
+   pressing of its own, **Vinyl, captured by Soundsquatch**, next to the digital copies and never in their place. The
+   mark is in the songs' own tags (their comment, and `MEDIA=Vinyl`), so it goes wherever the files go.
 4. **Side B, the last song.** "From the Morning" is the record's last track, so this time it's over: Home Assistant
    can tell the phones "That's the record", with what to play next: the band's next record (on the shelf, in the
    library, or not in the house yet) and an artist who followed (a member's own records first).

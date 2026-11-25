@@ -109,7 +109,7 @@ DISCOGS_TOKEN = os.path.join(DATA, ".discogs_token")  # the house's Discogs toke
 MA_TOKEN = os.environ.get("MA_TOKEN_FILE", os.path.join(DATA, ".ma_token"))  # Music Assistant's long-lived token, when it is the music server
 HA_TOKEN = os.environ.get("HA_TOKEN_FILE", os.path.join(DATA, ".ha_token"))  # Soundsquatch's own long-lived token (stations)
 AUDIO = (".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".alac", ".ape", ".wv", ".dsf", ".dff")  # the playlist a room's music is saved to on its way to another room
-VERSION = "0.14.0 beta"  # the release tag is v + its number
+VERSION = "0.15.0 beta"  # the release tag is v + its number
 AGENT = {"User-Agent": f"Soundsquatch/{VERSION.split()[0]} (a home music app; https://github.com/cdybdahl/soundsquatch)"}
 NOT_ARTISTS = {"various artists", "various", "unknown artist", "unknown", "", "artist", "no artist", "various artist"}  # and tags left as placeholders
 
