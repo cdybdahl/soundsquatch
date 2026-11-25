@@ -1944,7 +1944,9 @@ def next_on_shelves():
 
 
 def watcher():
-    """Every 20 s, what each room is playing and the next few in its queue: their artists go to the front of the crawl."""
+    """Every 20 s, what each room is playing and the next few in its queue: their artists go to the front of the crawl,
+    if they are on the shelves. Anyone else (the radio's, a station's) is looked up only when their page is opened, so
+    a day of radio doesn't send the streaming service hundreds of searches."""
     while True:
         try:
             players = rpc("", "players", "0", "50").get("players_loop") or []
@@ -1954,6 +1956,9 @@ def watcher():
                 st = rpc(p["playerid"], "status", "-", "4", "tags:a")
                 for t in st.get("playlist_loop") or []:
                     for a in split_artists(t.get("artist") or ""):
+                        with lib_lock:
+                            if key(a) not in library["artists"]:
+                                continue
                         d, f, comp = get_profile(a)
                         if d is None or (not comp and time.time() - f > RETRY) or time.time() - f > STALE:
                             want(a, front=True)
